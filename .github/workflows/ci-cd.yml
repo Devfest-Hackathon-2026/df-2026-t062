@@ -1,0 +1,148 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # DB を通すテスト（test/api.test.ts）のための PostgreSQL。本番の Cloud SQL と同じ 17 にそろえる
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: careman
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d careman"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # 様式の版を出す前の確かめ（欄の位置・対応・fields.json の食い違い）
+      - run: npm run forms:check
+      # 様式の元の PDF はリポジトリに入れていない。PDF を作るテストのために、全社協の公式の URL から取る（ハッシュを確かめる）
+      - run: npm run forms:fetch
+      - run: npm test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/careman
+      # 様式の管理のスクリプトを、リリースと同じ流れで動かす（移行と様式の登録 → 2 回目は版が増えない → PDF を置き場へ → 書類の向き先）
+      - name: Exercise form admin scripts
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/careman
+          LOCAL_STORAGE_DIR: ${{ runner.temp }}/storage
+        run: |
+          node db/migrate.ts --forms
+          node db/migrate.ts --forms | tee "$RUNNER_TEMP/forms.log"
+          grep -F '様式 assessment: v1（変わっていません）' "$RUNNER_TEMP/forms.log"
+          npm run forms:assets -- --pdf-only
+          npm run forms:assets -- --pdf-only | grep -F 'assessment base.pdf: same'
+          npm run forms:rebase -- --dry-run
+      - run: npm run build
+      - name: Verify built site
+        run: |
+          ./node_modules/.bin/vite preview --host 127.0.0.1 --strictPort --port 4173 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          node scripts/verify-hosting.mjs http://127.0.0.1:4173 "$GITHUB_SHA"
+      - name: Build and smoke-test API container
+        if: github.event_name == 'pull_request'
+        run: |
+          docker build --platform linux/amd64 --tag t062-api:ci .
+          bash scripts/smoke-api-container.sh t062-api:ci
+      - name: Upload Hosting build
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hosting-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  deploy:
+    name: Deploy Hosting
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.HOSTING_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: firebase-hosting-live
+      queue: max
+    environment:
+      name: hosting-live-wif
+      url: ${{ vars.FIREBASE_HOSTING_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hosting-${{ github.sha }}
+          path: dist/
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@15.22.3
+      - name: Check latest main and build SHA
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_HOSTING_URL: ${{ vars.FIREBASE_HOSTING_URL }}
+        run: |
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$current_sha" != "$GITHUB_SHA" ]]; then
+            echo "Skipped an older main commit"
+            exit 0
+          fi
+          : "${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID in hosting-live-wif}"
+          [[ "$FIREBASE_HOSTING_URL" == "https://$FIREBASE_PROJECT_ID.web.app" ]]
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import assert from "node:assert/strict";
+            assert.equal(JSON.parse(readFileSync("dist/version.json", "utf8")).sha, process.env.GITHUB_SHA);
+          '
+          echo 'current=true' >> "$GITHUB_OUTPUT"
+      - name: Authenticate to Google Cloud
+        if: steps.release.outputs.current == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.FIREBASE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.FIREBASE_WIF_PROVIDER }}
+          service_account: ${{ vars.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Publish Firebase Hosting
+        if: steps.release.outputs.current == 'true'
+        env:
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID" --non-interactive
+      - name: Verify public HTTPS endpoints
+        if: steps.release.outputs.current == 'true'
+        env:
+          HOSTING_URL: ${{ vars.FIREBASE_HOSTING_URL }}
+        run: node scripts/verify-hosting.mjs "$HOSTING_URL" "$GITHUB_SHA"

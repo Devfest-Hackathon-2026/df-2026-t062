@@ -1,0 +1,28 @@
+.git
+.github
+node_modules
+dist
+.env
+.env.*
+*.pem
+*.key
+*.p12
+service-account*.json
+credentials*.json
+gha-creds-*.json
+.DS_Store
+*.log
+
+# Terraform configuration and local state
+infra/
+
+# 実行に要らないもの（Dockerfile は必要なファイルだけを COPY する）
+docs/
+test/
+src/
+public/
+eval/bench/
+.data/
+# レイアウトの抽出結果は実行時に読まない（大きい）
+forms/tools/
+*.pdf
