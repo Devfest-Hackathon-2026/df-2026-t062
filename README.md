@@ -376,6 +376,7 @@ PR と `main` で、型チェック、様式の確かめ、テスト（PostgreSQ
 | [`docs/欄の一覧.md`](docs/欄の一覧.md) | アセスメントの欄の一覧（fields.json から作る表） |
 | [`docs/DB設計.md`](docs/DB設計.md) | 表と保存の決まり、保存の 3 段、版 |
 | [`docs/API設計.md`](docs/API設計.md) | api の道と、誤りの返し方 |
+| [`docs/再設計/`](docs/再設計/README.md) | 2026-11 の再設計（下書き）。DB の差分、認可、事業所の様式と AI 点検、録音からの書き込みの作り替え。#107〜#115 が使う |
 | [`forms/README.md`](forms/README.md) | 様式のデータと、様式を作る道具 |
 | [`eval/scenario/README.md`](eval/scenario/README.md) | 公開の演習シナリオと正解 |
 | [`eval/bench/README.md`](eval/bench/README.md) | ベンチマーク（採点） |
