@@ -23,7 +23,15 @@ export async function ensurePdf(kind: FormKind): Promise<{ pdf: Uint8Array | nul
   if (!meta.sourceUrl) return { pdf: null, message: `元の PDF がありません（公開されていない様式なので、手元の PDF を ${file} に置いてください）` }
   const res = await fetch(meta.sourceUrl)
   if (!res.ok) throw new Error(`元の PDF を取ってこられませんでした（HTTP ${res.status}）: ${meta.sourceUrl}`)
-  const b = new Uint8Array(await res.arrayBuffer())
+  let b = new Uint8Array(await res.arrayBuffer())
+  if (meta.sourcePages) {
+    if (!meta.sourcePdfSha256 || sha(b) !== meta.sourcePdfSha256) throw new Error(`公式通知の PDF が改訂されています: ${meta.sourceUrl}`)
+    const { PDFDocument } = await import('@pdfme/pdf-lib')
+    const source = await PDFDocument.load(b)
+    const extracted = await PDFDocument.create({ updateMetadata: false })
+    for (const page of await extracted.copyPages(source, meta.sourcePages.map((n) => n - 1))) extracted.addPage(page)
+    b = new Uint8Array(await extracted.save())
+  }
   if (sha(b) !== meta.basePdfSha256) throw new Error(`公式の PDF が、欄の位置を合わせた版と違います（様式が改訂された可能性。欄の位置と対応を作り直して、新しい版にする）: ${meta.sourceUrl}`)
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, b)

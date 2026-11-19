@@ -5,9 +5,11 @@ import { once } from 'node:events'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { after, before, test } from 'node:test'
 import type { AddressInfo } from 'node:net'
 import type { Db } from '../db/pool.ts'
+import type { Storage } from '../api/storage.ts'
 
 const url = process.env.DATABASE_URL
 const skip = url ? false : 'DATABASE_URL がないので飛ばします'
@@ -24,6 +26,7 @@ type AiMode = 'ok' | 'throw' | 'invalid'
 let aiMode: AiMode = 'ok'
 let aiCalls = 0
 let aiProposal: unknown = {}
+let storage: Storage
 
 const call = async (path: string, init: RequestInit & { token?: string } = {}) => {
   const res = await fetch(`${origin}${path}`, {
@@ -157,7 +160,7 @@ before(async () => {
   const { createApiServer } = await import('../api/server.ts')
   const { DevVerifier } = await import('../api/auth.ts')
   const { LocalStorage } = await import('../api/storage.ts')
-  const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-plan-api-')))
+  storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-plan-api-')))
   const server = createApiServer({
     db: async () => db,
     verifier: () => new DevVerifier(),
@@ -293,6 +296,19 @@ test('計画版の作成・読み取りは事業所で絞られ、401・404 を�
   const listed = await call(`/api/clients/${clients.sato}/care-plans`)
   assert.equal(listed.status, 200)
   assert.equal((listed.body as { plans: PlanBody[] }).plans[0].id, plan.id)
+})
+
+test('計画版のPDFは未保存を409、元様式なしを503、事業所外を404にする', { skip }, async () => {
+  let plan = await createPlan(clients.sato)
+  const path = `/api/care-plans/${plan.id}/pdf?form=all`
+  assert.equal((await call(path, { token: '' })).status, 401)
+  assert.equal((await call(path, { token: OTHER })).status, 404)
+  assert.equal((await call(path)).status, 409)
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  const unavailable = await call(path)
+  assert.equal(unavailable.status, 503, JSON.stringify(unavailable.body))
+  assert.equal((unavailable.body as { error: string }).error, 'form_unavailable')
+  assert.equal((await call(`/api/care-plans/${plan.id}/pdf?form=4`)).status, 400)
 })
 
 test('計画版が違えば書類も seq も混ざらず、第1表は作成後にアセスメントを直しても変わらない', { skip }, async () => {
@@ -507,4 +523,67 @@ test('前の計画版からは新しい ID で写し、版番号と series を�
   assert.notEqual(copy.needs?.[0].id, firstPlan.needs?.[0].id, '改定版は新しい stable ID')
   assert.notEqual(copy.needs?.[0].shortGoals[0].services[0].id, firstPlan.needs?.[0].shortGoals[0].services[0].id)
   assert.equal(copy.plan1?.['plan.intentionAnalysis'], firstPlan.plan1?.['plan.intentionAnalysis'], '第1表の値も写す')
+})
+
+test('PDFは第1→2→3表の保存値だけを出し、確定後も再現し、長文を422にする', { skip }, async () => {
+  const { PDFDocument } = await import('@pdfme/pdf-lib')
+  const { createHash } = await import('node:crypto')
+  const { readSeed } = await import('../forms/admin/files.ts')
+  const { registerVersion, readVersion, basePdfPath } = await import('../db/forms.ts')
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  // テストは公式PDFや通信に依存しない。公式と同じ座標のbindingsを合成PDFに印字する。
+  const blank = await PDFDocument.create({ updateMetadata: false })
+  blank.addPage([841.89, 595.276]).drawText('SYNTHETIC FORM', { x: 10, y: 580, size: 6 })
+  const bytes = await blank.save()
+  const sha = createHash('sha256').update(bytes).digest('hex')
+  for (const no of [1, 2, 3]) {
+    const version = await registerVersion(db, { ...readSeed(`care_plan_${no}`), basePdfSha256: sha }, { publish: true })
+    await storage.writeOnce('forms', basePdfPath(await readVersion(db, version.versionId)), bytes, 'application/pdf')
+  }
+  let plan = await createPlan(clients.sato)
+  for (const no of [2, 3] as const) {
+    const doc = await call(`/api/documents/${planDoc(plan, no).documentId}`)
+    assert.equal((doc.body as { document: { fields: Record<string, { value: string }> } }).document.fields['person.name'].value, plan.plan1!['person.name'])
+  }
+  plan = ((await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })).body as { plan: PlanBody }).plan
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  assert.equal((await patch(`/api/documents/${planDoc(plan, 1).documentId}/fields`, {
+    changes: [{ key: 'plan.overallPolicy', base: null, value: '未保存の方針' }],
+  })).status, 200)
+  const all = await call(`/api/care-plans/${plan.id}/pdf?form=all`)
+  assert.equal(all.status, 200, JSON.stringify(all.body))
+  const loading = getDocument({
+    data: new Uint8Array(all.body as ArrayBuffer),
+    standardFontDataUrl: fileURLToPath(new URL('../node_modules/pdfjs-dist/standard_fonts/', import.meta.url)),
+  })
+  const pdf = await loading.promise
+  assert.equal(pdf.numPages, 3)
+  const texts: string[] = []
+  for (let no = 1; no <= 3; no++) texts.push((await (await pdf.getPage(no)).getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(''))
+  assert.ok(!texts.join('').includes('未保存の方針'))
+  assert.ok(texts[1].includes('入浴介助'))
+  assert.ok(!texts[0].includes('入浴介助'))
+  await loading.destroy()
+  // 第1表の初期コピーを後から直しても、別書類へ自動同期しない。
+  const renamed = await patch(`/api/documents/${planDoc(plan, 1).documentId}/fields`, {
+    changes: [{ key: 'person.name', base: plan.plan1!['person.name'], value: '見本 改定名' }],
+  })
+  assert.equal(renamed.status, 200)
+  const independent = await call(`/api/documents/${planDoc(plan, 2).documentId}`)
+  assert.notEqual((independent.body as { document: { fields: Record<string, { value: string }> } }).document.fields['person.name'].value, '見本 改定名')
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  assert.equal((await post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: plan.lockVersion })).status, 200)
+  assert.equal((await call(`/api/care-plans/${plan.id}/pdf?form=2`)).status, 200)
+  const audit = await db.query("SELECT detail FROM audit_events WHERE action = 'care_plan.pdf' AND detail->>'planId' = $1", [plan.id])
+  assert.equal(audit.rows.length, 2)
+  assert.ok(!JSON.stringify(audit.rows).includes('入浴介助'))
+
+  const long = await createPlan(clients.sato)
+  assert.equal((await patch(`/api/documents/${planDoc(long, 1).documentId}/fields`, {
+    changes: [{ key: 'plan.overallPolicy', base: null, value: '長すぎる文章'.repeat(1000) }],
+  })).status, 200)
+  assert.equal((await savePlan(long)).status, 200)
+  const overflow = await call(`/api/care-plans/${long.id}/pdf?form=1`)
+  assert.equal(overflow.status, 422, JSON.stringify(overflow.body))
+  assert.equal((overflow.body as { error: string }).error, 'overflow')
 })

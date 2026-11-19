@@ -79,9 +79,9 @@ test('GET /api/form-kinds: 種類と、その事業所で使える様式があ�
     ['assessment', 'アセスメント', true, 'one', null, true],
     ['admission', '入院時情報提供書', false, 'one', 'assessment', true],
     // 第1〜3表は #90 で足した。全体の様式をまだ登録していないので、ここでは使えない
-    ['care_plan_1', '居宅サービス計画書 第1表', false, 'many', 'assessment', false],
-    ['care_plan_2', '居宅サービス計画書 第2表', false, 'many', null, false],
-    ['care_plan_3', '週間サービス計画表 第3表', false, 'many', null, false],
+    ['care_plan_1', '居宅サービス計画書 第1表', false, 'many', 'assessment', true],
+    ['care_plan_2', '居宅サービス計画書 第2表', false, 'many', null, true],
+    ['care_plan_3', '週間サービス計画表 第3表', false, 'many', null, true],
   ])
   const { REQUIRED_ASSESS } = await import('../core/fields.ts')
   assert.deepEqual(r.body.kinds[0].required, REQUIRED_ASSESS, '必須の欄は form_kinds.required（最初の行は fields.json の required.assess と同じ）')

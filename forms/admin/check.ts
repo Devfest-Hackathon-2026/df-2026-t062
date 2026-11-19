@@ -9,7 +9,7 @@ import { FIELD_LIST } from '../../core/fields.ts'
 import { checkVersion } from '../../db/forms.ts'
 import { readSeed, seedKinds } from './files.ts'
 
-const FIELDS_FORM = { assessment: 'assess', admission: 'adm' } as const
+const FIELDS_FORM: Record<string, string> = { assessment: 'assess', admission: 'adm', care_plan_1: 'cp1', care_plan_2: 'cp2', care_plan_3: 'cp3' }
 const defined = new Map(FIELD_LIST.map((f) => [f.key, f]))
 const sample = JSON.parse(readFileSync(new URL('../samples/見本_花子.json', import.meta.url), 'utf8')) as Record<string, unknown>
 let failed = false

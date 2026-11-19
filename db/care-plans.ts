@@ -602,16 +602,33 @@ export async function createCarePlan(db: Db, staff: Staff, clientId: string, inp
     }
 
     if (source) {
-      // 第1表は前の計画版の今の値を写す（アセスメントから写した値より優先する）
-      const sourceDoc1 = source.documents.find((d) => d.formNo === 1)
-      const targetDoc1 = sourceDoc1 ? await loadFormDef(c, sourceDoc1.formVersionId) : null
-      if (sourceDoc1) {
-        const allowed = new Set(targetDoc1?.keys ?? [])
-        for (const [key, f] of Object.entries(await readFields(c, sourceDoc1.documentId))) {
-          if (allowed.has(key)) await writeField(c, staff.officeId, clientId, docIds[1], key, f.value, 'cm', staff.id)
+      // 各表の独立した値をそれぞれ写す。第2/3表の射影は次の保存で構造から作る。
+      for (const sourceDoc of source.documents) {
+        const target = (await c.query('SELECT template_version_id FROM documents WHERE id = $1', [docIds[sourceDoc.formNo]])).rows[0]
+        const allowed = new Set((await loadFormDef(c, target.template_version_id)).keys)
+        for (const [key, f] of Object.entries(await readFields(c, sourceDoc.documentId))) {
+          if (allowed.has(key) && !['plan.needs', 'plan.weekly', 'plan.nonWeeklyServices'].includes(key)) {
+            await writeField(c, staff.officeId, clientId, docIds[sourceDoc.formNo], key, f.value, 'cm', staff.id)
+          }
         }
       }
       await copyStructure(c, source, plan.id as string)
+    } else {
+      // 作成時だけの初期コピー。以後はどの表の値も自動同期しない。
+      const firstFields = await readFields(c, docIds[1])
+      const assessment = (await c.query(
+        "SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment' ORDER BY seq DESC LIMIT 1",
+        [clientId, staff.officeId],
+      )).rows[0]
+      const assessmentFields = assessment ? await readFields(c, assessment.id) : {}
+      for (const formNo of [2, 3] as const) {
+        const target = (await c.query('SELECT template_version_id FROM documents WHERE id = $1', [docIds[formNo]])).rows[0]
+        const allowed = new Set((await loadFormDef(c, target.template_version_id)).keys)
+        for (const key of ['person.name', 'plan.createdDate', 'dailySchedule']) {
+          const field = firstFields[key] ?? assessmentFields[key]
+          if (field && allowed.has(key)) await writeField(c, staff.officeId, clientId, docIds[formNo], key, field.value, 'cm', staff.id)
+        }
+      }
     }
 
     await audit(c, staff, staff.officeId, 'care_plan.create', { clientId, documentId: docIds[1] }, {
@@ -894,20 +911,22 @@ async function bumpPlan(c: Tx, planId: string) {
 
 /** 第2表の plan.needs に射影する形（stable ID は入れない） */
 function needsProjection(needs: NeedView[]) {
+  const period = (p: { periodText: string | null, periodFrom: string | null, periodTo: string | null }) =>
+    p.periodText?.trim() || (p.periodFrom || p.periodTo ? `${p.periodFrom ?? ''}〜${p.periodTo ?? ''}` : '')
   return needs.map((n) => ({
     need: n.need,
     longGoal: n.longGoal.goal,
-    longGoalPeriod: n.longGoal.periodText ?? '',
+    longGoalPeriod: period(n.longGoal),
     shortGoals: n.shortGoals.map((g) => ({
       goal: g.goal,
-      period: g.periodText ?? '',
+      period: period(g),
       services: g.services.map((s) => ({
         content: s.content,
         insured: s.insured,
         kind: s.kind ?? '',
         provider: s.provider ?? '',
         frequency: s.frequency ?? '',
-        period: s.periodText ?? '',
+        period: period(s),
       })),
     })),
   }))
@@ -1042,6 +1061,37 @@ export async function confirmCarePlan(db: Db, staff: Staff, planId: string, base
       plan: await getCarePlan(c, staff.officeId, planId),
       confirmation: { id: confirmation.id as string, snapshotSha256: hash, confirmedAt: new Date(confirmation.confirmed_at).toISOString() },
     }
+  })
+}
+
+/** PDF は保存済みの3表だけから作る。編集中の構造や確定と食い違う版は出力しない。 */
+export async function carePlanPdfSources(db: Db, staff: Staff, planId: string) {
+  return tx(db, async (c) => {
+    const initial = await getCarePlan(c, staff.officeId, planId)
+    await c.query('SELECT id FROM care_plans WHERE id = $1 AND office_id = $2 FOR UPDATE', [planId, staff.officeId])
+    const view = await getCarePlan(c, staff.officeId, planId)
+    const saved = (await c.query('SELECT saved_structure FROM care_plans WHERE id = $1', [planId])).rows[0].saved_structure
+    if (!saved || canonical(saved) !== canonical({ needs: view.needs, slots: view.slots })) throw new PlanUnsavedChanges()
+    const sources: { formNo: 1 | 2 | 3, documentId: string, revisionId: string, rev: number, formVersionId: string, values: Record<string, unknown> }[] = []
+    for (const document of view.documents) {
+      await c.query('SELECT id FROM documents WHERE id = $1 FOR UPDATE', [document.documentId])
+      const revision = (await c.query('SELECT id, rev, template_version_id, "values" FROM revisions WHERE document_id = $1 ORDER BY rev DESC LIMIT 1', [document.documentId])).rows[0]
+      if (!revision) throw new PlanUnsavedChanges()
+      sources.push({
+        formNo: document.formNo, documentId: document.documentId, revisionId: String(revision.id),
+        rev: Number(revision.rev), formVersionId: revision.template_version_id, values: revision.values,
+      })
+    }
+    if (sources.length !== 3) throw new PlanUnsavedChanges()
+    if (view.status !== 'draft') {
+      const confirmation = (await c.query('SELECT * FROM care_plan_confirmations WHERE plan_id = $1', [planId])).rows[0]
+      if (!confirmation || sources.some((s) => String(confirmation[`document_${s.formNo}_revision_id`]) !== s.revisionId) ||
+          canonical(confirmation.snapshot.plan1) !== canonical(sources[0].values) ||
+          canonical(confirmation.snapshot.needs) !== canonical(view.needs) ||
+          canonical(confirmation.snapshot.slots) !== canonical(view.slots)) throw new PlanUnsavedChanges()
+      if (createHash('sha256').update(canonical(confirmation.snapshot)).digest('hex') !== confirmation.snapshot_sha256) throw new PlanUnsavedChanges()
+    }
+    return { clientId: initial.clientId, sources }
   })
 }
 

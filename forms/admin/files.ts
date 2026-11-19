@@ -12,6 +12,9 @@ export interface FormMeta {
   title: string
   publisher: string | null
   sourceUrl: string | null
+  /** 公開通知から様式だけを取り出す場合の、元ファイルのハッシュと1始まりページ番号 */
+  sourcePdfSha256?: string
+  sourcePages?: number[]
   basePdfSha256: string
   pages: FormPage[]
 }
