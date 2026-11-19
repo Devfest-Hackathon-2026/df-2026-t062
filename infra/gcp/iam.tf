@@ -193,6 +193,14 @@ resource "google_project_iam_member" "api_vertex" {
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# 責任者が職員を登録する・サイト管理者が最初の責任者を登録するときに、api が Identity Platform のアカウントを作る（#109）。
+# 画面からのアカウント作成は禁止のまま（identity.tf）。プロジェクト単位のロールで、アカウントごとには絞れない
+resource "google_project_iam_member" "api_firebaseauth_admin" {
+  project = var.project_id
+  role    = "roles/firebaseauth.admin"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 resource "google_project_iam_member" "worker_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"

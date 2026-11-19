@@ -31,13 +31,16 @@ export class NotFound extends Error {}
 export class BadRequest extends Error {}
 /** 画面が見ていた値・様式の版が、サーバーで変わっていた（409。画面は読み直す） */
 export class Conflict extends Error {}
+/** 役割では許していても、その相手にはできない操作（403。責任者が自分を止めるなど） */
+export class Forbidden extends Error {}
 
-// ---------- ケアマネ ----------
+// ---------- 職員 ----------
 
+/** ログインした職員。止めた職員（disabled_at あり）は null（リクエストのたびに DB から読むので、止めたらすぐ効く） */
 export async function staffByAuth(db: Q, authUid: string, email?: string, allowEmailMatch = false): Promise<Staff | null> {
   const sql = `SELECT s.id, s.office_id, s.name, s.email, s.role, o.name AS office_name
                FROM staff s JOIN offices o ON o.id = s.office_id
-               WHERE s.auth_uid = $1 ${allowEmailMatch ? 'OR (s.email IS NOT NULL AND s.email = $2)' : ''} LIMIT 1`
+               WHERE (s.auth_uid = $1 ${allowEmailMatch ? 'OR (s.email IS NOT NULL AND s.email = $2)' : ''}) AND s.disabled_at IS NULL LIMIT 1`
   const r = await db.query(sql, allowEmailMatch ? [authUid, email ?? ''] : [authUid])
   const s = r.rows[0]
   return s ? { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name } : null

@@ -1,13 +1,28 @@
 # API 設計
 
-本体は [`api/app.ts`](../api/app.ts)（Hono）。`/api/health.json` のほかは、毎回 `Authorization: Bearer <Identity Platform の ID トークン>` を確かめ、ログインしているケアマネの事業所で絞る。worker の道（`/tasks/*`）は api には置かない（[`worker/app.ts`](../worker/app.ts)）。
+本体は [`api/app.ts`](../api/app.ts)（Hono）。worker の道（`/tasks/*`）は api には置かない（[`worker/app.ts`](../worker/app.ts)）。
+
+## 入口の確かめ方（権限）
+
+役割と権限表は [再設計/14_認可.md](再設計/14_認可.md)。権限表はコードの [`api/permissions.ts`](../api/permissions.ts) にだけ置く。入口はそれぞれ「操作」を 1 つ宣言する（下の表の「操作」の列）。宣言のない入口は `test/authz.test.ts` で落ちる。
+
+| 入口 | 宣言 | 確かめること |
+|---|---|---|
+| 職員の入口（`/api/...`。責任者の入口は `/api/office/...`） | `care.work`・`staff.manage`・`form.manage` | 1. `Authorization: Bearer <Identity Platform の ID トークン>` の uid が `staff` にいて、止めていない（だめなら 401）。2. 読み書きする行の `office_id` が職員の事業所と同じ（ほかの事業所は 404。リクエストの値は使わない）。3. 職員の役割が、宣言した操作を許す（403） |
+| サイト管理者の入口（`/api/admin/...`） | `site.manage` | トークンがなければ 401。uid が `site_admins` になければ 403。利用者の情報を持つ表は読まない |
+| ログインなしの入口 | `public` | `/api/health.json` と、ローカルの置き場だけの開発用の 2 つ（期限つきの署名で確かめる。本番の置き場では 404） |
+
+- 役割と止めたかどうかは、リクエストのたびに DB の `staff` から読む（止めたり役割を変えたりしたら、次のリクエストから効く）。
+- 3 の操作の確かめは、行を読む前に入口で行う。役割が許さない操作は、行がどの事業所のものでも 403 になる（ほかの事業所の行があるかどうかは分からない）。
 
 ## 道の一覧
 
+### 職員の入口（操作は `care.work`）
+
 | メソッドとパス | すること | 主な応答 |
 |---|---|---|
-| `GET /api/health.json` | 動いているか（DB も Firebase も使わない） | `{status:"ok", source:"api"}` |
-| `GET /api/me` | ログインしているケアマネと事業所 | `{staff}` |
+| `GET /api/health.json` | 動いているか（DB も Firebase も使わない）。`public` | `{status:"ok", source:"api"}` |
+| `GET /api/me` | ログインしている職員と事業所、役割でできる操作 | `{staff:{id, officeId, name, email, role, officeName, operations}}` |
 | `GET /api/clients?q=&sort=updated\|name` | 利用者の一覧（氏名・性別・状況・要介護度・必須の入力数・次の訪問・新規か） | `{clients}` |
 | `POST /api/clients` | 利用者を追加（`{name, sex?, status?}`）。空のアセスメントも作る | `201 {id, assessmentId}` |
 | `GET /api/clients/:id` | 利用者・書類・処理中のジョブ | `{client, jobs}` |
@@ -23,8 +38,29 @@
 | `POST /api/clients/:id/recordings` | 録音を始める（`{mime}`）。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
 | `POST /api/recordings/:id/complete` | 送り終わり（`{durationMs}`）。置き場にあるのを確かめてジョブを積む | `202 {jobId, status}` |
 | `GET /api/clients/:id/jobs` | 処理中・終わって15分以内・最後のジョブ。AI が処理できなかった欄と形式不一致で反映できなかった欄を `incompleteFields` の key 配列で返す。PDF プレビューは該当欄を赤枠にする | `{jobs:[{status, step, etaSeconds, batch:{changes, kept}, incompleteFields, errorKind}]}` |
-| `PUT /api/dev-upload/:token` | ローカルの置き場だけ。Cloud Storage と同じ約束（Content-Range、途中は 308） | — |
-| `GET /api/dev-files/forms/*?from=&until=&sig=` | ローカルの置き場だけ。期限つきの URL（署名つき URL と同じ約束。署名が違う・期限の外なら 403） | 画像・PDF |
+
+### 責任者の入口（操作は `staff.manage`）
+
+| メソッドとパス | すること | 主な応答 |
+|---|---|---|
+| `GET /api/office/staff` | 自分の事業所の職員（止めた人も含む） | `{staff:[{id, name, email, role, disabled, createdAt}]}` |
+| `POST /api/office/staff` | 職員を登録する（`{name, email, role: "caremanager"\|"admin"}`。メールは小文字にそろえる）。Identity Platform のアカウントがなければ作る（`accountCreated: true`）。パスワードはここでは決めない: 画面が本人に、パスワードを決めるメール（Firebase の `sendPasswordResetEmail`）を送る。そのアカウントが、もうどこかの職員かサイト管理者なら 409（`already_registered`）。`audit_events` に `staff.create` を残す | `201 {staff, accountCreated}` |
+| `PATCH /api/office/staff/:id` | 職員を止める・戻す・役割を変える（`{role?: "caremanager"\|"admin", disabled?: boolean}`。どちらか 1 つは要る）。ほかの事業所の職員は 404。自分を止める・自分の役割を変えるのは 403。`audit_events` に `staff.update` を残す | `{staff}` |
+
+### サイト管理者の入口（操作は `site.manage`）
+
+| メソッドとパス | すること | 主な応答 |
+|---|---|---|
+| `GET /api/admin/me` | ログインしているサイト管理者 | `{siteAdmin:{name, email}}` |
+| `GET /api/admin/offices` | 事業所の一覧（名前だけ） | `{offices:[{id, name, createdAt}]}` |
+| `POST /api/admin/offices` | 事業所と、その最初の責任者を登録する（`{name, phone?, fax?, admin:{name, email}}`）。責任者のアカウントの作り方と 409 は `POST /api/office/staff` と同じ。409 のときは事業所も作らない。`audit_events` に `office.create` を残す | `201 {office, admin, accountCreated}` |
+
+### ログインなしの入口（`public`）
+
+| メソッドとパス | すること | 主な応答 |
+|---|---|---|
+| `PUT /api/dev-upload/:token` | ローカルの置き場だけ（本番の置き場では 404）。置き場が出した送信の token で確かめる。Cloud Storage と同じ約束（Content-Range、途中は 308） | — |
+| `GET /api/dev-files/forms/*?from=&until=&sig=` | ローカルの置き場だけ（本番の置き場では 404）。期限つきの URL（署名つき URL と同じ約束。署名が違う・期限の外なら 403） | 画像・PDF |
 
 ## 入力の確かめ
 
@@ -36,11 +72,11 @@
 
 | 状態 | いつ |
 |---|---|
-| 401 | トークンがない・正しくない |
-| 403 | トークンは正しいが、どの事業所にも登録されていない |
-| 404 | ない、またはほかの事業所のもの |
+| 401 | トークンがない・正しくない。職員の入口で、`staff` にいない・止めた（サイト管理者も、職員の入口では 401） |
+| 403 | 役割が、入口の宣言した操作を許さない。責任者が自分を止める・自分の役割を変える。サイト管理者の入口で、`site_admins` にいない |
+| 404 | ない、ほかの事業所のもの、ID の形でない |
 | 400 | 入力の形・値が違う |
-| 409 | 録音がまだ置き場に届いていない。直しの元にした値（`base`）や様式の版が、サーバーで変わっていた（画面は読み直す） |
+| 409 | 登録しようとしたアカウントが、もう職員かサイト管理者（`already_registered`）。録音がまだ置き場に届いていない。直しの元にした値（`base`）や様式の版が、サーバーで変わっていた（画面は読み直す） |
 | 503 | 様式の元の PDF が置き場にない（`npm run forms:assets`） |
 | 500 | それ以外。ログには道と誤りの種類だけを出す（中身は出さない） |
 

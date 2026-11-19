@@ -1,6 +1,6 @@
 import { createAdaptorServer } from '@hono/node-server'
 import { createApp, type ApiDeps } from './app.ts'
-import { defaultVerifier, type Verifier } from './auth.ts'
+import { defaultAccounts, defaultVerifier, type Accounts, type Verifier } from './auth.ts'
 import type { ChatModel } from './chat.ts'
 import { CloudTasksQueue, LocalQueue, type Queue } from './queue.ts'
 import { defaultStorage, type Storage } from './storage.ts'
@@ -8,6 +8,7 @@ import { defaultStorage, type Storage } from './storage.ts'
 /** 依存は使うときに作る（health では DB にも Firebase にもつながない） */
 export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
   let verifier: Verifier | undefined
+  let accounts: Accounts | undefined
   let storage: Storage | undefined
   let queue: Queue | undefined
   let chat: Promise<ChatModel> | undefined
@@ -29,6 +30,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
     },
     chat: () => (chat ??= defaultChat(env)),
     devAuth: env.AUTH_MODE === 'dev',
+    accounts: () => (accounts ??= defaultAccounts(env)),
   }
 }
 

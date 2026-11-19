@@ -57,7 +57,7 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 | `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。`forms` は様式の元の PDF とページの画像（`pdf/<元の PDF の sha256>/…`）。api は読むだけで、画面には期限つきの URL で渡す |
 | `queue.tf` | Cloud Tasksキュー `t062-jobs`、Schedulerジョブ `t062-reconcile` | 同時配信3、最大5回まで間隔を広げて再試行。Schedulerは5分ごとにworkerの `/tasks/reconcile` をOIDCつきでPOST |
 | `worker.tf` | workerのCloud Runサービス、DB移行のCloud Runジョブ | workerは非公開（`invoker_iam_disabled=false`）、タイムアウト1800秒、最小0・最大2、1 CPU・1Gi。移行ジョブはapiの実行用サービスアカウントで動き、DB の移行と様式の登録（`node db/migrate.ts --forms`）を流す |
-| `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは管理者が作る |
+| `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは、責任者が職員を登録するとき・サイト管理者が最初の責任者を登録するときに api が作る（本人はパスワードを決めるメールから決める） |
 | `budget.tf` | 予算アラート（任意） | `billing_account_id` を指定したときだけ作る |
 | `main.tf` | apiを更新、サービスアカウント追加 | apiは公開（`invoker_iam_disabled=true`。アプリがFirebaseのIDトークンを検証する）、1Gi、タイムアウト900秒、環境変数つき |
 
@@ -65,7 +65,7 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 
 | サービスアカウント | 付与する権限 |
 |---|---|
-| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読むだけ）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser`、`aiplatform.user`（書き方の相談で Gemini を呼ぶ） |
+| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読むだけ）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser`、`aiplatform.user`（書き方の相談で Gemini を呼ぶ）、`firebaseauth.admin`（職員を登録するときに Identity Platform のアカウントを作る。プロジェクト単位） |
 | `cloud-run-worker-runtime`（worker） | `cloudsql.client` と `cloudsql.instanceUser`、`source` に `storage.objectViewer`、`work` に `storage.objectAdmin`、`aiplatform.user`、Speech-to-Text（既定は `roles/speech.client`。workerが認識器を作る場合は変数 `worker_speech_role` を `roles/speech.editor` にする）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
 | Speech-to-Text service agent | `source` に `storage.bucketViewer` と `storage.objectViewer`。BatchRecognize が `gs://` の録音を直接読むため、API有効化で作られる `service-<project-number>@gcp-sa-speech.iam.gserviceaccount.com` に録音バケットだけの読み取り権限を付ける |
 | `tasks-invoker`（Cloud TasksとSchedulerのOIDCの身元） | workerのCloud Runサービスにだけ `run.invoker` |

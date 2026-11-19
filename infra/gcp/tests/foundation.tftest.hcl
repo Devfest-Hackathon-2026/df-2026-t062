@@ -237,6 +237,8 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket_iam_member.worker_work.role == "roles/storage.objectAdmin" &&
       google_project_iam_member.worker_vertex.role == "roles/aiplatform.user" &&
       google_project_iam_member.api_vertex.role == "roles/aiplatform.user" &&
+      google_project_iam_member.api_firebaseauth_admin.role == "roles/firebaseauth.admin" &&
+      google_project_iam_member.api_firebaseauth_admin.member == "serviceAccount:cloud-run-api-runtime@mock-project.iam.gserviceaccount.com" &&
       google_project_iam_member.worker_speech.role == "roles/speech.client"
     )
     error_message = "Runtime roles must stay as scoped as designed."
