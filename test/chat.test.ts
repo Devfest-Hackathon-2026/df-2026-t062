@@ -212,7 +212,7 @@ test('書き換えの案の確かめ: 文章の欄は文、選択肢の欄は選
   assert.equal(checkProposal(doc, 'consulter', '{"relationship":"子の配偶者","name":"春子","sex":"女"}'), '相談者（今の値と同じです）')
   assert.equal(checkProposal(doc, 'consulter', '{name: 春子'), '相談者（JSON として読めません）')
   assert.equal(checkProposal(doc, 'consulter', '{"name":"春子","nickname":"はる"}'), '相談者（入れられない値です）')
-  assert.equal(checkProposal(doc, 'family.genogram', '{}'), '家族構成図（図の欄は案を出せません）')
+  assert.equal(checkProposal(doc, 'family.genogram', '{}'), '家族構成図（入れられない値です）')
   assert.equal(checkProposal(doc, 'no.such.key', 'x'), 'no.such.key（その欄はありません）')
   assert.equal(checkProposal(doc, 'complaint.family', ''), '相談内容（介護者・家族）（文が空です）')
   assert.equal(checkProposal({ kind: 'admission', fields: {} }, 'complaint.person', '別の文'), '相談内容（本人）（この書類にない欄です）')

@@ -1,8 +1,11 @@
+import { diagramSchema, diagramDocument, diagramKinds } from '../../core/diagram/fields.ts'
 // 「書き方を相談する」: ペット（道具を使うエージェント）に書き方を相談する。したこと（作業ログ）を 1 行ずつ出す。書き換えの案は差分のカードで出し、押したときだけ用紙に入れる。
-import { useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react'
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react'
 import { api } from '../lib/api.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
 import { cardAction, historyFor, proposalChanges, type ChatEntry, type ProposalCard } from './petChat.ts'
+
+const Preview = lazy(() => import('../diagram/Preview.tsx'))
 
 interface Props {
   documentId: string | undefined
@@ -11,6 +14,7 @@ interface Props {
   /** 用紙の今の値（画面で直したばかりの値を含む） */
   current: Record<string, unknown>
   onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void
+  onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void>
   /** 用紙のその欄へ移る。移れない書類では undefined */
   onJump?: (key: string) => void
 }
@@ -18,6 +22,10 @@ interface Props {
 let nextId = 1
 
 function DiffLines({ field, before, after }: { field: string, before: unknown, after: unknown }) {
+  if (diagramKinds[field]) {
+    const b = diagramSchema.safeParse(before), a = diagramSchema.safeParse(after)
+    return <Suspense fallback={<p>図を読み込んでいます…</p>}><div>{b.success && <><p>変更前</p><Preview doc={diagramDocument(b.data)} tab={b.data.kind} cropBody /></>}{a.success && <><p>変更案</p><Preview doc={diagramDocument(a.data)} tab={a.data.kind} cropBody /></>}</div></Suspense>
+  }
   const { del, ins } = proposalChanges(field, before, after)
   return (
     <>
@@ -27,7 +35,9 @@ function DiffLines({ field, before, after }: { field: string, before: unknown, a
   )
 }
 
-export function PetChat({ documentId, entries, setEntries, current, onSet, onJump }: Props) {
+export function PetChat({ documentId, entries, setEntries, current, onSet, onDiagramApply, onJump }: Props) {
+  const applyingRef = useRef(false)
+  const [applying, setApplying] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -76,16 +86,29 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onJum
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) void send()
   }
 
-  const press = (entryId: number, card: ProposalCard) => {
+  const press = async (entryId: number, card: ProposalCard) => {
+    if (applyingRef.current) return
+    const startedDoc = documentId
     const id = `${entryId}:${card.key}`
     const a = cardAction(card, current[card.key])
     if (a.kind === 'stale') {
       setStale((prev) => new Set(prev).add(id))
       return
     }
-    onSet(card.key, a.value, card.state === 'ready' ? 'edit' : 'revert')
+    if (diagramKinds[card.key]) {
+      if (!onDiagramApply) { setError('この画面からは図を反映できません。'); return }
+      applyingRef.current = true
+      setApplying(true)
+      try {
+        await onDiagramApply(card.key, a.value, current[card.key] ?? null)
+        if (activeDoc.current !== startedDoc) return
+      } catch (e) {
+        if (activeDoc.current === startedDoc) setError(e instanceof Error ? e.message : '図を反映できませんでした。')
+        return
+      } finally { applyingRef.current = false; setApplying(false) }
+    } else onSet(card.key, a.value, card.state === 'ready' ? 'edit' : 'revert')
     setStale((prev) => { const next = new Set(prev); next.delete(id); return next })
-    setEntries((prev) => prev.map((x) => (x.id !== entryId ? x : { ...x, proposals: x.proposals?.map((p) => (p.key === card.key ? { ...p, state: a.next } : p)) })))
+    setEntries((prev) => prev.map((x) => (x.id !== entryId ? x : { ...x, proposals: x.proposals?.map((p) => (p.key === card.key ? { ...p, state: a.next, ...(diagramKinds[p.key] ? a.next === 'applied' ? { after: a.value } : { before: a.value } : {}) } : p)) })))
   }
 
   return (
@@ -110,10 +133,10 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onJum
                   <DiffLines field={card.key} before={card.before} after={card.after} />
                   <div className="assistant-chat-actions">
                     {card.state === 'ready'
-                      ? <button type="button" className="assistant-chat-apply" onClick={() => press(m.id, card)}><PetIcon name="pencil" />用紙に入れる</button>
+                      ? <button type="button" className="assistant-chat-apply" disabled={applying} onClick={() => void press(m.id, card)}><PetIcon name="pencil" />用紙に入れる</button>
                       : <>
                         <span className="assistant-chat-done"><PetIcon name="check2" />入れました</span>
-                        <button type="button" className="assistant-chat-undo" onClick={() => press(m.id, card)}>戻す</button>
+                        <button type="button" className="assistant-chat-undo" disabled={applying} onClick={() => void press(m.id, card)}>戻す</button>
                       </>}
                   </div>
                   {stale.has(id) && <p className="assistant-error" role="alert">{card.state === 'ready' ? '案を出したあとに、この欄が直されています。もう一度相談してください。' : '入れたあとに、この欄が直されているので戻せません。用紙で直してください。'}</p>}

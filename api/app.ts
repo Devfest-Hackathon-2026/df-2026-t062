@@ -1,3 +1,4 @@
+import { formKeys } from '../core/binding.ts'
 // api の道（Hono）。入口はそれぞれ操作を 1 つ宣言し、宣言に合わせて確かめる（docs/再設計/14_認可.md）。
 //   職員の入口（/api/...。責任者の入口は /api/office/...）: staffRoute。誰か（401）→ どの事業所か（行の office_id。404）→ 操作を許すか（403）
 //   サイト管理者の入口（/api/admin/...）: siteRoute。site_admins にいなければ 403
@@ -239,7 +240,8 @@ export function createApp(deps: ApiDeps) {
   // 書き方の相談。AI が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。同じ利用者のほかの書類も読める。用紙は変えない
   app.post('/api/documents/:id/chat', staffRoute('care.work', async (c, staff, db) => {
     const { messages } = await body(c, ChatInput)
-    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys }
+    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys, editableKeys: [] as string[] }
+    document.editableKeys = formKeys((await forms.versionForOffice(db, staff.officeId, document.formVersionId)).bindings)
     document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
     const others = await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)

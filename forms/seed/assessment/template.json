@@ -4467,6 +4467,17 @@
      "max": 8.5,
      "fit": "horizontal"
     }
+   },
+   {
+    "name": "p2_家族構成図",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 12.629,
+     "y": 34.396
+    },
+    "width": 74.612,
+    "height": 56.092
    }
   ],
   [
@@ -6959,6 +6970,17 @@
      "max": 9,
      "fit": "vertical"
     }
+   },
+   {
+    "name": "p3_家屋見取図",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 118.039,
+     "y": 153.882
+    },
+    "width": 79.763,
+    "height": 103.54
    }
   ],
   [
@@ -8774,6 +8796,17 @@
      "max": 9,
      "fit": "vertical"
     }
+   },
+   {
+    "name": "p4_障害等の部位",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 112.642,
+     "y": 23.001
+    },
+    "width": 85.725,
+    "height": 77.435
    }
   ],
   [

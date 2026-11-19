@@ -1,3 +1,4 @@
+import { diagramKinds } from './diagram/fields.ts'
 // 印字欄の対応（bindings）と、共通の変換。様式ごとの手書きのコードを使わず、対応のデータだけで動く。
 //   renderAll … 欄の値 → 印字欄の文字（PDF・画面の表示）
 //   editSlot  … 印字欄を直した文字 → 欄の値の変更、または断る理由
@@ -31,6 +32,7 @@ export type Cond = { ref?: Ref, is: Test } | { all: Cond[] } | { any: Cond[] }
 export type Action = { set: { ref?: Ref, value: unknown }[] } | { refuse: string }
 
 export type Binding =
+  | { op: 'diagram@1', ui: 'diagram', ref: Ref }
   | { op: 'text@1', ui: 'text' | 'area', ref: Ref, or?: (Ref | { concat: Ref[] })[], prefix?: { text: string, flag: string }, when?: Cond }
   | { op: 'option@1', ui: 'circle' | 'check', ref: Ref, is?: Test, if?: Cond, when?: Cond, edit?: { on: Action, off: Action } }
   | { op: 'symbol@1', ui: 'cell' | 'text', ref: Ref, options: { text: string, value: Scalar }[], when?: Cond }
@@ -333,6 +335,7 @@ export function renderSlot(b: Binding, values: Values): string {
   if ('when' in b && b.when && !holdsCond(values, b.when, b.ref)) return off
   if (b.op !== 'option@1' && b.op !== 'join@1' && conflicts(values, b.ref).length) return off
   switch (b.op) {
+    case 'diagram@1': return isEmpty(getRef(values, b.ref)) ? '' : JSON.stringify(getRef(values, b.ref))
     case 'text@1': {
       const spec = specOf(b.ref)
       let t = ''
@@ -643,6 +646,7 @@ export function editSlot(bindings: Bindings, values: Values, slot: string, text:
 function editBy(b: Binding, values: Values, text: string): EditResult {
   const on = text === 'true' || text === '✓'
   switch (b.op) {
+    case 'diagram@1': return refuse('図の編集画面で変更してください')
     case 'text@1': return editText(b, values, text)
     case 'option@1': return editOption(b, values, on)
     case 'symbol@1': return editSymbol(b, values, text)
@@ -697,6 +701,7 @@ export function checkBindings(bindings: Bindings): string[] {
   }
   for (const [slot, b] of Object.entries(bindings)) {
     refOk(slot, b.ref)
+    if (b.op === 'diagram@1' && (!diagramKinds[b.ref.key] || b.ref.path?.length || b.ui !== 'diagram')) errors.push(`${slot}: 対応する図の欄ではありません`)
     if (b.op === 'option@1' && !b.edit && !canToggle(b.is)) errors.push(`${slot}: 丸・✓ を付け外ししたときの動き（edit）が決まっていない`)
     if (b.op === 'option@1' && !b.is && !b.if) errors.push(`${slot}: 丸・✓ を付ける条件がない`)
     if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) refOk(slot, r)

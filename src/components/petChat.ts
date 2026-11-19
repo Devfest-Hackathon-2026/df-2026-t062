@@ -1,3 +1,4 @@
+import { diagramSchema, diagramKinds, diagramDocument, nextDiagram } from '../../core/diagram/fields.ts'
 // 「書き方を相談する」の決めごと（画面の部品から分けて、テストで確かめる）。
 // やり取りは画面の中だけで持つ（開き直すと消える）。書き換えの案は、ケアマネが押したときだけ用紙に入れる。
 import type { ChatMessage, ChatProposal } from '../../api/chat.ts'
@@ -20,8 +21,15 @@ export const MAX_HISTORY = 40
  */
 export function cardAction(card: ProposalCard, current: unknown): { kind: 'set', value: unknown, next: CardState } | { kind: 'stale' } {
   // まとまりの欄は、項目の並び（DB で並べ替わる）と空の項目を見ずに比べる
-  if (card.state === 'ready') return sameValue(current, card.before) ? { kind: 'set', value: card.after, next: 'applied' } : { kind: 'stale' }
-  return sameValue(current, card.after) ? { kind: 'set', value: card.before ?? null, next: 'ready' } : { kind: 'stale' }
+  const expected = card.state === 'ready' ? card.before : card.after
+  if (!sameValue(current, expected)) return { kind: 'stale' }
+  let value = card.state === 'ready' ? card.after : card.before ?? null
+  if (diagramKinds[card.key]) {
+    const now = diagramSchema.safeParse(current)
+    const target = diagramSchema.safeParse(value)
+    value = nextDiagram(diagramKinds[card.key], diagramDocument(target.success ? target.data : null), now.success ? now.data.revision : 0)
+  }
+  return { kind: 'set', value, next: card.state === 'ready' ? 'applied' : 'ready' }
 }
 
 /** サーバーに送るやり取り（文だけ、古い順、最後の MAX_HISTORY 件） */

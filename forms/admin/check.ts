@@ -19,7 +19,7 @@ for (const kind of seedKinds()) {
   const problems = checkVersion(v)
   const keys = formKeys(v.bindings)
   const fk = FIELDS_FORM[kind]
-  const listed = new Set(FIELD_LIST.filter((f) => f.forms?.[fk] && f.type !== 'image').map((f) => f.key))
+  const listed = new Set(FIELD_LIST.filter((f) => f.forms?.[fk]).map((f) => f.key))
   for (const k of keys) if (!listed.has(k)) problems.push(`対応が読むのに、fields.json の forms.${fk} にない: ${k}`)
   for (const k of listed) if (!keys.includes(k)) problems.push(`fields.json の forms.${fk} にあるのに、対応が読まない: ${k}（${defined.get(k)?.label}）`)
   for (const [k, out] of Object.entries(renderAll(v.bindings, sample))) if (typeof out !== 'string') problems.push(`欄 ${k} の値が文字列でない: ${JSON.stringify(out)}`)

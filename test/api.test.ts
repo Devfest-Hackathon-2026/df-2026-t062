@@ -454,3 +454,30 @@ test('書き方の相談: 入院時情報提供書から、同じ利用者のア
   const lifeHistory = read.filled.find((f) => f.key === 'person.lifeHistory')
   assert.equal(lifeHistory?.value, assessment.fields['person.lifeHistory'].value, 'アセスメントの値を読む')
 })
+
+test('図: 他欄を保持して更新・ページ保存でき、古いbaseや不正なrevisionでは何も上書きしない（#101）', { skip }, async () => {
+  const { blank } = await import('../core/diagram/model.ts')
+  const { nextDiagram } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const drawing = blank()
+  drawing.house.items.push({ id: 'fixture-bed', kind: 'bed', label: '検証用ベッド', x: 40, y: 40, width: 100, height: 70, rotation: 0 })
+  const value = nextDiagram('house', drawing, 0)
+  const patch = (next: unknown, base: unknown) => call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'housing.floorPlan', value: next, base }] }) })
+  const first = await patch(value, null)
+  assert.equal(first.status, 200)
+  const updated = (first.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) assert.deepEqual(updated.fields[key], field)
+  assert.equal(updated.saved['housing.floorPlan'], undefined)
+  assert.equal((await patch({ ...value, revision: 2 }, null)).status, 409)
+  assert.equal((await patch({ ...value, revision: 9 }, value)).status, 400)
+  assert.equal((await patch(null, value)).status, 400)
+  assert.equal((await patch(nextDiagram('family', blank(), 1), value)).status, 400)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 3 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved['housing.floorPlan'].value, value)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+})

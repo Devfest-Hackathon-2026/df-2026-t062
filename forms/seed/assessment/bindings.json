@@ -1221,5 +1221,8 @@
   "p11_23時_本人の活動": {"op":"text@1","ui":"area","ref":{"key":"dailySchedule","path":[{"match":{"time":"23"}},"selfOrWish"]}},
   "p11_23時_家族実施": {"op":"text@1","ui":"area","ref":{"key":"dailySchedule","path":[{"match":{"time":"23"}},"family"]}},
   "p11_23時_サービス実施": {"op":"text@1","ui":"area","ref":{"key":"dailySchedule","path":[{"match":{"time":"23"}},"service"]}},
-  "p11_23時_計画": {"op":"symbol@1","ui":"cell","ref":{"key":"dailySchedule","path":[{"match":{"time":"23"}},"plan"]},"options":[{"text":"✓","value":"✓"},{"text":"○","value":"○"}]}
+  "p11_23時_計画": {"op":"symbol@1","ui":"cell","ref":{"key":"dailySchedule","path":[{"match":{"time":"23"}},"plan"]},"options":[{"text":"✓","value":"✓"},{"text":"○","value":"○"}]},
+  "p2_家族構成図": {"op":"diagram@1","ui":"diagram","ref":{"key":"family.genogram"}},
+  "p3_家屋見取図": {"op":"diagram@1","ui":"diagram","ref":{"key":"housing.floorPlan"}},
+  "p4_障害等の部位": {"op":"diagram@1","ui":"diagram","ref":{"key":"health.bodyMap"}}
 }

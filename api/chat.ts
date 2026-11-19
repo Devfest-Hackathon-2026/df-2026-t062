@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { diagramSchema, diagramKinds, validDiagramUpdate } from '../core/diagram/fields.ts'
 // 「書き方を相談する」のエージェント。AI（Gemini の関数呼び出し）が道具を選んで使い、ケアマネの相談に答える。
 // 道具: 用紙を読む（read_form）、足りない欄（missing_fields）、録音を探す（search_records）、書き換えの案（propose_edit）。
 // 案は返すだけで、用紙は変えない（ケアマネが画面で「用紙に入れる」を押したときに PATCH /fields で入る）。
@@ -25,6 +27,8 @@ export interface ChatDocument {
   fields: Record<string, { value: unknown, by: string }>
   /** 書類の種類の必須の欄（form_kinds.required）。足りない欄の道具が使う */
   required?: RequiredKeys
+  /** The actual published template may not yet contain diagram slots. */
+  editableKeys?: readonly string[]
 }
 export interface ChatRecording { recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }
 
@@ -83,7 +87,7 @@ export const TOOLS: ToolDecl[] = [
   {
     name: 'propose_edit',
     description: '欄の書き換えの案を、ケアマネに出す。用紙には入らない（ケアマネが画面で「用紙に入れる」を押すと入る）。value はその欄の新しい値の全体（一部だけにしない）。文章・選択肢 1 つ・日付の欄は値の文字のまま。まとまり（object・list）・複数選ぶ・数・はい／いいえの欄は、read_form の値と同じ形の JSON の文字列（今の値をもとに、変えるところだけ直す）。通らない案は ok:false と理由と欄の形（shape）を返す',
-    parametersJsonSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
+    parametersJsonSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, baseRevision: { type: 'integer', description: '図の場合は必須。read_formで読んだrevision（空欄は0）' } }, required: ['key', 'value'] },
   },
 ]
 
@@ -94,6 +98,7 @@ export function chatSystem(kind: FormKind, others: FormKind[] = []): string {
     : ''
   return `あなたは、ケアマネジャーが${form}の用紙を書くのを手伝う係（画面の「ペット」）です。道具を使って調べてから、短く、やさしい言葉で答えてください。
 ${otherDocs}
+図を作る・直すと頼まれた場合も、read_formで現在の図とshapeを読み、propose_editで構造化された図を提案する。既存の人物・図形・関係のIDを維持し、追加のみ新しいIDにする。根拠のない人物・関係・障害・間取りを推測しない。不明な点は質問する。baseRevisionは読んだrevision（空欄0）、valueのrevisionはそれに1を足す。図全体の変更を1つの案にまとめる。用紙への反映・保存はケアマネの操作が必要。
 ## 道具の使い方
 1. 利用者のことや用紙の中身を聞かれたら、read_form（用紙）や search_records（録音）で確かめてから答える。道具で見つからないことは「用紙にも録音にも出ていません」と答え、推測で埋めない。
 2. 欄を書いて・直して・短くしてなどと頼まれたら、read_form（欄の名前の語で絞る）でその欄の今の値と形を読み、必要なら search_records で根拠を探してから、propose_edit で案を出す。文章の欄だけでなく、相談者・家族の表などのまとまりの欄や選択肢の欄にも案を出せる。value はその欄の新しい値の全体（まとまりの欄は今の値をもとにした JSON）。頼まれていないのに案を出さない。
@@ -114,10 +119,11 @@ ${PLACEMENT_RULES}`
 
 const show = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
 
-type Shape = { type: string, choices?: string[], format?: string, fields?: Shape[] } & { key?: string, label?: string }
+type Shape = { type: string, choices?: string[], format?: string, fields?: Shape[], schema?: unknown } & { key?: string, label?: string }
 
 /** 欄の形（AI が値を組み立てるための、中の項目・選択肢・日付の書き方） */
 function shapeOf(f: FieldSpec): Shape {
+  if (f.type === 'image' && diagramKinds[f.key]) return { type: 'image', format: `kind=${diagramKinds[f.key]}。空欄はrevision=0。更新時はrevisionを1増やす。`, schema: z.toJSONSchema(diagramSchema.options.find((s) => s.shape.kind.value === diagramKinds[f.key])!, { unrepresentable: 'any' }) }
   const c = choicesOf(f)
   if (f.type === 'object' || f.type === 'list') {
     return { type: f.type, fields: subFieldsOf(f).map((s) => ({ key: s.key, label: s.label, ...shapeOf(s) })) }
@@ -155,13 +161,14 @@ function readForm(doc: ChatDocument, query: unknown, other = false) {
   const empty: { key: string, label: string, type: string, shape?: Shape }[] = []
   for (const f of formFields(doc.kind)) {
     if (!pick(f)) continue
+    if (f.type === 'image' && doc.editableKeys && !doc.editableKeys.includes(f.key)) continue
     const v = doc.fields[f.key]?.value
     const printed = PRINTED[doc.kind].get(f.key)
     // 形は語で絞ったときだけ（全部の欄の選択肢を返すと長くなる）
     const shape = ts.length && !TEXT_TYPES.has(f.type) ? shapeOf(f) : undefined
     if (!isEmpty(v)) filled.push({ key: f.key, label: f.label, type: f.type, value: show(v), ...(shape ? { shape } : {}), ...(printed ? { printed } : {}) })
     else if (TEXT_TYPES.has(f.type)) emptyText.push({ key: f.key, label: f.label, ...(f.note ? { note: f.note } : {}) })
-    else if (f.type !== 'image') empty.push({ key: f.key, label: f.label, type: f.type, shape: shapeOf(f) })
+    else empty.push({ key: f.key, label: f.label, type: f.type, shape: shapeOf(f) })
   }
   // ほかの書類には案を出せないので、空の欄は返さない
   if (other) return { document: FORM_NAME[doc.kind], filled }
@@ -206,16 +213,21 @@ function parseValue(f: FieldSpec, raw: unknown): { value: unknown } | string {
 }
 
 /** 書き換えの案を確かめる。通れば案、通らなければ理由（欄の名前つき） */
-export function checkProposal(doc: ChatDocument, key: unknown, value: unknown): ChatProposal | string {
+export function checkProposal(doc: ChatDocument, key: unknown, value: unknown, baseRevision?: unknown): ChatProposal | string {
   const f = typeof key === 'string' ? BY_KEY.get(key) : undefined
   if (!f) return `${String(key)}（その欄はありません）`
   if (!f.forms?.[FORM_KEY[doc.kind]]) return `${f.label}（この書類にない欄です）`
-  if (f.type === 'image') return `${f.label}（図の欄は案を出せません）`
+  if (f.type === 'image' && doc.editableKeys && !doc.editableKeys.includes(f.key)) return `${f.label}（この様式の版には図の欄がありません）`
   const parsed = parseValue(f, value)
   if (typeof parsed === 'string') return `${f.label}（${parsed}）`
   const after = f.type === 'object' || f.type === 'list' ? compactValue(parsed.value) : parsed.value
   if (!validValue(f.key, after)) return `${f.label}（入れられない値です）`
   const before = doc.fields[f.key]?.value ?? null
+  if (f.type === 'image') {
+    const base = diagramSchema.safeParse(before)
+    if (baseRevision !== (base.success ? base.data.revision : 0)) return `${f.label}（図の元の版が一致しません）`
+    if (after === null || !validDiagramUpdate(f.key, after, before)) return `${f.label}（図の版または内容が正しくありません）`
+  }
   if (sameValue(before, after)) return `${f.label}（今の値と同じです）`
   return { key: f.key, label: f.label, before, after }
 }
@@ -275,11 +287,11 @@ export async function runChat({ model, document, others = [], recordings, messag
         response = searchRecords(recordings, args.query)
         step(`録音を探しました「${String(args.query ?? '').trim()}」（${(response.total as number | undefined) ?? 0} 件）`)
       } else if (name === 'propose_edit') {
-        const r = checkProposal(document, args.key, args.value)
+        const r = checkProposal(document, args.key, args.value, args.baseRevision)
         if (typeof r === 'string') {
           const f = typeof args.key === 'string' ? BY_KEY.get(args.key) : undefined
           // 欄はあるのに値が通らないときは、欄の形を返して組み立て直させる
-          response = { ok: false, reason: r, ...(f?.forms?.[FORM_KEY[document.kind]] && f.type !== 'image' ? { shape: shapeOf(f) } : {}) }
+          response = { ok: false, reason: r, ...(f?.forms?.[FORM_KEY[document.kind]] ? { shape: shapeOf(f) } : {}) }
           step(`案を作れませんでした：${r}`)
         } else {
           proposals.set(r.key, r)

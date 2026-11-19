@@ -1,10 +1,12 @@
 // 用紙の 1 ページ。ページの画像の上に、欄（文字・丸・✓・表のマス・差分の欄）を重ねる（キャンバスの Main・PadWork と同じ作り）。
 //   橙: 今回 AI が書いて未保存　黄: 直して未保存　青: 入力できる欄
-import { Fragment, memo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, lazy, Suspense, memo, useRef, useState, type CSSProperties } from 'react'
 import { scaled, useFitScale } from './fit.ts'
 import { DiffField } from '../components/DiffField.tsx'
 import type { DocState } from './useDocument.ts'
 import { fsz, pc, pos, W, H, type PageLayout, type SlotView } from './layout.ts'
+
+const DiagramSlot = lazy(() => import('../diagram/DiagramSlot.tsx'))
 
 const ORANGE: CSSProperties = {
   background: 'rgba(240,160,64,0.18)',
@@ -165,7 +167,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
       {noImage || !image
         ? <div className="pimg" role="img" aria-label={page.title} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
         : <img className="pimg" src={image} alt={`${page.title}`} style={dim ? { opacity: 0.55 } : undefined} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
-      {page.slots.map((s) => (s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
+      {page.slots.map((s) => (s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (
         <div role="dialog" aria-label={cell.label} style={{

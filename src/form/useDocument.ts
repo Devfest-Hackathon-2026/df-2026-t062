@@ -400,6 +400,19 @@ export function useDocument(docId: string | undefined) {
     schedule()
   }, [pending, schedule])
 
+  /** A modal must keep the base captured when opened, even after another editor saves. */
+  const applyDiagram = useCallback(async (key: string, value: unknown, base: unknown) => {
+    if (!docId || !await flush()) throw new Error('先に未送信の変更を確認してください')
+    if (active.current !== docId) throw new Error('開いている書類が変わりました')
+    try {
+      const result = await api.patch(docId, [{ key, value, base }])
+      publish(result.document)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) throw new Error('この図は別の操作で更新されました。変更を控え、図を開き直してください。')
+      throw e
+    }
+  }, [docId, flush, publish])
+
   const resolveConflict = useCallback((key: string, reapply: boolean) => {
     const draft = pending.conflicts.get(key)
     if (!draft) return
@@ -487,7 +500,7 @@ export function useDocument(docId: string | undefined) {
     conflicts, resolveConflict,
     hasLocalEdits: slotQueue.length + fieldQueue.size + conflicts.size + drafts.size + eraDrafts.size > 0,
     hasPdf: assets?.hasPdf ?? false,
-    edit, type, commit, display, reasons, setValue, flush, reload: load, diffOf, imageOf, imageFailed,
+    edit, type, commit, display, reasons, setValue, applyDiagram, flush, reload: load, diffOf, imageOf, imageFailed,
     adoptSurvey: async (body: Parameters<typeof api.importSurvey>[1]) => {
       if (!docId || active.current !== docId) throw new Error('用紙が切り替わりました。')
       const result = await api.importSurvey(docId, body)

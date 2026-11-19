@@ -26,7 +26,7 @@ interface Props {
   onIdentity: (sha256: string, confirmed: boolean) => void
   verifiedSources: ReadonlySet<string>
   /** 書き方の相談（開いている書類。アセスメントでも入院時情報提供書でも使える） */
-  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void }
+  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void> }
 }
 
 export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
@@ -122,7 +122,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
           </>
         )}
         {menu === 'revise' && (
-          <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet}
+          <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
             onJump={available ? jump : undefined} />
         )}
         {error && <p className="assistant-error" role="alert">{error}</p>}
