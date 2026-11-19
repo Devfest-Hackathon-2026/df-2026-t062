@@ -10,7 +10,6 @@ import { api } from '../lib/api.ts'
 import { linkProps } from '../lib/router.tsx'
 import { COMING_SOON_LABEL, newDocMenu } from '../lib/docMenu.ts'
 import { countText } from '../components/Chrome.tsx'
-import { SyncDifferences } from '../components/SyncDifferences.tsx'
 
 export function PadWork({ clientId }: { clientId: string }) {
   const [tab, setTab] = useState<'assessment' | 'admission'>('assessment')
@@ -157,9 +156,6 @@ export function PadWork({ clientId }: { clientId: string }) {
         <div role="alert" className="strip" style={{ background: '#FFF4E5' }}>録音を端末に保存できていません。録音を止めるまで、この画面を開いたままにしてください。</div>
       )}
       <div ref={scroller} onScroll={onScroll} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '16px 16px 150px', position: 'relative' }}>
-        {client?.documents.find((d) => d.kind === 'admission') && (
-          <SyncDifferences targetId={client.documents.find((d) => d.kind === 'admission')!.id} refreshKey={state.doc} hasLocalEdits={state.hasLocalEdits} onApplied={() => { void state.reload(); setSaved(false) }} />
-        )}
         {isAdm && doc && (
           <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 12, padding: '12px 14px', fontSize: 15, lineHeight: 1.5, marginBottom: 12 }}>
             <span aria-hidden="true" style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 7, background: '#1F2430', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AI</span>
@@ -194,13 +190,8 @@ export function PadWork({ clientId }: { clientId: string }) {
       </div>
 
       {state.notice && (
-        <div role="status" style={{ position: 'absolute', left: '50%', bottom: state.sync ? 170 : 118, transform: 'translateX(-50%)', zIndex: 8, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 15, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', maxWidth: '90%' }}>
+        <div role="status" style={{ position: 'absolute', left: '50%', bottom: 118, transform: 'translateX(-50%)', zIndex: 8, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 15, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', maxWidth: '90%' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>{state.notice}
-        </div>
-      )}
-      {state.sync && (
-        <div role="status" style={{ position: 'absolute', left: '50%', bottom: 118, transform: 'translateX(-50%)', zIndex: 8, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 15, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', whiteSpace: 'nowrap' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>{state.sync}にも反映しました
         </div>
       )}
 

@@ -1,8 +1,8 @@
-// fields.json の属性（shared・requires・detail・rowKey）の指す先が実在するか。見本と正解のデータが型どおりか。
+// fields.json の属性（requires・detail・rowKey）の指す先が実在するか。見本と正解のデータが型どおりか。
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { BY_KEY, FIELD_LIST, SHARED_KEYS, choicesOf, subFieldsOf, type FieldSpec } from '../core/fields.ts'
+import { BY_KEY, FIELD_LIST, choicesOf, subFieldsOf, type FieldSpec } from '../core/fields.ts'
 import { validValue } from '../core/schema.ts'
 
 /** 前提の値が、前提の欄の値として持てるか */
@@ -64,15 +64,6 @@ test('list にはどれも rowKey があり、"order" か中の項目を指す',
     const k = subFieldsOf(f).find((s) => s.key === f.rowKey)
     assert.ok(k, `${where}: rowKey ${f.rowKey} が中の項目にない`)
     assert.ok(['enum', 'text', 'date', 'number'].includes(k.type), `${where}: rowKey ${f.rowKey} が 1 つの値の項目でない`)
-  }
-})
-
-test('shared の欄は 1 つの値の欄で、アセスメントと入院時情報提供書の両方にある', () => {
-  assert.ok(SHARED_KEYS.size > 0)
-  for (const k of SHARED_KEYS) {
-    const f = BY_KEY.get(k)!
-    assert.ok(!['object', 'list', 'image'].includes(f.type), `${k}: shared は 1 つの値の欄だけ`)
-    assert.ok(f.forms?.assess && f.forms?.adm, `${k}: アセスメントと入院時情報提供書の両方に使われていない`)
   }
 })
 

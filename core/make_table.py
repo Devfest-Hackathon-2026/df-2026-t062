@@ -54,8 +54,8 @@ def check(d):
             for fk in f.get("forms", {}):
                 if fk not in d["forms"]:
                     errors.append(f"{k}: forms のキーが不明 {fk}")
-        if "shared" in f and (not top or f["shared"] is not True or f.get("type") in ("object", "list", "image")):
-            errors.append(f"{where}.{k}: shared は、いちばん上の段の 1 つの値の欄に true で付ける")
+        if "shared" in f:
+            errors.append(f"{where}.{k}: shared はやめた（2026-11-18。値は書類ごとに持つ）")
         if f.get("type") == "list":
             rk = f.get("rowKey")
             if not rk:
@@ -132,8 +132,6 @@ def requires_text(req):
 def relation_text(f):
     """すべての欄の表の「関係」の列"""
     out = []
-    if f.get("shared"):
-        out.append("書類をまたいで同じ値")
     if f.get("requires"):
         out.append("前提: " + requires_text(f["requires"]))
     if f.get("rowKey"):
@@ -203,7 +201,7 @@ def main():
     per_form = collections.Counter(fk for f in fields for fk in f.get("forms", {}))
     lines.append("- 様式ごとの欄の数: " + "、".join(f"{d['forms'][k]['name'].split('（')[0]} {per_form[k]}" for k in FORM_ORDER))
     shared = [f for f in fields if len(f.get("forms", {})) >= 2]
-    lines.append(f"- 2 つ以上の様式で使い回す欄: {len(shared)}（そのうち、書類をまたいで 1 つの値で持つ基本情報（`shared`）: {sum(1 for f in fields if f.get('shared'))}）")
+    lines.append(f"- 2 つ以上の様式で使い回す欄: {len(shared)}（値は書類ごとに持ち、書類を作るときに写す）")
     req_assess = set(required_keys(d, "assess"))
     lines.append(f"- アセスメントの必須の欄: {len(req_assess)}")
     lines.append("")
@@ -234,16 +232,6 @@ def main():
     lines.append("## 欄どうしの関係（プログラムが使う属性）")
     lines.append("")
     lines.append("属性の意味は [`データの定義.md`](データの定義.md) の「欄の書き方」。")
-    lines.append("")
-    lines.append("### 書類をまたいで同じ値（`shared`）")
-    lines.append("")
-    lines.append("どの書類で直しても、その利用者の全部の書類に入る。")
-    lines.append("")
-    lines.append("| 欄 | key |")
-    lines.append("|---|---|")
-    for f in fields:
-        if f.get("shared"):
-            lines.append(f"| {esc(f['label'])} | `{f['key']}` |")
     lines.append("")
     lines.append("### 前提（`requires`）")
     lines.append("")

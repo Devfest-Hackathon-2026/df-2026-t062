@@ -113,7 +113,7 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
       date: new Date(r.recorded_at).toISOString().slice(0, 10),
       scenes: [{ id: `r${i + 1}`, kind: '会話', entries: (r.utterances as Utterance[]).map((u) => ({ id: u.id, speaker: u.person ?? u.speaker, text: u.text })) }],
     }))
-    const curRows = (await db.query('SELECT key, value, by FROM field_values WHERE client_id = $1 AND (document_id = $2 OR document_id IS NULL)', [job.client_id, job.document_id])).rows
+    const curRows = (await db.query('SELECT key, value, by FROM field_values WHERE document_id = $1', [job.document_id])).rows
     const current = Object.fromEntries(curRows.map((r) => [r.key, r.value]))
     // 1 回目 = この書類に、まだ AI の書き込み（録音・見本）がない
     const first = !(await db.query("SELECT 1 FROM batches WHERE document_id = $1 AND kind IN ('recording', 'seed') AND (job_id IS NULL OR job_id <> $2) LIMIT 1", [job.document_id, jobId])).rows.length

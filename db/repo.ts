@@ -1,8 +1,6 @@
 // DB の読み書き。api と worker が共通に使う。どの関数も office_id で絞る。
 import { planBatch, sameValue, type BatchPlan, type CurrentField } from '../core/apply-batch.ts'
 import { saveOneHunk } from '../core/diff.ts'
-import { syncStatus, type SyncStatus } from '../core/document-sync.ts'
-import { isShared, spec } from '../core/fields.ts'
 import { slotPages, type FormKind } from '../core/form.ts'
 import type { SurveySource } from '../core/survey-import.ts'
 import { countRequired } from '../core/required.ts'
@@ -29,20 +27,10 @@ export interface DocumentView {
   batches: { id: string, kind: string, label: string, createdAt: string, changes: number, kept: number }[]
 }
 
-export interface SyncDifference {
-  key: string
-  label: string
-  source: unknown
-  target: unknown
-  status: SyncStatus
-}
-
 export class NotFound extends Error {}
 export class BadRequest extends Error {}
 /** 画面が見ていた値・様式の版が、サーバーで変わっていた（409。画面は読み直す） */
 export class Conflict extends Error {}
-
-const KIND_LABEL: Record<FormKind, string> = { assessment: 'アセスメント', admission: '入院時情報提供書' }
 
 // ---------- ケアマネ ----------
 
@@ -77,12 +65,14 @@ export interface ClientSummary {
   assessmentId: string | null
 }
 
-async function valuesOf(db: Q, officeId: string, clientIds: string[], kind: FormKind = 'assessment') {
+/** 主な書類（form_kinds.is_primary）の値。利用者一覧の要介護度・入力の進み具合はここから出す */
+async function valuesOf(db: Q, officeId: string, clientIds: string[]) {
   const r = await db.query(
     `SELECT f.client_id, f.key, f.value FROM field_values f
-     LEFT JOIN documents d ON d.id = f.document_id
-     WHERE f.office_id = $1 AND f.client_id = ANY($2::uuid[]) AND (f.document_id IS NULL OR d.kind = $3)`,
-    [officeId, clientIds, kind],
+     JOIN documents d ON d.id = f.document_id
+     JOIN form_kinds k ON k.key = d.kind AND k.is_primary
+     WHERE f.office_id = $1 AND f.client_id = ANY($2::uuid[])`,
+    [officeId, clientIds],
   )
   const out = new Map<string, Record<string, unknown>>()
   for (const row of r.rows) {
@@ -98,7 +88,7 @@ export async function listClients(db: Q, officeId: string, opts: { q?: string, s
   const r = await db.query(
     `SELECT c.id, c.name, c.status, c.next_visit_at, c.updated_at, d.id AS assessment_id,
             EXISTS (SELECT 1 FROM revisions v WHERE v.document_id = d.id) AS has_rev
-     FROM clients c LEFT JOIN documents d ON d.client_id = c.id AND d.kind = 'assessment'
+     FROM clients c LEFT JOIN documents d ON d.client_id = c.id AND d.kind = (SELECT key FROM form_kinds WHERE is_primary)
      WHERE c.office_id = $1 AND c.archived_at IS NULL ${q ? 'AND c.name ILIKE $2' : ''}
      ORDER BY ${opts.sort === 'name' ? 'c.name ASC' : 'c.updated_at DESC'}`,
     q ? [officeId, `%${q}%`] : [officeId],
@@ -127,17 +117,19 @@ export async function createClient(db: Db, staff: Staff, input: { name: string, 
       'INSERT INTO clients (office_id, name, status, created_by) VALUES ($1,$2,$3,$4) RETURNING id',
       [staff.officeId, input.name, input.status ?? '在宅', staff.id],
     )).rows[0]
-    const version = await publishedVersionId(c, staff.officeId, 'assessment')
+    // 主な書類（アセスメント）も一緒に作る
+    const kind = (await c.query('SELECT key FROM form_kinds WHERE is_primary')).rows[0].key as FormKind
+    const version = await publishedVersionId(c, staff.officeId, kind)
     const doc = (await c.query(
-      "INSERT INTO documents (office_id, client_id, kind, template_version_id, created_by) VALUES ($1,$2,'assessment',$3,$4) RETURNING id",
-      [staff.officeId, client.id, version, staff.id],
+      'INSERT INTO documents (office_id, client_id, kind, template_version_id, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [staff.officeId, client.id, kind, version, staff.id],
     )).rows[0]
     const initial: [string, unknown][] = [['person.name', input.name]]
     if (input.sex) initial.push(['person.sex', input.sex])
     for (const [key, value] of initial) {
       await c.query(
-        "INSERT INTO field_values (office_id, client_id, document_id, key, value, by, updated_by) VALUES ($1,$2,NULL,$3,$4,'cm',$5)",
-        [staff.officeId, client.id, key, JSON.stringify(value), staff.id],
+        "INSERT INTO field_values (office_id, client_id, document_id, key, value, by, updated_by) VALUES ($1,$2,$3,$4,$5,'cm',$6)",
+        [staff.officeId, client.id, doc.id, key, JSON.stringify(value), staff.id],
       )
       await c.query("INSERT INTO document_saved (document_id, key, value, by) VALUES ($1,$2,$3,'cm')", [doc.id, key, JSON.stringify(value)])
     }
@@ -166,16 +158,14 @@ export async function getClient(db: Q, officeId: string, clientId: string) {
 async function lockDocument(c: Tx, officeId: string, documentId: string) {
   const d = (await c.query('SELECT id, client_id, kind, template_version_id FROM documents WHERE id = $1 AND office_id = $2 FOR UPDATE', [documentId, officeId])).rows[0]
   if (!d) throw new NotFound()
-  // 基本情報の欄はほかの書類と同じ値なので、利用者の行も止める
-  await c.query('SELECT id FROM clients WHERE id = $1 FOR UPDATE', [d.client_id])
   return { id: d.id as string, clientId: d.client_id as string, kind: d.kind as FormKind, versionId: d.template_version_id as string }
 }
 
-async function readFields(db: Q, documentId: string, clientId: string): Promise<Record<string, FieldRow>> {
+/** 書類の今の値（どの値も、どれか 1 つの書類に属する） */
+async function readFields(db: Q, documentId: string): Promise<Record<string, FieldRow>> {
   const r = await db.query(
-    `SELECT key, value, ai_value, by, batch_id, updated_at, cite FROM field_values
-     WHERE client_id = $2 AND (document_id = $1 OR document_id IS NULL)`,
-    [documentId, clientId],
+    'SELECT key, value, ai_value, by, batch_id, updated_at, cite FROM field_values WHERE document_id = $1',
+    [documentId],
   )
   const out: Record<string, FieldRow> = {}
   for (const row of r.rows) {
@@ -194,7 +184,7 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
   const d = (await db.query('SELECT id, client_id, kind, template_version_id FROM documents WHERE id = $1 AND office_id = $2', [documentId, officeId])).rows[0]
   if (!d) throw new NotFound()
   const [fields, saved, rev, batches] = await Promise.all([
-    readFields(db, d.id, d.client_id),
+    readFields(db, d.id),
     readSaved(db, d.id),
     db.query('SELECT coalesce(max(rev), 0) AS rev FROM revisions WHERE document_id = $1', [d.id]),
     db.query('SELECT id, kind, label, created_at, jsonb_array_length(changes) AS n, jsonb_array_length(kept) AS k FROM batches WHERE document_id = $1 ORDER BY created_at DESC LIMIT 10', [d.id]),
@@ -227,78 +217,16 @@ export async function otherDocuments(db: Q, officeId: string, clientId: string, 
   return Promise.all(r.rows.map((x) => getDocument(db, officeId, x.id as string)))
 }
 
-/** 入院時情報提供書と、その元になったアセスメントの差異。 */
-export async function getSyncDifferences(db: Q, officeId: string, targetId: string): Promise<SyncDifference[]> {
-  const target = (await db.query("SELECT id, client_id, template_version_id FROM documents WHERE id = $1 AND office_id = $2 AND kind = 'admission'", [targetId, officeId])).rows[0]
-  if (!target) throw new NotFound()
-  const source = (await db.query("SELECT id, template_version_id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment'", [target.client_id, officeId])).rows[0]
-  if (!source) throw new NotFound()
-  const [sourceFields, targetFields, sourceSaved, reviews, copy] = await Promise.all([
-    readFields(db, source.id, target.client_id),
-    readFields(db, target.id, target.client_id),
-    readSaved(db, source.id),
-    db.query('SELECT key, source_value FROM document_sync_reviews WHERE office_id = $1 AND source_document_id = $2 AND target_document_id = $3', [officeId, source.id, target.id]),
-    db.query("SELECT changes FROM batches WHERE office_id = $1 AND document_id = $2 AND kind = 'copy' ORDER BY created_at ASC LIMIT 1", [officeId, target.id]),
-  ])
-  const sourceKeys = await allowedKeys(db, source.template_version_id)
-  const targetKeys = await allowedKeys(db, target.template_version_id)
-  const reviewed = new Map<string, unknown>(reviews.rows.map((r) => [r.key, r.source_value]))
-  const initial = new Map<string, unknown>(((copy.rows[0]?.changes ?? []) as { key: string, after: unknown }[]).map((x) => [x.key, x.after]))
-  const out: SyncDifference[] = []
-  for (const key of targetKeys) {
-    if (isShared(key) || !sourceKeys.has(key)) continue
-    const from = sourceFields[key]?.value ?? null
-    const to = targetFields[key]?.value ?? null
-    const status = syncStatus(from, to, reviewed.has(key) ? reviewed.get(key) : initial.get(key) ?? null, sourceSaved[key]?.value ?? null)
-    if (status) out.push({ key, label: spec(key)?.label ?? key, source: from, target: to, status })
-  }
-  return out.sort((a, b) => a.label.localeCompare(b.label, 'ja'))
-}
-
-/** 値を見た利用者の判断。両書類の値を確認し直してから反映する。 */
-export async function decideSyncDifference(db: Db, staff: Staff, targetId: string, input: { key: string, decision: 'apply' | 'keep', source: unknown, target: unknown }) {
-  return tx(db, async (c) => {
-    const target = (await c.query("SELECT id, client_id, template_version_id FROM documents WHERE id = $1 AND office_id = $2 AND kind = 'admission'", [targetId, staff.officeId])).rows[0]
-    if (!target) throw new NotFound()
-    const source = (await c.query("SELECT id, template_version_id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment'", [target.client_id, staff.officeId])).rows[0]
-    if (!source) throw new NotFound()
-    for (const id of [source.id as string, target.id as string].sort()) await c.query('SELECT id FROM documents WHERE id = $1 FOR UPDATE', [id])
-    await c.query('SELECT id FROM clients WHERE id = $1 FOR UPDATE', [target.client_id])
-    const sourceKeys = await allowedKeys(c, source.template_version_id)
-    const targetKeys = await allowedKeys(c, target.template_version_id)
-    if (isShared(input.key) || !sourceKeys.has(input.key) || !targetKeys.has(input.key)) throw new BadRequest('書類間で比較できない欄です')
-    const fromFields = await readFields(c, source.id, target.client_id)
-    const toFields = await readFields(c, target.id, target.client_id)
-    const saved = await readSaved(c, source.id)
-    const from = fromFields[input.key]?.value ?? null
-    const to = toFields[input.key]?.value ?? null
-    if (!sameValue(from, input.source) || !sameValue(to, input.target)) throw new Conflict(input.key)
-    if (!sameValue(from, saved[input.key]?.value ?? null)) throw new Conflict('source_unsaved')
-    if (sameValue(from, to)) throw new Conflict('already_equal')
-    if (input.decision === 'apply') {
-      await writeField(c, staff.officeId, target.client_id, target.id, input.key, from, 'cm', staff.id)
-      await afterEdit(c, staff, { id: target.id, clientId: target.client_id }, [input.key], { [input.key]: from })
-    }
-    await c.query(
-      `INSERT INTO document_sync_reviews (office_id, source_document_id, target_document_id, key, source_value, reviewed_by)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (source_document_id, target_document_id, key)
-       DO UPDATE SET source_value = EXCLUDED.source_value, reviewed_by = EXCLUDED.reviewed_by, reviewed_at = now()`,
-      [staff.officeId, source.id, target.id, input.key, from === null ? null : JSON.stringify(from), staff.id],
-    )
-    await audit(c, staff, staff.officeId, `document.sync.${input.decision}`, { clientId: target.client_id, documentId: target.id }, { key: input.key })
-  })
-}
-
 /** 書類の欄として持てる key（その書類の様式の版の印字欄が読む key） */
 async function allowedKeys(db: Q, versionId: string): Promise<Set<string>> {
   return new Set((await loadFormDef(db, versionId)).keys)
 }
 
 async function writeField(c: Tx, officeId: string, clientId: string, documentId: string, key: string, value: unknown, by: Who, staffId: string | null, extra: { aiValue?: unknown, batchId?: string, cite?: unknown } = {}) {
-  const docId = isShared(key) ? null : documentId
+  const docId = documentId
   const prev = (await c.query(
-    'SELECT value, by, batch_id FROM field_values WHERE client_id = $1 AND document_id IS NOT DISTINCT FROM $2 AND key = $3',
-    [clientId, docId, key],
+    'SELECT value, by, batch_id FROM field_values WHERE document_id = $1 AND key = $2',
+    [docId, key],
   )).rows[0]
   if (prev) {
     await c.query(
@@ -307,7 +235,7 @@ async function writeField(c: Tx, officeId: string, clientId: string, documentId:
     )
   }
   if (value === null || value === undefined) {
-    await c.query('DELETE FROM field_values WHERE client_id = $1 AND document_id IS NOT DISTINCT FROM $2 AND key = $3', [clientId, docId, key])
+    await c.query('DELETE FROM field_values WHERE document_id = $1 AND key = $2', [docId, key])
     return
   }
   await c.query(
@@ -331,16 +259,17 @@ async function writeField(c: Tx, officeId: string, clientId: string, documentId:
 /** 書類の欄の値だけ（by などを除く） */
 const plainValues = (fields: Record<string, FieldRow>): Values => Object.fromEntries(Object.entries(fields).map(([k, f]) => [k, f.value]))
 
-/** 直したあと: 利用者の名前・更新日時、記録、基本情報が入るほかの書類の名前 */
-async function afterEdit(c: Tx, staff: Staff, d: { id: string, clientId: string }, keys: string[], values: Values) {
+/** 直したあと: 利用者の名前（主な書類の氏名を直したときだけ）・更新日時、記録 */
+async function afterEdit(c: Tx, staff: Staff, d: { id: string, clientId: string, kind: FormKind }, keys: string[], values: Values) {
   if (keys.includes('person.name') && typeof values['person.name'] === 'string' && values['person.name'].trim()) {
-    await c.query('UPDATE clients SET name = $1 WHERE id = $2', [values['person.name'].trim(), d.clientId])
+    await c.query(
+      'UPDATE clients SET name = $1 WHERE id = $2 AND EXISTS (SELECT 1 FROM form_kinds WHERE key = $3 AND is_primary)',
+      [values['person.name'].trim(), d.clientId, d.kind],
+    )
   }
   await c.query('UPDATE clients SET updated_at = now() WHERE id = $1', [d.clientId])
   await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
   await audit(c, staff, staff.officeId, 'document.edit', { clientId: d.clientId, documentId: d.id }, { fields: keys.length })
-  if (!keys.some(isShared)) return []
-  return (await c.query('SELECT kind FROM documents WHERE client_id = $1 AND id <> $2', [d.clientId, d.id])).rows.map((r) => KIND_LABEL[r.kind as FormKind])
 }
 
 export interface FieldChange {
@@ -362,7 +291,7 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
     const d = await lockDocument(c, staff.officeId, documentId)
     const allowed = await allowedKeys(c, d.versionId)
     const saved = await readSaved(c, d.id)
-    const fields = await readFields(c, d.id, d.clientId)
+    const fields = await readFields(c, d.id)
     for (const ch of changes) {
       if (ch.surveySource && d.kind !== 'assessment') throw new BadRequest('認定調査票はアセスメントに取り込めます')
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
@@ -376,7 +305,8 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
       await writeField(c, staff.officeId, d.clientId, d.id, ch.key, ch.value, by, staff.id, { cite: ch.surveySource })
     }
     const values = applyChanges(plainValues(fields), changes.map((ch) => ({ key: ch.key, value: ch.value })))
-    return { syncedTo: await afterEdit(c, staff, d, changes.map((ch) => ch.key), values) }
+    await afterEdit(c, staff, d, changes.map((ch) => ch.key), values)
+    return {}
   })
 }
 
@@ -392,7 +322,7 @@ export async function applySlotEdits(db: Db, staff: Staff, documentId: string, f
     const d = await lockDocument(c, staff.officeId, documentId)
     if (d.versionId !== formVersionId) throw new Conflict('form_version')
     const form = await loadFormDef(c, d.versionId)
-    const fields = await readFields(c, d.id, d.clientId)
+    const fields = await readFields(c, d.id)
     const before = plainValues(fields)
     let values = before
     const results: SlotEditResult[] = []
@@ -405,8 +335,8 @@ export async function applySlotEdits(db: Db, staff: Staff, documentId: string, f
     }
     const changed = [...new Set([...Object.keys(before), ...Object.keys(values)])].filter((k) => !sameValue(before[k] ?? null, values[k] ?? null))
     for (const k of changed) await writeField(c, staff.officeId, d.clientId, d.id, k, values[k] ?? null, 'cm', staff.id)
-    const syncedTo = changed.length ? await afterEdit(c, staff, d, changed, values) : []
-    return { results, syncedTo }
+    if (changed.length) await afterEdit(c, staff, d, changed, values)
+    return { results }
   })
 }
 
@@ -419,7 +349,7 @@ export type SaveRequest =
 export async function saveDocument(db: Db, staff: Staff, documentId: string, req: SaveRequest) {
   return tx(db, async (c) => {
     const d = await lockDocument(c, staff.officeId, documentId)
-    const fields = await readFields(c, d.id, d.clientId)
+    const fields = await readFields(c, d.id)
     const saved = await readSaved(c, d.id)
     const form = await loadFormDef(c, d.versionId)
     const next = new Map<string, SavedRow | null>()
@@ -520,7 +450,7 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     }
     const d = await lockDocument(c, input.officeId, input.documentId)
     const allowed = await allowedKeys(c, d.versionId)
-    const fields = await readFields(c, d.id, d.clientId)
+    const fields = await readFields(c, d.id)
     const current: Record<string, CurrentField> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { value: v.value, by: v.by }]))
     const system = Object.fromEntries(Object.entries(input.system ?? {}).filter(([k]) => allowed.has(k)).map(([k, v]) => [k, { value: v }]))
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
@@ -551,12 +481,11 @@ async function finishJob(c: Tx, input: ApplyInput, batchId: string | null, plan:
   if (!result.rows.length) throw new Conflict('job_lease')
 }
 
-/** 入院時情報提供書を作る。アセスメントに値がある欄を写す（写したあとは別の値。基本情報だけはつながったまま） */
+/** 入院時情報提供書を作る。アセスメントに値がある欄を、基本情報も含めて写す（写したあとはつながない。その様式だけの欄は写さない） */
 export async function createAdmission(db: Db, staff: Staff, clientId: string) {
   return tx(db, async (c) => {
     const assess = (await c.query("SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment' FOR UPDATE", [clientId, staff.officeId])).rows[0]
     if (!assess) throw new NotFound()
-    await c.query('SELECT id FROM clients WHERE id = $1 FOR UPDATE', [clientId])
     const existing = (await c.query("SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'admission'", [clientId, staff.officeId])).rows[0]
     if (existing) return { id: existing.id as string, created: false }
     const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
@@ -565,10 +494,10 @@ export async function createAdmission(db: Db, staff: Staff, clientId: string) {
       "INSERT INTO documents (office_id, client_id, kind, template_version_id, created_by) VALUES ($1,$2,'admission',$3,$4) RETURNING id",
       [staff.officeId, clientId, version, staff.id],
     )).rows[0]
-    const src = await readFields(c, assess.id, clientId)
+    const src = await readFields(c, assess.id)
     const proposed: Record<string, { value: unknown }> = {}
     for (const key of (await loadFormDef(c, version)).keys) {
-      if (isShared(key) || !src[key]) continue
+      if (key.startsWith('local.') || !src[key]) continue
       proposed[key] = { value: src[key].value }
     }
     const settings: Record<string, unknown> = { 'office.name': office?.name, 'office.careManagerName': staff.name, 'office.phone': office?.phone, 'office.fax': office?.fax }

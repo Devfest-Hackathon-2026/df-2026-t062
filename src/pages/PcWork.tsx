@@ -12,7 +12,6 @@ import { api } from '../lib/api.ts'
 import { linkProps } from '../lib/router.tsx'
 import { COMING_SOON_LABEL, newDocMenu } from '../lib/docMenu.ts'
 import { PetHelper } from '../components/PetHelper.tsx'
-import { SyncDifferences } from '../components/SyncDifferences.tsx'
 import { countText, downloadBlob } from '../components/Chrome.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
@@ -250,11 +249,6 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
               {incomplete.status === 'partial' ? 'AI が一部の項目を処理できませんでした。用紙の内容を確認してください。' : 'AI 処理を完了できませんでした。録音は保存されています。担当者に確認してください。'}
             </div>}
             {state.error && <div role="alert" style={{ margin: `0 auto 12px`, maxWidth: maxW, color: '#A3261C', fontSize: 13 }}>うまく送れませんでした（{state.error}）。少し待ってから、もう一度直してください。</div>}
-            {client?.documents.find((d) => d.kind === 'admission') && (
-              <div style={{ margin: '0 auto', maxWidth: maxW }}>
-                <SyncDifferences targetId={client.documents.find((d) => d.kind === 'admission')!.id} refreshKey={state.doc} hasLocalEdits={state.hasLocalEdits} onApplied={() => { void state.reload(); setDocSaved(false) }} />
-              </div>
-            )}
             {isAdm && doc && (
               <div style={{ margin: '0 auto 14px', maxWidth: maxW }}>
                 <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 10, padding: '10px 14px', fontSize: 13, lineHeight: 1.5 }}>
@@ -274,13 +268,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           </div>
           {assessmentReady && candidateError && <div className="pc-pet-candidate-error" role="alert">{candidateError}</div>}
           {state.notice && (
-            <div role="status" style={{ position: 'absolute', left: '50%', bottom: state.sync ? 68 : 20, transform: 'translateX(-50%)', zIndex: 7, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 13, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', maxWidth: '90%' }}>
+            <div role="status" style={{ position: 'absolute', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 7, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 13, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', maxWidth: '90%' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>{state.notice}
-            </div>
-          )}
-          {state.sync && (
-            <div role="status" style={{ position: 'absolute', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 7, display: 'inline-flex', alignItems: 'center', gap: 8, background: '#1F2430', color: '#FFFFFF', borderRadius: 999, padding: '10px 18px', fontSize: 13, boxShadow: '0 8px 24px rgba(20,24,32,0.25)', whiteSpace: 'nowrap' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>{state.sync}にも反映しました
             </div>
           )}
         </section>

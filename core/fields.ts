@@ -15,8 +15,6 @@ export interface FieldSpec {
   source?: string[]
   forms?: Record<string, string>
   note?: string
-  /** 書類をまたいで同じ値（基本情報） */
-  shared?: boolean
   /** この欄に意味があるときの前提。欄なら欄の key、中の項目なら同じまとまりの中の項目の key → 値の一覧 */
   requires?: Record<string, (string | boolean | number)[]>
   /** 選択肢にない言い方を入れる詳しい欄（同じまとまりの中の項目の key） */
@@ -53,13 +51,6 @@ export function choicesOf(f: Pick<FieldSpec, 'choices'>): string[] {
 export function subFieldsOf(f: FieldSpec): FieldSpec[] {
   return f.fields ?? (f.of ? FIELDS.types[f.of]?.fields ?? [] : [])
 }
-
-/**
- * 書類をまたいで 1 つの値として持つ基本情報（fields.json の shared）。どの書類で直しても、全部の書類に入る。
- */
-export const SHARED_KEYS = new Set(FIELD_LIST.filter((f) => f.shared).map((f) => f.key))
-
-export const isShared = (key: string) => SHARED_KEYS.has(key)
 
 /** アセスメントの必須の欄（配列の要素は「どれか 1 つに値があればよい」組） */
 export const REQUIRED_ASSESS: (string | string[])[] = FIELDS.required.assess.keys
