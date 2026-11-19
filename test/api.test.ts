@@ -472,6 +472,7 @@ test('図: 他欄を保持して更新・ページ保存でき、古いbaseや�
   assert.equal(updated.saved['housing.floorPlan'], undefined)
   assert.equal((await patch({ ...value, revision: 2 }, null)).status, 409)
   assert.equal((await patch({ ...value, revision: 9 }, value)).status, 400)
+  assert.equal((await patch(value, { ...value, data: { items: drawing.house.items } })).status, 400)
   assert.equal((await patch(null, value)).status, 400)
   assert.equal((await patch(nextDiagram('family', blank(), 1), value)).status, 400)
   assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)

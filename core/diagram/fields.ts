@@ -37,6 +37,7 @@ export function validDiagramUpdate(key: string, value: unknown, base: unknown): 
   if (value === null) return false
   const parsed = diagramSchema.safeParse(value)
   const previous = diagramSchema.safeParse(base)
+  if (base != null && (!previous.success || previous.data.kind !== diagramKinds[key])) return false
   return parsed.success && parsed.data.kind === diagramKinds[key] &&
     parsed.data.revision === (previous.success ? previous.data.revision : 0) + 1
 }

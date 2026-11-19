@@ -303,7 +303,7 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
     for (const ch of changes) {
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
       if (!sameValue(fields[ch.key]?.value ?? null, ch.base ?? null)) throw new Conflict(ch.key)
-      if (!validDiagramUpdate(ch.key, ch.value, ch.base)) throw new BadRequest('図の版または内容が正しくありません')
+      if (!validDiagramUpdate(ch.key, ch.value, fields[ch.key]?.value ?? null)) throw new BadRequest('図の版または内容が正しくありません')
       if (ch.surveySource && sameValue(ch.base, null) && !sameValue(saved[ch.key]?.value, null)) throw new Conflict(ch.key)
     }
     for (const ch of changes) {

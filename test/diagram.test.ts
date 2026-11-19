@@ -35,6 +35,7 @@ test('revision increments for manual and AI updates; stale, wrong-kind and skipp
   assert.equal(validDiagramUpdate('housing.floorPlan', { ...value, revision: 3 }, value), false)
   assert.equal(validDiagramUpdate('health.bodyMap', value, null), false)
   assert.ok(validDiagramUpdate('housing.floorPlan', { ...value, revision: 2 }, value))
+  assert.equal(validDiagramUpdate('housing.floorPlan', value, { ...value, data: { items: [] } }), false)
 })
 test('rooms are stably partitioned behind objects in every renderer and SVG labels are escaped', () => {
   const doc = blank()
