@@ -2,6 +2,8 @@
 // 段ごとに結果を jobs.steps に残し、やり直しでは済んだ段を飛ばす（STT と Gemini の費用を 2 回払わない）。
 // ログには中身（話・値）を出さない。出すのは、ジョブの id・段・時間・エラーの種類・使った量だけ。
 import { randomUUID } from 'node:crypto'
+import { fieldDict } from '../core/dictionary.ts'
+import { loadFormDef } from '../db/forms.ts'
 import type { Db } from '../db/pool.ts'
 import { applyBatch } from '../db/repo.ts'
 import { incompleteFieldKeys, prepareWriterValues } from './job-values.ts'
@@ -117,11 +119,14 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
     const current = Object.fromEntries(curRows.map((r) => [r.key, r.value]))
     // 1 回目 = この書類に、まだ AI の書き込み（録音・見本）がない
     const first = !(await db.query("SELECT 1 FROM batches WHERE document_id = $1 AND kind IN ('recording', 'seed') AND (job_id IS NULL OR job_id <> $2) LIMIT 1", [job.document_id, jobId])).rows.length
+    // 書く欄は、録音がつながった書類の様式の版から決める（その様式だけの欄の定義つき）
+    const version = (await db.query('SELECT template_version_id FROM documents WHERE id = $1', [job.document_id])).rows[0].template_version_id as string
+    const form = await loadFormDef(db, version)
     const w0 = Date.now()
-    const written = await providers.writer.write({ visits, newVisitId: visits[visits.length - 1].id, current, people, first })
+    const written = await providers.writer.write({ visits, newVisitId: visits[visits.length - 1].id, current, people, first, form })
 
-    // ④ 型の確かめ（fields.json から作った zod）。通らない値は落として数える
-    const { proposed, droppedFields } = prepareWriterValues(written.values)
+    // ④ 型の確かめ（版の欄の辞書から作った zod）。通らない値は落として数える
+    const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
     const incompleteFields = incompleteFieldKeys(written.incompleteFields, droppedFields)
     await setStep(db, jobId, token, 'write', { write: { seconds: (Date.now() - w0) / 1000, values: Object.keys(proposed).length, dropped: droppedFields.length, droppedFields, failed: written.failed, incompleteFields, usage: written.usage satisfies Usage, first } })
 

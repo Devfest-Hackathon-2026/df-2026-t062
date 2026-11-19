@@ -5,7 +5,8 @@
 //
 // 対応は「印字欄の名前 → Binding」の JSON（forms/seed/<様式>/bindings.json）。op は名前に版を付け、一度出した動きは変えない。
 // 前提（fields.json の requires）と詳しい欄（detail）は fields.json から読むので、対応には書かない。
-import { BY_KEY, choicesOf, subFieldsOf, type FieldSpec } from './fields.ts'
+import { GLOBAL_DICT, type FieldDict } from './dictionary.ts'
+import { choicesOf, subFieldsOf, type FieldSpec } from './fields.ts'
 import { validValue } from './schema.ts'
 
 export type Values = Record<string, unknown>
@@ -134,7 +135,9 @@ class Misplaced extends Error {}
 class Draft {
   readonly base: Values
   readonly next: Values
-  constructor(base: Values) { this.base = base; this.next = { ...base } }
+  /** 書類の様式の版の欄の辞書（型と前提を見る） */
+  readonly dict: FieldDict
+  constructor(base: Values, dict: FieldDict) { this.base = base; this.next = { ...base }; this.dict = dict }
   get(ref: Ref) { return getRef(this.next, ref) }
   set(ref: Ref, leaf: unknown) {
     this.next[ref.key] = setIn(this.next[ref.key], ref.path ?? [], leaf)
@@ -146,11 +149,11 @@ class Draft {
   }
 }
 
-// ---------- fields.json の型と前提 ----------
+// ---------- 欄の型と前提（版の欄の辞書。既定は fields.json だけ） ----------
 
 /** ref の場所の欄・項目の定義と、その項目が入っているまとまり（前提を見る相手）の場所 */
-function specsAlong(ref: Ref): { spec: FieldSpec, parent: Step[] | null }[] {
-  const top = BY_KEY.get(ref.key)
+function specsAlong(ref: Ref, dict: FieldDict = GLOBAL_DICT): { spec: FieldSpec, parent: Step[] | null }[] {
+  const top = dict.get(ref.key)
   if (!top) return []
   const out: { spec: FieldSpec, parent: Step[] | null }[] = [{ spec: top, parent: null }]
   let cur = top
@@ -166,19 +169,19 @@ function specsAlong(ref: Ref): { spec: FieldSpec, parent: Step[] | null }[] {
   return out
 }
 
-export const specOf = (ref: Ref): FieldSpec | undefined => specsAlong(ref).at(-1)?.spec
+export const specOf = (ref: Ref, dict: FieldDict = GLOBAL_DICT): FieldSpec | undefined => specsAlong(ref, dict).at(-1)?.spec
 
 const holds = (v: unknown, allowed: unknown[]) => (Array.isArray(v) ? v.some((x) => allowed.includes(x)) : allowed.includes(v))
 
 interface Need { ref: Ref, allowed: unknown[], multi: boolean, label: string }
 
 /** ref の欄に意味があるための前提（fields.json の requires）で、満たされていないもの */
-function unmetRequires(values: Values, ref: Ref): Need[] {
+function unmetRequires(values: Values, ref: Ref, dict: FieldDict = GLOBAL_DICT): Need[] {
   const out: Need[] = []
-  for (const { spec, parent } of specsAlong(ref)) {
+  for (const { spec, parent } of specsAlong(ref, dict)) {
     for (const [k, allowed] of Object.entries(spec.requires ?? {})) {
       const target: Ref = parent === null ? { key: k } : { key: ref.key, path: [...parent, k] }
-      const tspec = specOf(target)
+      const tspec = specOf(target, dict)
       if (!holds(getRef(values, target), allowed)) out.push({ ref: target, allowed, multi: tspec?.type === 'multi', label: tspec?.label ?? k })
     }
   }
@@ -229,17 +232,17 @@ function satisfy(d: Draft, needs: Need[], strict = false): string | null {
 
 /** when（strict）と前提（requires）の両方を満たす直しを下書きに入れる。だめなら理由 */
 function prepare(d: Draft, values: Values, when: Cond | undefined, ref: Ref): string | null {
-  const w = whenNeeds(values, when, ref)
+  const w = whenNeeds(values, when, ref, d.dict)
   if (typeof w === 'string') return w
-  return satisfy(d, w, true) ?? satisfy(d, unmetRequires(values, ref))
+  return satisfy(d, w, true) ?? satisfy(d, unmetRequires(values, ref, d.dict))
 }
 
 /** 対応の when を、前提と同じ形（ref が 1 つ、値の一覧）にできれば直す。できなければ理由 */
-function whenNeeds(values: Values, c: Cond | undefined, own: Ref): Need[] | string {
+function whenNeeds(values: Values, c: Cond | undefined, own: Ref, dict: FieldDict): Need[] | string {
   if (!c || holdsCond(values, c, own)) return []
   if ('is' in c && c.ref && !same(c.ref, own)) {
     const allowed = 'eq' in c.is ? [c.is.eq] : 'in' in c.is ? c.is.in : 'has' in c.is ? [c.is.has] : null
-    const s = specOf(c.ref)
+    const s = specOf(c.ref, dict)
     if (allowed) return [{ ref: c.ref, allowed, multi: s?.type === 'multi', label: s?.label ?? c.ref.key }]
   }
   return 'この欄は、いまの値では書けません'
@@ -399,13 +402,13 @@ const done = (d: Draft): EditResult => ({ changes: d.changes() })
 
 /** 型どおりか（直した結果を確かめる）。日付はケアマネの直しなので、年だけ・年月だけも通す */
 function badValues(d: Draft): string | null {
-  for (const c of d.changes()) if (c.value !== null && !validValue(c.key, c.value)) return `「${BY_KEY.get(c.key)?.label ?? c.key}」の値になりません`
+  for (const c of d.changes()) if (c.value !== null && !validValue(c.key, c.value, {}, d.dict)) return `「${d.dict.get(c.key)?.label ?? c.key}」の値になりません`
   return null
 }
 
-function editText(b: Extract<Binding, { op: 'text@1' }>, values: Values, text: string): EditResult {
-  const d = new Draft(values)
-  const spec = specOf(b.ref)
+function editText(b: Extract<Binding, { op: 'text@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
+  const d = new Draft(values, dict)
+  const spec = specOf(b.ref, dict)
   let t = text.trim()
   const path = b.ref.path ?? []
   const rowPath = path.slice(0, -1)
@@ -469,10 +472,10 @@ function canToggle(t: Test | undefined): boolean {
   return false
 }
 
-function editOption(b: Extract<Binding, { op: 'option@1' }>, values: Values, on: boolean): EditResult {
+function editOption(b: Extract<Binding, { op: 'option@1' }>, values: Values, on: boolean, dict: FieldDict): EditResult {
   const now = renderSlot(b, values) === (b.ui === 'circle' ? 'true' : '✓')
   if (now === on) return { changes: [] }
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   if (b.edit) {
     const a = on ? b.edit.on : b.edit.off
     if ('refuse' in a) return refuse(a.refuse)
@@ -503,9 +506,9 @@ function editOption(b: Extract<Binding, { op: 'option@1' }>, values: Values, on:
   return done(d)
 }
 
-function editSymbol(b: Extract<Binding, { op: 'symbol@1' }>, values: Values, text: string): EditResult {
+function editSymbol(b: Extract<Binding, { op: 'symbol@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
   const t = toHalf(text)
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   const cur = getRef(values, b.ref)
   if (t === '') {
     if (b.options.some((o) => o.value === cur)) d.set(b.ref, null)
@@ -519,8 +522,8 @@ function editSymbol(b: Extract<Binding, { op: 'symbol@1' }>, values: Values, tex
   return done(d)
 }
 
-function editDate(b: Extract<Binding, { op: 'date@1' }>, values: Values, text: string): EditResult {
-  const d = new Draft(values)
+function editDate(b: Extract<Binding, { op: 'date@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
+  const d = new Draft(values, dict)
   const cur = parseIso(getRef(values, b.ref))
   const t = toHalf(text)
   let next: Ymd | null
@@ -558,7 +561,7 @@ function editDate(b: Extract<Binding, { op: 'date@1' }>, values: Values, text: s
   return done(d)
 }
 
-function editEra(b: Extract<Binding, { op: 'era@1' }>, values: Values, on: boolean): EditResult {
+function editEra(b: Extract<Binding, { op: 'era@1' }>, values: Values, on: boolean, dict: FieldDict): EditResult {
   const cur = parseIso(getRef(values, b.ref))
   if (!on) return cur && eraOf(cur).short === b.era ? refuse('別の元号に丸を付けてください') : { changes: [] }
   if (!cur) return refuse('先に年を書いてください（S5 のように元号と一緒に書けます）')
@@ -566,13 +569,13 @@ function editEra(b: Extract<Binding, { op: 'era@1' }>, values: Values, on: boole
   const y = Number(e.start.slice(0, 4)) + eraYear(cur) - 1
   const next = { ...cur, y }
   if (!onCalendar(next)) return refuse('暦にない日付です')
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   d.set(b.ref, toIso(next))
   return done(d)
 }
 
-function editRhythm(b: Extract<Binding, { op: 'rhythm@1' }>, values: Values, text: string): EditResult {
-  const spec = specOf({ key: b.ref.key, path: [...(b.ref.path ?? []), b.marks] })
+function editRhythm(b: Extract<Binding, { op: 'rhythm@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
+  const spec = specOf({ key: b.ref.key, path: [...(b.ref.path ?? []), b.marks] }, dict)
   const choices = spec ? choicesOf(spec) : []
   let t = text.trim()
   const marks: string[] = []
@@ -582,31 +585,31 @@ function editRhythm(b: Extract<Binding, { op: 'rhythm@1' }>, values: Values, tex
     if (!marks.includes(c)) marks.push(c)
     t = t.slice(1)
   }
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   d.set({ key: b.ref.key, path: [...(b.ref.path ?? []), b.marks] }, marks.length ? marks : null)
   d.set({ key: b.ref.key, path: [...(b.ref.path ?? []), b.text] }, t.trim() || null)
   return done(d)
 }
 
-function editAge(b: Extract<Binding, { op: 'ageAt@1' }>, values: Values, text: string): EditResult {
+function editAge(b: Extract<Binding, { op: 'ageAt@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
   const birth = parseIso(getRef(values, b.birth))
   if (birth?.d !== undefined && b.at.some((r) => !isEmpty(getRef(values, r)))) return refuse('生年月日から計算しています。生年月日を直してください')
   const t = toHalf(text)
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   if (t === '') d.set(b.ref, null)
   else if (/^\d{1,3}$/.test(t)) d.set(b.ref, Number(t))
   else return refuse('数字で書いてください')
   return done(d)
 }
 
-function editJoin(b: Extract<Binding, { op: 'join@1' }>, values: Values, text: string): EditResult {
+function editJoin(b: Extract<Binding, { op: 'join@1' }>, values: Values, text: string, dict: FieldDict): EditResult {
   const list = getRef(values, b.ref)
   const rows = (Array.isArray(list) ? list : []) as Record<string, unknown>[]
   const inGroup = (r: Record<string, unknown>) => Object.entries(b.where).every(([k, t]) => test(r?.[k], t))
   const keep = rows.filter((r) => !inGroup(r))
   const pool = rows.filter(inGroup)
   const kindSub = b.label?.of
-  const spec = kindSub ? specOf({ key: b.ref.key, path: [...(b.ref.path ?? []), 0, kindSub] }) : undefined
+  const spec = kindSub ? specOf({ key: b.ref.key, path: [...(b.ref.path ?? []), 0, kindSub] }, dict) : undefined
   const kinds = spec ? choicesOf(spec).filter((k) => Object.entries(b.where).every(([s, t]) => s !== kindSub || test(k, t))) : []
   const out: Record<string, unknown>[] = []
   for (const token of text.split(/[、,，]/).map((x) => x.trim()).filter(Boolean)) {
@@ -617,7 +620,7 @@ function editJoin(b: Extract<Binding, { op: 'join@1' }>, values: Values, text: s
     const label = labelOf({ [kindSub]: k }, b.label!)
     out.push(b.show && token !== label ? { [kindSub]: k, [b.show]: token } : { [kindSub]: k })
   }
-  const d = new Draft(values)
+  const d = new Draft(values, dict)
   d.set(b.ref, [...keep, ...out])
   const bad = badValues(d)
   return bad ? refuse(bad) : done(d)
@@ -628,29 +631,29 @@ function editJoin(b: Extract<Binding, { op: 'join@1' }>, values: Values, text: s
  * text は、丸なら 'true'/'false'、✓ の欄なら '✓'/''、文字の欄なら打った文字。
  * 今の表示と同じ文字を打ち直したときは、何も変えない。
  */
-export function editSlot(bindings: Bindings, values: Values, slot: string, text: string): EditResult {
+export function editSlot(bindings: Bindings, values: Values, slot: string, text: string, dict: FieldDict = GLOBAL_DICT): EditResult {
   const b = bindings[slot]
   if (!b) return refuse('この欄は直せません')
   if (renderSlot(b, values) === text) return { changes: [] }
   try {
-    return editBy(b, values, text)
+    return editBy(b, values, text, dict)
   } catch (e) {
     if (e instanceof Misplaced) return refuse('上の行から順に書いてください')
     throw e
   }
 }
 
-function editBy(b: Binding, values: Values, text: string): EditResult {
+function editBy(b: Binding, values: Values, text: string, dict: FieldDict): EditResult {
   const on = text === 'true' || text === '✓'
   switch (b.op) {
-    case 'text@1': return editText(b, values, text)
-    case 'option@1': return editOption(b, values, on)
-    case 'symbol@1': return editSymbol(b, values, text)
-    case 'date@1': return editDate(b, values, text)
-    case 'era@1': return editEra(b, values, on)
-    case 'rhythm@1': return editRhythm(b, values, text)
-    case 'ageAt@1': return editAge(b, values, text)
-    case 'join@1': return editJoin(b, values, text)
+    case 'text@1': return editText(b, values, text, dict)
+    case 'option@1': return editOption(b, values, on, dict)
+    case 'symbol@1': return editSymbol(b, values, text, dict)
+    case 'date@1': return editDate(b, values, text, dict)
+    case 'era@1': return editEra(b, values, on, dict)
+    case 'rhythm@1': return editRhythm(b, values, text, dict)
+    case 'ageAt@1': return editAge(b, values, text, dict)
+    case 'join@1': return editJoin(b, values, text, dict)
   }
 }
 
@@ -674,7 +677,8 @@ export function keysOf(b: Binding): string[] {
   if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) out.add(r.key)
   if (b.op === 'date@1') for (const r of b.yearFrom ?? []) out.add(r.key)
   if (b.op === 'ageAt@1') { out.add(b.birth.key); b.at.forEach((r) => out.add(r.key)) }
-  for (const k of Object.keys(BY_KEY.get(b.ref.key)?.requires ?? {})) out.add(k)
+  // 前提（requires）は fields.json の欄だけが持つ（その様式だけの欄は持たない）
+  for (const k of Object.keys(GLOBAL_DICT.get(b.ref.key)?.requires ?? {})) out.add(k)
   return [...out]
 }
 
@@ -685,14 +689,14 @@ export function formKeys(bindings: Bindings): string[] {
   return [...out].sort()
 }
 
-/** 対応の確かめ（読み込むときと CI）。key・項目が fields.json にあるか、丸・✓ の直しが決まっているか */
-export function checkBindings(bindings: Bindings): string[] {
+/** 対応の確かめ（読み込むときと CI）。key・項目が版の欄の辞書（既定は fields.json だけ）にあるか、丸・✓ の直しが決まっているか */
+export function checkBindings(bindings: Bindings, dict: FieldDict = GLOBAL_DICT): string[] {
   const errors: string[] = []
   const refOk = (slot: string, r: Ref) => {
-    if (!BY_KEY.has(r.key)) errors.push(`${slot}: fields.json にない key ${r.key}`)
+    if (!dict.get(r.key)) errors.push(`${slot}: ${dict === GLOBAL_DICT ? 'fields.json にない' : 'fields.json にも local_fields にもない'} key ${r.key}`)
     else {
       const names = (r.path ?? []).filter((s): s is string => typeof s === 'string')
-      if (specsAlong(r).length !== names.length + 1) errors.push(`${slot}: ${r.key} に項目 ${names.join('.')} がない`)
+      if (specsAlong(r, dict).length !== names.length + 1) errors.push(`${slot}: ${r.key} に項目 ${names.join('.')} がない`)
     }
   }
   for (const [slot, b] of Object.entries(bindings)) {

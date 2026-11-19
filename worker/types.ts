@@ -1,4 +1,5 @@
 // worker の段の約束。中身（STT・Gemini）は差し替えられる（AI_PROVIDER=fake|vertex）。
+import type { FormDef } from '../core/form.ts'
 import type { Llm } from './vertex/gemini.ts'
 
 /** 原本の発言 1 つ（id は録音をまたいでも重ならない: r<録音の番号>-<連番>） */
@@ -65,7 +66,7 @@ export interface WriterResult {
   usage: Usage
   /** 書けなかった 23 項目の番号など（一部だけ書けたとき） */
   failed: string[]
-  /** AI が処理できなかった fields.json の key */
+  /** AI が処理できなかった欄の key */
   incompleteFields: string[]
 }
 
@@ -73,8 +74,9 @@ export interface SheetWriter {
   /**
    * 1 回目（その書類に AI が書いた値がない）: 記録の全部から書く。
    * 2 回目から: 今の値と新しい記録だけで直す（2 層改の工夫 3）。
+   * 書く欄は form（録音がつながった書類の様式の版。その様式だけの欄の定義つき）から決める（core/dictionary.ts の writableFields）。
    */
-  write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean }): Promise<WriterResult>
+  write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean, form: FormDef }): Promise<WriterResult>
 }
 
 export interface Providers {

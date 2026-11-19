@@ -4,8 +4,8 @@
 //   - AI が書いた欄 → 新しい値なら書き換える（update）。保存のあとでも書き換える
 //   - ケアマネが書いた・直した欄 → 書き換えない（kept）
 //   - 同じ値なら書き込みに入れない。AI は欄を空にしない
-//   - ケアマネの判断・事業所の設定・その場で聞く欄は、AI は書かない
-import { aiMayWrite } from './fields.ts'
+//   - ケアマネの判断・事業所の設定・その場で聞く欄は、AI は書かない。その様式だけの欄は、説明書き（note）のあるものだけ書く
+import { aiMayWrite, GLOBAL_DICT, type FieldDict } from './dictionary.ts'
 import type { Who } from './slots.ts'
 
 export interface CurrentField {
@@ -52,10 +52,12 @@ export function planBatch(
   proposed: Record<string, { value: unknown, cite?: string[] }>,
   /** プログラムが決める欄（アセスメント実施日など）。AI の欄でなくても書く（ケアマネの値は守る） */
   systemKeys: ReadonlySet<string> = new Set(),
+  /** 書類の様式の版の欄の辞書（その様式だけの欄を見分ける） */
+  dict: FieldDict = GLOBAL_DICT,
 ): BatchPlan {
   const plan: BatchPlan = { changes: [], kept: [], skipped: [] }
   for (const [key, p] of Object.entries(proposed)) {
-    if (!aiMayWrite(key) && !systemKeys.has(key)) { plan.skipped.push({ key, reason: 'not-ai-field' }); continue }
+    if (!aiMayWrite(key, dict) && !systemKeys.has(key)) { plan.skipped.push({ key, reason: 'not-ai-field' }); continue }
     if (isEmpty(p.value)) { plan.skipped.push({ key, reason: 'empty' }); continue }
     const cur = current[key]
     if (cur && !isEmpty(cur.value) && cur.by === 'cm') { plan.kept.push({ key, reason: 'cm' }); continue }

@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { seedFormDef } from '../forms/admin/files.ts'
 import { candidateFields } from '../worker/vertex/common.ts'
 import { geminiFactory, type Llm } from '../worker/vertex/gemini.ts'
 import { sheetWriter } from '../worker/vertex/writer.ts'
@@ -22,7 +23,9 @@ const genpon = JSON.parse(readFileSync(new URL('./scenario/原本.json', import.
   visits: Visit[]
 }
 const people: Person[] = Object.entries(genpon.people).map(([label, p]) => ({ label, role: p.role, relation: p.relation ?? null }))
-const byKey = new Map(candidateFields().map((s) => [s.key, s]))
+// 演習シナリオはアセスメントを書く（全体のアセスメントの様式の版）
+const form = seedFormDef('assessment')
+const byKey = new Map(candidateFields(form).map((s) => [s.key, s]))
 
 let dryChars = 0
 const dryFactory = (): Llm => ({
@@ -44,7 +47,7 @@ let current: Record<string, unknown> = {}
 for (const [i, visit] of genpon.visits.entries()) {
   const t = visit.id
   const t0 = Date.now()
-  const r = await writer.write({ visits: genpon.visits.slice(0, i + 1), newVisitId: t, current, people, first: i === 0 })
+  const r = await writer.write({ visits: genpon.visits.slice(0, i + 1), newVisitId: t, current, people, first: i === 0, form })
   // 2 回目以降は、直した欄だけが返る。シートは、前の値に重ねたもの（bench は時点ごとのシート全体を採点する）
   const prev = i === 0 ? {} : JSON.parse(readFileSync(join(out, genpon.visits[i - 1].id, 'sheet.json'), 'utf8')).fields as Record<string, { value: unknown, cite?: string[] }>
   const merged: Record<string, { value: unknown, cite: string[] }> = {}

@@ -15,8 +15,6 @@ import {
 } from './common.ts'
 import type { Llm } from './gemini.ts'
 
-const SPECS = candidateFields()
-const BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 const ITEM23 = item23Names()
 
 const TYPE_JA: Record<string, string> = {
@@ -71,9 +69,9 @@ function pyJson(v: unknown): string {
 }
 const fmtValue = (v: unknown) => (v === null || v === undefined ? '（空）' : pyJson(v))
 
-function fmtSheet(fields: Record<string, Rec>): string {
-  const lines = Object.entries(fields).filter(([k, r]) => BY_KEY.has(k) && r.value !== null && r.value !== undefined)
-    .map(([k, r]) => `- ${BY_KEY.get(k)!.label}（${k}）: ${fmtValue(r.value)}`)
+function fmtSheet(fields: Record<string, Rec>, byKey: Map<string, Spec>): string {
+  const lines = Object.entries(fields).filter(([k, r]) => byKey.has(k) && r.value !== null && r.value !== undefined)
+    .map(([k, r]) => `- ${byKey.get(k)!.label}（${k}）: ${fmtValue(r.value)}`)
   return lines.join('\n') || '（まだ何も書いていない）'
 }
 
@@ -134,6 +132,8 @@ interface Ctx {
   stats: Record<string, number>
   failed: Set<string>
   incompleteFields: Set<string>
+  /** この書類の版で書く欄（key → 欄） */
+  byKey: Map<string, Spec>
 }
 
 function markFailed(ctx: Ctx, group: string, specs: Spec[], prefix = '') {
@@ -253,7 +253,7 @@ async function final(ctx: Ctx, groups: Map<string, Spec[]>, fields: Record<strin
   const specs = groups.get(SUMMARY.id) ?? []
   if (!specs.length) return {}
   const prompt = head + P.fill(P.FINAL, {
-    evidence: '発言・記録', rules: P.WRITE_RULES, extra_rules: P.COLUMN_RULES, fields: specs.map(fmtField).join('\n\n'), sheet: fmtSheet(fields),
+    evidence: '発言・記録', rules: P.WRITE_RULES, extra_rules: P.COLUMN_RULES, fields: specs.map(fmtField).join('\n\n'), sheet: fmtSheet(fields, ctx.byKey),
   })
   const r = await settle(ctx.llm.ask(prompt, fieldSchema(specs), { step: '全体のまとめ', group: SUMMARY.id }))
   if (!r.ok) { markFailed(ctx, SUMMARY.id, specs); return {} }
@@ -282,9 +282,11 @@ export interface WriterOptions {
 export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetWriter {
   const limit = Math.max(1, opts.concurrency ?? 4)
   return {
-    async write({ visits, newVisitId, current, people, first }): Promise<WriterResult> {
+    async write({ visits, newVisitId, current, people, first, form }): Promise<WriterResult> {
+      // 書く欄は、録音がつながった書類の様式の版から決める
+      const specs = candidateFields(form)
       const llm = newLlm()
-      const ctx: Ctx = { llm, people, limit, stats: {}, failed: new Set(), incompleteFields: new Set() }
+      const ctx: Ctx = { llm, people, limit, stats: {}, failed: new Set(), incompleteFields: new Set(), byKey: new Map(specs.map((s) => [s.key, s])) }
       const idx = visits.findIndex((v) => v.id === newVisitId)
       const upto = (idx < 0 ? visits : visits.slice(0, idx + 1)) as LooseVisit[]
       const visit = upto[upto.length - 1]
@@ -292,9 +294,9 @@ export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetW
       const newIds = new Set(visit.scenes.flatMap((s) => s.entries.map((e) => e.id)))
       // 工夫 4: 書類から写す欄は、書類の記録がまだないときは書かせない
       const hasDocs = upto.some((v) => v.scenes.some((s) => DOC_SCENE_KINDS.has(s.kind)))
-      const groups = groupByBundle(SPECS.filter((s) => hasDocs || !needsDocument(s)))
+      const groups = groupByBundle(specs.filter((s) => hasDocs || !needsDocument(s)))
       // 読み直しは、書類の有無にかかわらず全部の欄を対象にする（pipelines.py の ctx.groups）
-      const allGroups = groupByBundle(SPECS)
+      const allGroups = groupByBundle(specs)
       const values: Record<string, Rec> = {}
       // 記録の全部を先頭に置いた前置き（1 回目の全部の呼び出しと、2 回目の読み直しで同じ）
       const fullHead = contextOf(ctx, '記録', fmtRecord(upto))
@@ -318,7 +320,7 @@ export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetW
       } else {
         // 今の値（この様式の欄で、値のあるもの）
         const fields: Record<string, Rec> = {}
-        for (const [k, v] of Object.entries(current)) if (BY_KEY.has(k) && v !== null && v !== undefined) fields[k] = { value: v, cite: [] }
+        for (const [k, v] of Object.entries(current)) if (ctx.byKey.has(k) && v !== null && v !== undefined) fields[k] = { value: v, cite: [] }
         const newHead = contextOf(ctx, '新しい記録', fmtRecord([visit]))   // 直す係には、新しい記録だけを見せる
         const jobs = [...groups]   // 全体のまとめも、同じやり方で直す
         const results = await warmThenMap(jobs, limit, async ([id, specs]) => [id, specs, await settle(update(ctx, id, specs, fields, visit, newHead))] as const)

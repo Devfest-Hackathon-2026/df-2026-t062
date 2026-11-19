@@ -1,9 +1,9 @@
 // 2 層改の、AI を使わない部分。design/runner/common.py の写し（欄の候補・値の形・値の確かめ・読み直しの単位・2 回目の受け入れ）。
 import { isDeepStrictEqual } from 'node:util'
-import { FIELDS, FIELD_LIST, choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import { writableFields } from '../../core/dictionary.ts'
+import { FIELDS, choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import type { FormDef } from '../../core/form.ts'
 
-// AI が書く欄の出どころ（AI基盤の設計 ⑥）
-const WRITABLE_SOURCES = new Set(['talk', 'doc', 'draft'])
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export interface SubSpec { key: string, label: string, type: string, choices: string[] | null }
@@ -27,21 +27,31 @@ export const norm = (s: unknown) => String(s).normalize('NFKC').replace(/\s+/g, 
 
 const sub = (s: FieldSpec): SubSpec => ({ key: s.key, label: s.label ?? s.key, type: s.type, choices: s.choices ? choicesOf(s) : null })
 
-/** AI が書く欄（その様式にあり、出どころに会話・書類・案がある欄。図は除く） */
-export function candidateFields(form = 'assess', list: FieldSpec[] = FIELD_LIST): Spec[] {
-  const out: Spec[] = []
-  for (const f of list) {
-    if (!f.forms || !(form in f.forms) || f.type === 'image') continue
-    const sources = f.source ?? []
-    if (!sources.some((s) => WRITABLE_SOURCES.has(s.split(':')[0]))) continue
-    out.push({
-      key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
-      choices: f.choices ? choicesOf(f) : null,
-      subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
-      note: f.note ?? null, where: f.forms[form], source: sources,
-    })
+/** 版で、key を読む印字欄のあるページ（例: p.1 面談票）。複数のページにあれば「・」でつなぐ */
+function pagesOfKeys(form: Pick<FormDef, 'bindings' | 'schemas' | 'pages'>): Map<string, string> {
+  const pageOf = new Map<string, string>()
+  for (const p of form.pages) for (const s of form.schemas[p.pdfIndex] ?? []) pageOf.set(s.name, `p.${p.no} ${p.title}`)
+  const out = new Map<string, Set<string>>()
+  for (const [slot, b] of Object.entries(form.bindings)) {
+    const page = pageOf.get(slot)
+    if (page) out.set(b.ref.key, (out.get(b.ref.key) ?? new Set()).add(page))
   }
-  return out
+  return new Map([...out].map(([k, v]) => [k, [...v].join('・')]))
+}
+
+/**
+ * AI が書く欄。録音がつながった書類の様式の版から決める（core/dictionary.ts の writableFields。図は除く）。
+ * 用紙の場所は、2 層改がアセスメントの 23 項目で組んだ書き方なので、fields.json の欄はアセスメント用紙での場所（forms.assess）を使い、
+ * それがない欄（その様式だけの欄など）は、版のページにする（録音からの書き込みの作り替え #114 まで）
+ */
+export function candidateFields(form: FormDef): Spec[] {
+  const pages = pagesOfKeys(form)
+  return writableFields(form).map((f) => ({
+    key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
+    choices: f.choices ? choicesOf(f) : null,
+    subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
+    note: f.note ?? null, where: f.forms?.assess ?? pages.get(f.key) ?? '', source: f.source ?? [],
+  }))
 }
 
 /** 23 項目の番号ごと。番号のない欄（全体のまとめなど）は 0 */

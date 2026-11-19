@@ -21,6 +21,8 @@ export interface FieldSpec {
   detail?: string
   /** list の行を見分ける項目の key。"order" は行の並びの順で見分ける */
   rowKey?: string
+  /** その様式だけの欄（版の local_fields。core/dictionary.ts が作る）。fields.json の欄にはない */
+  local?: true
 }
 
 interface FieldsFile {
@@ -54,12 +56,3 @@ export function subFieldsOf(f: FieldSpec): FieldSpec[] {
 
 /** アセスメントの必須の欄（配列の要素は「どれか 1 つに値があればよい」組） */
 export const REQUIRED_ASSESS: (string | string[])[] = FIELDS.required.assess.keys
-
-/** AI が書かない欄（出どころがケアマネの判断・事業所の設定・その場で聞くことだけの欄） */
-export function aiMayWrite(key: string): boolean {
-  const f = BY_KEY.get(key)
-  if (!f) return false
-  const src = f.source ?? []
-  if (src.length === 0) return true
-  return src.some((s) => s === 'talk' || s.startsWith('doc:') || s === 'draft' || s === 'derived')
-}

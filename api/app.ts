@@ -7,16 +7,14 @@ import { Hono, type Context, type Handler } from 'hono'
 import { z } from 'zod'
 import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
-import { validValue } from '../core/schema.ts'
 import * as importsDb from '../db/form-imports.ts'
 import * as forms from '../db/forms.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
-import type { RequiredKeys } from '../core/required.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
-import { fakeModel, runChat, type ChatModel } from './chat.ts'
+import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
 import { previewPdf, publishProblems } from './form-check.ts'
 import { checkDraftVersion } from '../worker/form-import/check.ts'
@@ -231,7 +229,7 @@ export function createApp(deps: ApiDeps) {
 
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)
-    for (const ch of changes) if (!validValue(ch.key, ch.value)) throw new repo.BadRequest(`値の形が違います: ${ch.key}`)
+    // 欄と値の型は、書類の様式の版の欄の辞書で確かめる（repo.patchFields）
     const r = await repo.patchFields(db, staff, c.req.param('id')!, changes.map((ch) => ({ key: ch.key, value: ch.value ?? null, base: ch.base ?? null, mode: ch.mode })))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
@@ -239,10 +237,14 @@ export function createApp(deps: ApiDeps) {
   // 書き方の相談。AI が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。同じ利用者のほかの書類も読める。用紙は変えない
   app.post('/api/documents/:id/chat', staffRoute('care.work', async (c, staff, db) => {
     const { messages } = await body(c, ChatInput)
-    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys }
-    document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
+    // 道具は、書類の種類（名前・必須の欄）と様式の版（読む欄・印字欄の対応・その様式だけの欄）から読む
+    const asChat = async (d: repo.DocumentView): Promise<ChatDocument & repo.DocumentView> => {
+      const kind = await kinds.kindOf(db, d.kind)
+      return { ...d, name: kind?.name ?? d.kind, required: kind?.required ?? [], form: await forms.loadFormDef(db, d.formVersionId) }
+    }
+    const document = await asChat(await repo.getDocument(db, staff.officeId, c.req.param('id')!))
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
-    const others = await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)
+    const others = await Promise.all((await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)).map(asChat))
     const model = deps.chat ? await deps.chat() : fakeModel
     // 答えは 1 行 1 つの JSON（NDJSON）。道具を使うたびに {type:'step'} を流し、最後に {type:'done', reply, steps, proposals}。
     // 途中で失敗したら {type:'error'}（状態はもう 200 なので）。間の置き場がまとめて返しても、画面は最後に全部出すだけで壊れない

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { acceptUpdate, atoms, candidateFields, dropAtoms, needsDocument, sentences, validateValue, valueSchema, type Spec } from '../worker/vertex/common.ts'
+import { seedFormDef } from '../forms/admin/files.ts'
 
-const specs = candidateFields()
+const specs = candidateFields(seedFormDef('assessment'))
 const longtext = specs.find((s) => s.type === 'longtext' && s.item23 && !needsDocument(s))!
 const enumSpec = specs.find((s) => s.type === 'enum' && s.choices?.length)!
 const listSpec: Spec = {

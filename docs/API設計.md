@@ -28,12 +28,12 @@
 | `GET /api/form-kinds` | 書類の種類（`form_kinds`）と、その事業所で書類を作れるか（事業所の様式か全体の様式に、公開した版がある）。主な書類が先。作業画面のタブと「＋ 書類を作る」が使う | `{kinds:[{key, name, perClient, isPrimary, createFrom, required, available}]}` |
 | `GET /api/clients/:id` | 利用者・書類・処理中のジョブ | `{client, jobs}` |
 | `POST /api/clients/:id/documents` | 書類を作る（`{kind}`）。どの種類も同じ流れ（[16_書類と点検の基盤.md](再設計/16_書類と点検の基盤.md) の「書類を作る」）: 事業所の様式があればそれ、なければ全体の様式の公開した版を使い、`create_from` の種類の書類（何通もあるなら一番新しいもの）から、版が読む同じ key の値を写し（`local.*` は写さない）、事業所の設定の欄を入れる。写した値は AI の値（書き込みの記録は `copy`）。1 人 1 通の種類で、もうあれば今の書類を返す（200）。ない種類は 400、使える様式がなければ 404 | `201/200 {id, kind, created}` |
-| `GET /api/form-versions/:id` | 様式の版（欄の位置・対応・ページ）。その事業所が見てよい版だけ（ほかの事業所の版と、下書きの版は 404。下書きは責任者の入口で読む）。中身は変わらないので `ETag`・`Cache-Control: private, immutable`（`If-None-Match` で 304） | `{formVersion}` |
+| `GET /api/form-versions/:id` | 様式の版（欄の位置・対応・ページ・その様式だけの欄の定義 `localFields`）。画面は fields.json と `localFields` を合わせた版の欄の辞書で、用紙の直しを確かめる。その事業所が見てよい版だけ（ほかの事業所の版と、下書きの版は 404。下書きは責任者の入口で読む）。中身は変わらないので `ETag`・`Cache-Control: private, immutable`（`If-None-Match` で 304） | `{formVersion}` |
 | `GET /api/form-versions/:id/assets` | ページの画像の期限つきの URL（UTC の 0 時から 48 時間。同じ日は同じ URL）と、元の PDF が置き場にあるか。画像がまだなければ `url: null` | `{pages:[{no, url}], hasPdf, expiresAt}` |
 | `GET /api/documents/:id` | 欄の今の値・保存した値・版の番号・最近の書き込み・使う様式の版 | `{document}`（`kind`、`formVersionId`） |
 | `POST /api/documents/:id/edits` | 用紙の印字欄の直し（`{formVersionId, edits:[{slot, text}]}`）。書類の行を止め、その時点の値に、様式の版の対応で 1 つずつ当てる。当てられない直しは理由を返す（ほかは当てる）。画面の様式の版が書類の版と違えば 409 | `{results:[{slot, reason?}], document}` |
-| `PATCH /api/documents/:id/fields` | 欄の値をそのまま変える直し（差分の欄の文章。`{changes:[{key, value, base, mode?}]}`）。`base` は画面が元にした値で、今の値と違えば 409（AI が書いたばかりの値を上書きしない）。`mode:"revert"` は「前の文に戻す」 | `{document}`（直した書類の値だけが変わる。ほかの書類には入らない） |
-| `POST /api/documents/:id/chat` | 書き方の相談（`{messages:[{role:"user"\|"pet", text}]}`。やり取りは画面が持っていて毎回全部を送る。最大 40 件・1 件 4000 字、最後は `user`）。AI（Gemini の関数呼び出し。`AI_PROVIDER=fake` なら台本の答え）が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。用紙は同じ利用者のほかの書類も読める（同じ事業所のものだけ。案は開いている書類の欄だけ）。書き換えの案は、この書類の様式の欄（図の欄を除く。まとまりの欄は値の全体）。**用紙は変えない**（画面が `PATCH /fields` で入れる） | 1 行 1 つの JSON（`application/x-ndjson`）。道具を使うたびに `{type:"step", text}`、最後に `{type:"done", reply, steps, proposals:[{key, label, before, after}]}`。途中で失敗したら `{type:"error"}`（状態はもう 200）。入力の誤り・ほかの事業所の書類は、流す前に 400／404 |
+| `PATCH /api/documents/:id/fields` | 欄の値をそのまま変える直し（差分の欄の文章。`{changes:[{key, value, base, mode?}]}`）。`base` は画面が元にした値で、今の値と違えば 409（AI が書いたばかりの値を上書きしない）。`mode:"revert"` は「前の文に戻す」。欄はその書類の様式の版が読むものだけ、値は版の欄の辞書の型で確かめる（どちらも違えば 400） | `{document}`（直した書類の値だけが変わる。ほかの書類には入らない） |
+| `POST /api/documents/:id/chat` | 書き方の相談（`{messages:[{role:"user"\|"pet", text}]}`。やり取りは画面が持っていて毎回全部を送る。最大 40 件・1 件 4000 字、最後は `user`）。AI（Gemini の関数呼び出し。`AI_PROVIDER=fake` なら台本の答え）が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。読む欄・印字するときだけ付く印・欄の定義は、書類の様式の版（版の欄の辞書。その様式だけの欄も含む）から、書類の名前は種類（`form_kinds.name`）から読む。用紙は同じ利用者のほかの書類も読める（同じ事業所のものだけ。案は開いている書類の欄だけ）。書き換えの案は、この書類の様式の版が読む欄（図の欄を除く。まとまりの欄は値の全体）。**用紙は変えない**（画面が `PATCH /fields` で入れる） | 1 行 1 つの JSON（`application/x-ndjson`）。道具を使うたびに `{type:"step", text}`、最後に `{type:"done", reply, steps, proposals:[{key, label, before, after}]}`。途中で失敗したら `{type:"error"}`（状態はもう 200）。入力の誤り・ほかの事業所の書類は、流す前に 400／404 |
 | `POST /api/documents/:id/save` | 保存（`{scope:"document"}`／`{scope:"page", page}`／`{scope:"hunk", key, hunkIndex}`） | `{rev, document}` |
 | `GET /api/documents/:id/pdf` | 最新の版から、その版の様式の元の PDF で PDF を作る。出力の置き場にも残す。元の PDF が置き場になければ 503 | `application/pdf` |
 | `POST /api/clients/:id/recordings` | 録音を始める（`{mime, documentId?}`）。録音は、録音を始めた書類（`documentId`）につなぐ。省いたときは主な書類。ほかの利用者の書類は 404。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
@@ -93,8 +93,8 @@
 ## 入力の確かめ
 
 - 体の形は zod で確かめる（`api/app.ts`）。
-- 欄の値は、fields.json から作った型（`core/schema.ts`）で確かめる。選択肢にない値は 400。
-- その書類の様式の版にない key・印字欄は 400（`db/repo.ts` の `allowedKeys`）。
+- 欄の値は、版の欄の辞書（fields.json と、その版の `local_fields`。`core/dictionary.ts`）から作った型（`core/schema.ts`）で確かめる。選択肢にない値は 400。
+- その書類の様式の版にない key・印字欄は 400（`db/repo.ts` の `patchFields`・`applySlotEdits`）。
 
 ## 誤りの返し方
 
@@ -113,7 +113,7 @@
 
 | メソッドとパス | 呼ぶもの | すること |
 |---|---|---|
-| `POST /tasks/jobs/:id/run` | Cloud Tasks（OIDC） | 録音 1 本の処理。応答の前に終える。失敗は 500（Cloud Tasks が間をあけてやり直す） |
+| `POST /tasks/jobs/:id/run` | Cloud Tasks（OIDC） | 録音 1 本の処理。応答の前に終える。失敗は 500（Cloud Tasks が間をあけてやり直す）。AI が書く欄は、録音がつながった書類の様式の版から決める（版が読む欄のうち、出どころに会話・書類・案がある欄。その様式だけの欄は説明書き `note` のあるもの） |
 | `POST /tasks/form-imports/:id/run` | Cloud Tasks（OIDC） | 上げた PDF から様式の下書きの版を作る（`worker/form-import/job.ts`）。期限つきの印で 1 回だけ動く。済んだら上げたままの PDF を消す。置き場か DB の誤りは 500（3 回で `failed`・`internal`）。変換の失敗（PDF でない など）は 200 で `failed` |
 | `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す（録音と様式の取り込み）。失敗して 7 日たった・送り終わらなかった上げたままの PDF を消す |
 | `GET /health` | — | worker が動いているか |

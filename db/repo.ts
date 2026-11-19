@@ -4,6 +4,8 @@ import { saveOneHunk } from '../core/diff.ts'
 import { slotPages, type FormKind } from '../core/form.ts'
 import type { SurveySource } from '../core/survey-import.ts'
 import { countRequired } from '../core/required.ts'
+import { fieldDict } from '../core/dictionary.ts'
+import { validValue } from '../core/schema.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
 import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind } from './kinds.ts'
@@ -224,11 +226,6 @@ export async function otherDocuments(db: Q, officeId: string, clientId: string, 
   return Promise.all(r.rows.map((x) => getDocument(db, officeId, x.id as string)))
 }
 
-/** 書類の欄として持てる key（その書類の様式の版の印字欄が読む key） */
-async function allowedKeys(db: Q, versionId: string): Promise<Set<string>> {
-  return new Set((await loadFormDef(db, versionId)).keys)
-}
-
 async function writeField(c: Tx, officeId: string, clientId: string, documentId: string, key: string, value: unknown, by: Who, staffId: string | null, extra: { aiValue?: unknown, batchId?: string, cite?: unknown } = {}) {
   const docId = documentId
   const prev = (await c.query(
@@ -290,17 +287,21 @@ export interface FieldChange {
 
 /**
  * 欄の値をそのまま変える直し（差分の欄の文章、前の文に戻す）。by=cm にする。
+ * 欄は書類の様式の版が読むものだけ。値の型は版の欄の辞書（fields.json と、その様式だけの欄）で確かめる（違えば BadRequest）。
  * 「前の文に戻す」（mode=revert）で保存した値と同じに戻ったときは、保存したときの by に戻す。
  * 画面が見ていた値（base）とサーバーの今の値が違えば、何も変えずに Conflict（AI が書いたばかりの値を上書きしない）。
  */
 export async function patchFields(db: Db, staff: Staff, documentId: string, changes: FieldChange[]) {
   return tx(db, async (c) => {
     const d = await lockDocument(c, staff.officeId, documentId)
-    const allowed = await allowedKeys(c, d.versionId)
+    const form = await loadFormDef(c, d.versionId)
+    const allowed = new Set(form.keys)
+    const dict = fieldDict(form.localFields)
     const saved = await readSaved(c, d.id)
     const fields = await readFields(c, d.id)
     for (const ch of changes) {
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
+      if (!validValue(ch.key, ch.value ?? null, {}, dict)) throw new BadRequest(`値の形が違います: ${ch.key}`)
       if (!sameValue(fields[ch.key]?.value ?? null, ch.base ?? null)) throw new Conflict(ch.key)
       if (ch.surveySource && sameValue(ch.base, null) && !sameValue(saved[ch.key]?.value, null)) throw new Conflict(ch.key)
     }
@@ -455,12 +456,13 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       }
     }
     const d = await lockDocument(c, input.officeId, input.documentId)
-    const allowed = await allowedKeys(c, d.versionId)
+    const form = await loadFormDef(c, d.versionId)
+    const allowed = new Set(form.keys)
     const fields = await readFields(c, d.id)
     const current: Record<string, CurrentField> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { value: v.value, by: v.by }]))
     const system = Object.fromEntries(Object.entries(input.system ?? {}).filter(([k]) => allowed.has(k)).map(([k, v]) => [k, { value: v }]))
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
-    const plan = planBatch(current, proposed, new Set(Object.keys(system)))
+    const plan = planBatch(current, proposed, new Set(Object.keys(system)), fieldDict(form.localFields))
     if (!plan.changes.length && !plan.kept.length) {
       if (input.completion) await finishJob(c, input, null, plan)
       return { batchId: null, plan }

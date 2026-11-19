@@ -6,8 +6,11 @@ import { candidateFields, needsDocument } from '../worker/vertex/common.ts'
 import { geminiFactory, type AskMeta, type Llm } from '../worker/vertex/gemini.ts'
 import { speakerAssigner } from '../worker/vertex/speakers.ts'
 import { fieldSchema, mapLimit, sheetWriter, updateSchema } from '../worker/vertex/writer.ts'
+import { seedFormDef } from '../forms/admin/files.ts'
 
-const specs = candidateFields()
+/** 録音がつながった書類の版（全体のアセスメントの様式） */
+const form = seedFormDef('assessment')
+const specs = candidateFields(form)
 // 書類がないときに書く欄（会話から書ける欄）を、まとまりごとに
 const talkGroups = groupByBundle(specs.filter((s) => !needsDocument(s)))
 // 会話から書ける文章の欄（読み直しで 1 文だけ落とす確かめに使う）と、それが入るまとまり
@@ -70,7 +73,7 @@ test('1 回目: 書く → 読み直しで根拠のない文を落とす。1 つ
     }
     return {}   // 全体のまとめは空
   }
-  const r = await sheetWriter(fakeLlm(handler), { concurrency: 2 }).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true })
+  const r = await sheetWriter(fakeLlm(handler), { concurrency: 2 }).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true, form })
   assert.deepEqual(r.values, { [text.key]: { value: '左半身が動きにくい。', cite: ['s1-1'] } })   // zzz（記録にない id）は根拠から外れる
   assert.deepEqual(r.failed, [other])
   assert.deepEqual(r.incompleteFields.sort(), [...talkGroups.get(other)!.map((s) => s.key), text.key].sort())
@@ -79,7 +82,7 @@ test('1 回目: 書く → 読み直しで根拠のない文を落とす。1 つ
 test('1 回目: まとまりごとに 1 回ずつ書かせ、どの呼び出しも、記録を先頭に置いた同じ前置きで始まる', async () => {
   const calls: { prompt: string, schema: any, meta: AskMeta }[] = []
   const handler: Handler = (p, schema, m) => { calls.push({ prompt: p, schema, meta: m }); return writeText(p, schema, m) }
-  await sheetWriter(fakeLlm(handler)).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true })
+  await sheetWriter(fakeLlm(handler)).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true, form })
 
   // 欄の値: 全体のまとめを除くまとまりごとに 1 回。答えの形には、そのまとまりの欄が全部入る
   const writes = calls.filter((c) => c.meta.step === '欄の値')
@@ -104,7 +107,7 @@ test('1 回目: 最初の 1 回を済ませてから、残りを並べて呼ぶ�
     }
     return writeText(p, schema, m)
   }
-  await sheetWriter(fakeLlm(handler), { concurrency: 4 }).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true })
+  await sheetWriter(fakeLlm(handler), { concurrency: 4 }).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true, form })
   const first = events[0].slice('start:'.length)
   assert.equal(events[1], `end:${first}`)
   assert.ok(events.length > 2)
@@ -124,7 +127,7 @@ test('2 回目: 今の値を渡さず新しい記録だけで直し、新しい�
     throw new Error(`想定外の呼び出し: ${m.step}`)
   }
   const r = await sheetWriter(fakeLlm(handler)).write({
-    visits: [v1, v2], newVisitId: 'v2', current: { [text.key]: '左半身が動きにくい。' }, people, first: false,
+    visits: [v1, v2], newVisitId: 'v2', current: { [text.key]: '左半身が動きにくい。' }, people, first: false, form,
   })
   assert.equal(r.values[text.key].value, '左半身が動きにくい。玄関に段差がある。')
   assert.deepEqual(r.values[text.key].cite, ['s2-1'])
@@ -149,7 +152,7 @@ test('型に合わず AI の値を落とした欄を未反映欄として返す'
     if (m.step === '読み直し') return { checks: [] }
     return {}
   }
-  const r = await sheetWriter(fakeLlm(handler)).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true })
+  const r = await sheetWriter(fakeLlm(handler)).write({ visits: [v1], newVisitId: 'v1', current: {}, people, first: true, form })
   assert.ok(r.incompleteFields.includes(choice.key))
 })
 
