@@ -2,6 +2,7 @@ import { createAdaptorServer } from '@hono/node-server'
 import { createApp, type ApiDeps } from './app.ts'
 import { defaultAccounts, defaultVerifier, type Accounts, type Verifier } from './auth.ts'
 import type { ChatModel } from './chat.ts'
+import type { CarePlanDrafter } from '../db/care-plans.ts'
 import { CloudTasksQueue, LocalQueue, type Queue } from './queue.ts'
 import { defaultStorage, type Storage } from './storage.ts'
 
@@ -12,6 +13,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
   let storage: Storage | undefined
   let queue: Queue | undefined
   let chat: Promise<ChatModel> | undefined
+  let carePlanAi: Promise<CarePlanDrafter> | undefined
   const getStorage = () => (storage ??= defaultStorage(env))
   return {
     db: async () => (await import('../db/pool.ts')).getDb(),
@@ -31,6 +33,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
       ))
     },
     chat: () => (chat ??= defaultChat(env)),
+    carePlanAi: () => (carePlanAi ??= defaultCarePlanAi(env)),
     devAuth: env.AUTH_MODE === 'dev',
     accounts: () => (accounts ??= defaultAccounts(env)),
   }
@@ -40,6 +43,12 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
 async function defaultChat(env: NodeJS.ProcessEnv): Promise<ChatModel> {
   if (env.AI_PROVIDER !== 'vertex') return (await import('./chat.ts')).fakeModel
   return (await import('./gemini-chat.ts')).geminiChatModel(env)
+}
+
+/** AI_PROVIDER=vertex なら Gemini。既定は空の試しの原案（費用なし） */
+async function defaultCarePlanAi(env: NodeJS.ProcessEnv): Promise<CarePlanDrafter> {
+  if (env.AI_PROVIDER !== 'vertex') return (await import('./care-plan-ai.ts')).fakeCarePlanDrafter
+  return (await import('./care-plan-ai.ts')).geminiCarePlanDrafter(env)
 }
 
 export function createApiServer(deps: ApiDeps = defaultApiDeps()) {
