@@ -1,7 +1,7 @@
 // forms/seed/<種類>/ の様式のファイル（様式の情報 form.json・欄の位置 template.json・対応 bindings.json）を読む。
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import type { Bindings } from '../../core/binding.ts'
-import { FORM_KINDS, type FormKind, type FormPage, type TemplateSlot } from '../../core/form.ts'
+import type { FormKind, FormPage, TemplateSlot } from '../../core/form.ts'
 import type { VersionInput } from '../../db/forms.ts'
 
 export const SEED_DIR = new URL('../seed/', import.meta.url)
@@ -33,4 +33,9 @@ export function readSeed(kind: FormKind): VersionInput {
   }
 }
 
-export const seedKinds = (): FormKind[] => FORM_KINDS
+/** forms/seed/ にある全体の様式の種類（form.json のあるフォルダ。名前の順） */
+export const seedKinds = (): FormKind[] =>
+  readdirSync(SEED_DIR, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(new URL(`${d.name}/form.json`, SEED_DIR)))
+    .map((d) => d.name)
+    .sort()

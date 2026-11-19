@@ -169,15 +169,15 @@ test('直す → ページを保存 → 版 → PDF。保存していない AI �
 test('入院時情報提供書を作ると、基本情報も含めて同じ key の値を写す。写したあとはつながない', { skip }, async () => {
   const made = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '写しの見本' }) })
   assert.equal(made.status, 201)
-  const { id: clientId, assessmentId } = made.body as { id: string, assessmentId: string }
+  const { id: clientId, documentId } = made.body as { id: string, documentId: string }
   const patch = (id: string, key: string, value: unknown, base: unknown) => call(`/api/documents/${id}/fields`, {
     method: 'PATCH', body: JSON.stringify({ changes: [{ key, value, base }] }),
   })
-  assert.equal((await patch(assessmentId, 'person.address', '見本市見本町 1-2-3', null)).status, 200)
-  assert.equal((await patch(assessmentId, 'person.phone', '000-0000-0000', null)).status, 200)
-  assert.equal((await patch(assessmentId, 'housing.notes', '段差が多い', null)).status, 200)
+  assert.equal((await patch(documentId, 'person.address', '見本市見本町 1-2-3', null)).status, 200)
+  assert.equal((await patch(documentId, 'person.phone', '000-0000-0000', null)).status, 200)
+  assert.equal((await patch(documentId, 'housing.notes', '段差が多い', null)).status, 200)
 
-  const r = await call(`/api/clients/${clientId}/documents`, { method: 'POST', body: JSON.stringify({ form: 'admission' }) })
+  const r = await call(`/api/clients/${clientId}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })
   assert.equal(r.status, 201)
   const admId = (r.body as { id: string }).id
   const adm = (await call(`/api/documents/${admId}`)).body as Doc
@@ -192,23 +192,23 @@ test('入院時情報提供書を作ると、基本情報も含めて同じ key 
   const p = await patch(admId, 'person.address', '入院先の近く', '見本市見本町 1-2-3')
   assert.equal(p.status, 200)
   assert.equal((p.body as Record<string, unknown>).syncedTo, undefined, '「ほかの書類にも入りました」は返さない')
-  assert.equal(((await call(`/api/documents/${assessmentId}`)).body as Doc).document.fields['person.address'].value, '見本市見本町 1-2-3')
-  assert.equal((await patch(assessmentId, 'person.phone', '111-1111-1111', '000-0000-0000')).status, 200)
+  assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.address'].value, '見本市見本町 1-2-3')
+  assert.equal((await patch(documentId, 'person.phone', '111-1111-1111', '000-0000-0000')).status, 200)
   assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.phone'].value, '000-0000-0000')
 
   // 一覧の氏名は、主な書類（アセスメント）の氏名を直したときだけ変わる
   const listName = async () => ((await call('/api/clients')).body as { clients: { id: string, name: string }[] }).clients.find((c) => c.id === clientId)?.name
   assert.equal((await patch(admId, 'person.name', '入院時の呼び名', '写しの見本')).status, 200)
   assert.equal(await listName(), '写しの見本')
-  assert.equal(((await call(`/api/documents/${assessmentId}`)).body as Doc).document.fields['person.name'].value, '写しの見本')
-  assert.equal((await patch(assessmentId, 'person.name', '写しの見本 改', '写しの見本')).status, 200)
+  assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.name'].value, '写しの見本')
+  assert.equal((await patch(documentId, 'person.name', '写しの見本 改', '写しの見本')).status, 200)
   assert.equal(await listName(), '写しの見本 改')
   assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.name'].value, '入院時の呼び名')
 })
 
 test('書類どうしの食い違いを知らせる入口はない', { skip }, async () => {
   // 甲斐さんの入院時情報提供書（あとのテストでも使う。あればそれを返す）
-  const { id } = (await call(`/api/clients/${ids.kai}/documents`, { method: 'POST', body: JSON.stringify({ form: 'admission' }) })).body as { id: string }
+  const { id } = (await call(`/api/clients/${ids.kai}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })).body as { id: string }
   assert.equal((await call(`/api/documents/${id}/sync-differences`)).status, 404)
   assert.equal((await call(`/api/documents/${id}/sync-decisions`, { method: 'POST', body: JSON.stringify({ key: 'person.lifeHistory', decision: 'keep', source: null, target: null }) })).status, 404)
 })
@@ -305,7 +305,7 @@ test('様式の版は、その事業所が見てよいものだけ読める。�
   assert.equal((await call(`/api/form-versions/${otherVersion}`)).status, 404)
   assert.equal((await call(`/api/form-versions/${otherVersion}`, { token: OTHER })).status, 200)
   const others = (await call('/api/clients', { token: OTHER })).body as { clients: { id: string }[] }
-  const made = await call(`/api/clients/${others.clients[0].id}/documents`, { method: 'POST', token: OTHER, body: JSON.stringify({ form: 'admission' }) })
+  const made = await call(`/api/clients/${others.clients[0].id}/documents`, { method: 'POST', token: OTHER, body: JSON.stringify({ kind: 'admission' }) })
   const otherDoc = (await call(`/api/documents/${(made.body as { id: string }).id}`, { token: OTHER })).body as Doc
   assert.equal(otherDoc.document.formVersionId, otherVersion)
 })
@@ -374,7 +374,7 @@ test('差分の欄の直しは、画面が元にした値が今の値と違え�
 test('認定調査票は確認した欄だけに出典を記録し、409では一部も反映しない', { skip }, async () => {
   const made = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '検証 太郎' }) })
   assert.equal(made.status, 201)
-  const path = '/api/documents/' + made.body.assessmentId
+  const path = '/api/documents/' + made.body.documentId
   const source = { fileName: 'survey-clean.pdf', sha256: 'a'.repeat(64), recordedOn: '2026-11-04' }
   const post = (changes: { key: string, choice: number, base: unknown }[], token?: string) => call(path + '/survey-import', {
     method: 'POST', token, body: JSON.stringify({ ...source, changes }),

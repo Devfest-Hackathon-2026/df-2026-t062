@@ -7,7 +7,7 @@ import type { FormKind } from '../core/form.ts'
 import { checkBindings, editSlot, keysOf, renderAll, renderSlot, specOf, type Binding, type Values } from '../core/binding.ts'
 import { choicesOf } from '../core/fields.ts'
 
-const IDS: FormKind[] = ['assessment', 'admission']
+const IDS = ['assessment', 'admission'] as const
 const FORMS = { assessment: readSeed('assessment'), admission: readSeed('admission') }
 const json = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), 'utf8'))
 const gold = (v: string): Values => { const raw = json(`../eval/scenario/gold/用紙/アセスメント_${v}.json`); delete raw._comment; return raw }

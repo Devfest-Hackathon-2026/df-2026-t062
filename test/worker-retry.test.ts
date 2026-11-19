@@ -42,7 +42,7 @@ async function job() {
   await storage.write('source', rec.objectPath, bytes)
   const jobId = await completeRecording(db, staff, rec.id, 60_000, bytes.byteLength, (path) => storage.size('source', path))
   assert.ok(jobId)
-  return { jobId, clientId: client.id, documentId: client.assessmentId }
+  return { jobId, clientId: client.id, documentId: client.documentId }
 }
 
 const providers = (write: Providers['writer']['write']): Providers => ({

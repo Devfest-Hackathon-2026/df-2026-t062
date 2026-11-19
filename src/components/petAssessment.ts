@@ -1,7 +1,7 @@
 import { sameValue } from '../../core/apply-batch.ts'
 import { isEmpty, renderSlot, type Values } from '../../core/binding.ts'
 import { spec } from '../../core/fields.ts'
-import { missingRequiredKeys } from '../../core/required.ts'
+import { missingRequiredKeys, type RequiredKeys } from '../../core/required.ts'
 import { surveyChoice } from '../../core/survey-import.ts'
 import type { PageLayout, SlotView } from '../form/layout.ts'
 import type { DocumentView } from '../lib/api.ts'
@@ -31,8 +31,9 @@ export const interviewTopics = [
   { title: '場面ごとの具体例', icon: 'house', description: '食事・入浴・移動・外出などの様子 など', keys: ['survey.2_4', 'survey.1_10', 'survey.2_2', 'survey.2_12'] },
 ]
 
-export function availableTopics(values: Values, targets: ReturnType<typeof fieldTargets>) {
-  const missing = missingRequiredKeys(values)
+/** required: 書類の種類の必須の欄（GET /api/form-kinds の required） */
+export function availableTopics(values: Values, targets: ReturnType<typeof fieldTargets>, required: RequiredKeys) {
+  const missing = missingRequiredKeys(values, required)
   return interviewTopics.flatMap((topic) => {
     const keys = topic.keys.filter((key) => missing.has(key) && targets.has(key))
     return keys.length ? [{ ...topic, keys }] : []

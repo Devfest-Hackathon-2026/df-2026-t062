@@ -7,7 +7,7 @@ import { BY_KEY, choicesOf, FIELD_LIST, subFieldsOf, type FieldSpec } from '../c
 import type { FormKind } from '../core/form.ts'
 import { sameValue } from '../core/apply-batch.ts'
 import { compactValue } from '../core/normalize.ts'
-import { missingRequiredKeys } from '../core/required.ts'
+import { missingRequiredKeys, type RequiredKeys } from '../core/required.ts'
 import { validValue } from '../core/schema.ts'
 import { PLACEMENT_RULES } from '../worker/vertex/prompts.ts'
 import ASSESSMENT_BINDINGS from '../forms/seed/assessment/bindings.json' with { type: 'json' }
@@ -20,7 +20,12 @@ export interface ChatProposal { key: string, label: string, before: unknown, aft
 export interface ChatReply { reply: string, steps: string[], proposals: ChatProposal[] }
 
 /** 道具が読む書類の中身（DocumentView の一部） */
-export interface ChatDocument { kind: FormKind, fields: Record<string, { value: unknown, by: string }> }
+export interface ChatDocument {
+  kind: FormKind
+  fields: Record<string, { value: unknown, by: string }>
+  /** 書類の種類の必須の欄（form_kinds.required）。足りない欄の道具が使う */
+  required?: RequiredKeys
+}
 export interface ChatRecording { recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }
 
 // Gemini の会話の形（@google/genai の Content・Part の一部）。モデルの部品は thoughtSignature ごと次の呼び出しに返す
@@ -167,9 +172,9 @@ function readForm(doc: ChatDocument, query: unknown, other = false) {
 }
 
 function missingFields(doc: ChatDocument) {
-  if (doc.kind !== 'assessment') return { missing: [] }
+  if (!doc.required?.length) return { missing: [] }
   const values = Object.fromEntries(Object.entries(doc.fields).map(([k, f]) => [k, f.value]))
-  const missing = missingRequiredKeys(values)
+  const missing = missingRequiredKeys(values, doc.required)
   return {
     missing: formFields(doc.kind).filter((f) => missing.has(f.key)).map((f) => {
       const src = f.source ?? []

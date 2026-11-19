@@ -23,10 +23,11 @@
 |---|---|---|
 | `GET /api/health.json` | 動いているか（DB も Firebase も使わない）。`public` | `{status:"ok", source:"api"}` |
 | `GET /api/me` | ログインしている職員と事業所、役割でできる操作 | `{staff:{id, officeId, name, email, role, officeName, operations}}` |
-| `GET /api/clients?q=&sort=updated\|name` | 利用者の一覧（氏名・性別・状況・要介護度・必須の入力数・次の訪問・新規か） | `{clients}` |
-| `POST /api/clients` | 利用者を追加（`{name, sex?, status?}`）。空のアセスメントも作る | `201 {id, assessmentId}` |
+| `GET /api/clients?q=&sort=updated\|name` | 利用者の一覧（氏名・性別・状況・要介護度・必須の入力数・次の訪問・新規か）。要介護度・必須の入力数は主な書類（`form_kinds.is_primary`）から出し、必須の欄は主な書類の種類の `required` | `{clients:[{…, documentId}]}`（`documentId` は主な書類） |
+| `POST /api/clients` | 利用者を追加（`{name, sex?, status?}`）。主な書類（`form_kinds.is_primary`。今はアセスメント）も作る | `201 {id, documentId}` |
+| `GET /api/form-kinds` | 書類の種類（`form_kinds`）と、その事業所で書類を作れるか（事業所の様式か全体の様式に、公開した版がある）。主な書類が先。作業画面のタブと「＋ 書類を作る」が使う | `{kinds:[{key, name, perClient, isPrimary, createFrom, required, available}]}` |
 | `GET /api/clients/:id` | 利用者・書類・処理中のジョブ | `{client, jobs}` |
-| `POST /api/clients/:id/documents` | 入院時情報提供書を作る（`{form:"admission"}`）。アセスメントから写す。あれば今のものを返す | `201/200 {id}` |
+| `POST /api/clients/:id/documents` | 書類を作る（`{kind}`）。どの種類も同じ流れ（[16_書類と点検の基盤.md](再設計/16_書類と点検の基盤.md) の「書類を作る」）: 事業所の様式があればそれ、なければ全体の様式の公開した版を使い、`create_from` の種類の書類（何通もあるなら一番新しいもの）から、版が読む同じ key の値を写し（`local.*` は写さない）、事業所の設定の欄を入れる。写した値は AI の値（書き込みの記録は `copy`）。1 人 1 通の種類で、もうあれば今の書類を返す（200）。ない種類は 400、使える様式がなければ 404 | `201/200 {id, kind, created}` |
 | `GET /api/form-versions/:id` | 様式の版（欄の位置・対応・ページ）。その事業所が見てよい版だけ（ほかの事業所の版と、下書きの版は 404。下書きは責任者の入口で読む）。中身は変わらないので `ETag`・`Cache-Control: private, immutable`（`If-None-Match` で 304） | `{formVersion}` |
 | `GET /api/form-versions/:id/assets` | ページの画像の期限つきの URL（UTC の 0 時から 48 時間。同じ日は同じ URL）と、元の PDF が置き場にあるか。画像がまだなければ `url: null` | `{pages:[{no, url}], hasPdf, expiresAt}` |
 | `GET /api/documents/:id` | 欄の今の値・保存した値・版の番号・最近の書き込み・使う様式の版 | `{document}`（`kind`、`formVersionId`） |
@@ -35,7 +36,7 @@
 | `POST /api/documents/:id/chat` | 書き方の相談（`{messages:[{role:"user"\|"pet", text}]}`。やり取りは画面が持っていて毎回全部を送る。最大 40 件・1 件 4000 字、最後は `user`）。AI（Gemini の関数呼び出し。`AI_PROVIDER=fake` なら台本の答え）が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。用紙は同じ利用者のほかの書類も読める（同じ事業所のものだけ。案は開いている書類の欄だけ）。書き換えの案は、この書類の様式の欄（図の欄を除く。まとまりの欄は値の全体）。**用紙は変えない**（画面が `PATCH /fields` で入れる） | 1 行 1 つの JSON（`application/x-ndjson`）。道具を使うたびに `{type:"step", text}`、最後に `{type:"done", reply, steps, proposals:[{key, label, before, after}]}`。途中で失敗したら `{type:"error"}`（状態はもう 200）。入力の誤り・ほかの事業所の書類は、流す前に 400／404 |
 | `POST /api/documents/:id/save` | 保存（`{scope:"document"}`／`{scope:"page", page}`／`{scope:"hunk", key, hunkIndex}`） | `{rev, document}` |
 | `GET /api/documents/:id/pdf` | 最新の版から、その版の様式の元の PDF で PDF を作る。出力の置き場にも残す。元の PDF が置き場になければ 503 | `application/pdf` |
-| `POST /api/clients/:id/recordings` | 録音を始める（`{mime}`）。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
+| `POST /api/clients/:id/recordings` | 録音を始める（`{mime, documentId?}`）。録音は、録音を始めた書類（`documentId`）につなぐ。省いたときは主な書類。ほかの利用者の書類は 404。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
 | `POST /api/recordings/:id/complete` | 送り終わり（`{durationMs}`）。置き場にあるのを確かめてジョブを積む | `202 {jobId, status}` |
 | `GET /api/clients/:id/jobs` | 処理中・終わって15分以内・最後のジョブ。AI が処理できなかった欄と形式不一致で反映できなかった欄を `incompleteFields` の key 配列で返す。PDF プレビューは該当欄を赤枠にする | `{jobs:[{status, step, etaSeconds, batch:{changes, kept}, incompleteFields, errorKind}]}` |
 

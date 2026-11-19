@@ -2,9 +2,11 @@
 // 様式はコードではなくデータ: 欄の位置（pdfme の schemas）・対応（bindings）・ページ。版は書き換えない。
 import { formKeys, type Bindings } from './binding.ts'
 
-/** 様式の種類。書類はどれか 1 つの種類の、ある版を指す */
-export type FormKind = 'assessment' | 'admission'
-export const FORM_KINDS: FormKind[] = ['assessment', 'admission']
+/**
+ * 書類の種類の key（form_kinds.key）。種類は DB の行で、コードは種類の名前を知らない（docs/再設計/16 の「書類の種類ごとの動き」）。
+ * 書類はどれか 1 つの種類の、ある版を指す
+ */
+export type FormKind = string
 
 export interface TemplateSlot {
   name: string

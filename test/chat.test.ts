@@ -1,10 +1,12 @@
 // 「書き方を相談する」のエージェント（api/chat.ts）。Gemini は台本どおりに道具を呼ぶ偽物に差し替える。
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { REQUIRED_ASSESS } from '../core/fields.ts'
 import { checkProposal, fakeModel, MAX_CALLS, runChat, type ChatDocument, type ChatModel, type ChatRecording, type Content, type Part, chatSystem } from '../api/chat.ts'
 
 const doc: ChatDocument = {
   kind: 'assessment',
+  required: REQUIRED_ASSESS,
   fields: {
     'complaint.person': { value: '家に帰りたい。', by: 'ai' },
     'intake.method': { value: '訪問', by: 'cm' },

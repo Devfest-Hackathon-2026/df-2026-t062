@@ -1,5 +1,6 @@
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
 import type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff } from '../../db/repo.ts'
+import type { FormKindRow } from '../../db/kinds.ts'
 import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.ts'
 
 import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
@@ -7,6 +8,9 @@ import type { ChatMessage, ChatReply } from '../../api/chat.ts'
 import { readChatStream } from './chatStream.ts'
 
 export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff }
+
+/** 書類の種類と、その事業所で書類を作れるか（GET /api/form-kinds） */
+export type FormKindView = FormKindRow & { available: boolean }
 
 export interface ClientDetail {
   id: string
@@ -63,9 +67,10 @@ export const api = {
   formAssets: (id: string) => req<FormAssetsView>('GET', `/api/form-versions/${id}/assets`),
   me: () => req<{ staff: Staff }>('GET', '/api/me'),
   clients: (q = '', sort: 'updated' | 'name' = 'updated') => req<{ clients: ClientSummary[] }>('GET', `/api/clients?q=${encodeURIComponent(q)}&sort=${sort}`),
-  createClient: (input: { name: string, sex?: '男' | '女' | null, status?: string }) => req<{ id: string, assessmentId: string }>('POST', '/api/clients', input),
+  createClient: (input: { name: string, sex?: '男' | '女' | null, status?: string }) => req<{ id: string, documentId: string }>('POST', '/api/clients', input),
+  formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
-  createAdmission: (clientId: string) => req<{ id: string }>('POST', `/api/clients/${clientId}/documents`, { form: 'admission' }),
+  createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
   document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
     req<{ document: DocumentView }>('PATCH', `/api/documents/${id}/fields`, { changes }),

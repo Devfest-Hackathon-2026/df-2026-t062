@@ -13,6 +13,8 @@ import * as forms from '../db/forms.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
+import * as kinds from '../db/kinds.ts'
+import type { RequiredKeys } from '../core/required.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
@@ -56,6 +58,8 @@ const SaveInput = z.discriminatedUnion('scope', [
 ])
 const RecordingInput = z.object({
   mime: z.string().min(1).max(100),
+  // 録音を始めた書類。省いたときは主な書類
+  documentId: z.string().uuid().optional(),
   deviceRecordingId: z.string().uuid().optional(),
   expiredUploadUrl: z.string().max(4096).optional(),
 })
@@ -189,10 +193,14 @@ export function createApp(deps: ApiDeps) {
     jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!),
   })))
 
+  // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
+  app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
+
+  // 書類を作る（どの種類も同じ流れ。db/repo.ts の createDocument）。1 人 1 通の種類で、もうあれば今の書類を返す（200）
   app.post('/api/clients/:id/documents', staffRoute('care.work', async (c, staff, db) => {
-    const { form } = await body(c, z.object({ form: z.literal('admission') }))
-    const r = await repo.createAdmission(db, staff, c.req.param('id')!)
-    return json(c, { id: r.id, form, created: r.created }, r.created ? 201 : 200)
+    const { kind } = await body(c, z.object({ kind: z.string().trim().min(1).max(100) }))
+    const r = await repo.createDocument(db, staff, c.req.param('id')!, kind)
+    return json(c, r, r.created ? 201 : 200)
   }))
 
   // 様式の版（欄の位置・対応・ページ）。中身は変わらないので、ブラウザが覚えてよい
@@ -231,7 +239,8 @@ export function createApp(deps: ApiDeps) {
   // 書き方の相談。AI が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。同じ利用者のほかの書類も読める。用紙は変えない
   app.post('/api/documents/:id/chat', staffRoute('care.work', async (c, staff, db) => {
     const { messages } = await body(c, ChatInput)
-    const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
+    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys }
+    document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
     const others = await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)
     const model = deps.chat ? await deps.chat() : fakeModel
@@ -301,9 +310,9 @@ export function createApp(deps: ApiDeps) {
   }))
 
   const startRecording = staffRoute('care.work', async (c, staff, db) => {
-    const { mime, deviceRecordingId, expiredUploadUrl } = await body(c, RecordingInput)
+    const { mime, deviceRecordingId, expiredUploadUrl, documentId } = await body(c, RecordingInput)
     const result = await tx(db, async (conn) => {
-      const rec = await repo.createRecording(conn, staff, c.req.param('id')!, mime, deviceRecordingId)
+      const rec = await repo.createRecording(conn, staff, c.req.param('id')!, mime, deviceRecordingId, documentId)
       const storage = deps.storage()
       let uploadUrl = rec.uploadUrl
       if (rec.status === 'uploaded' || (uploadUrl && await storage.size('source', rec.objectPath))) {

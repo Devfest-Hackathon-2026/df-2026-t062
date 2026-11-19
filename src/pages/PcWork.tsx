@@ -7,6 +7,7 @@ import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { availableTopics, fieldTargets, mergeSurveyDrafts, reviewItems, stageSurvey, surveyOverlays, type SurveyDraft } from '../components/petAssessment.ts'
 import { FormPage } from '../form/FormPage.tsx'
 import { useClient } from '../form/useClient.ts'
+import { pickDocument, useFormKinds } from '../form/useFormKinds.ts'
 import { useDocument } from '../form/useDocument.ts'
 import { api } from '../lib/api.ts'
 import { linkProps } from '../lib/router.tsx'
@@ -15,10 +16,13 @@ import { PetHelper } from '../components/PetHelper.tsx'
 import { countText, downloadBlob } from '../components/Chrome.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
-  const [tab, setTab] = useState<'assessment' | 'admission'>('assessment')
+  // 開いている書類の種類（空なら主な書類）
+  const [tab, setTab] = useState('')
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient } = useClient(clientId, () => reloadDoc.current())
-  const docId = client?.documents.find((d) => d.kind === tab)?.id
+  const kinds = useFormKinds()
+  const open = pickDocument(kinds, client?.documents, tab)
+  const docId = open.docId
   const state = useDocument(docId)
   reloadDoc.current = () => { void state.reload(); void reloadClient() }
   const [zoom, setZoom] = useState(100)
@@ -39,24 +43,35 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   useEffect(() => { setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount) setDocSaved(false) }, [state.pendingCount])
 
-  const openAdmission = useCallback(async () => {
+  // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
+  const openKind = useCallback(async (key: string) => {
     setNewOpen(false)
-    if (!client?.documents.some((d) => d.kind === 'admission')) {
-      await api.createAdmission(clientId)
+    if (!client?.documents.some((d) => d.kind === key)) {
+      await api.createDocument(clientId, key)
       await reloadClient()
     }
-    setTab('admission')
+    setTab(key)
   }, [client, clientId, reloadClient])
+  // 何通も作れる種類は、押すたびに新しい書類を作る
+  const createKind = useCallback(async (key: string) => {
+    setNewOpen(false)
+    await api.createDocument(clientId, key)
+    await reloadClient()
+    setTab(key)
+  }, [clientId, reloadClient])
 
   const doc = state.doc
-  const isAdm = tab === 'admission'
+  const isPrimary = open.isPrimary
+  const kindName = open.kind?.name ?? ''
   const pages = state.pages
-  const assessmentReady = !isAdm && !!doc && doc.id === docId && state.form?.id === doc.formVersionId
+  /** ページが何枚もある書類（ページの番号・いまのページを出す） */
+  const paged = isPrimary || pages.length > 1
+  const assessmentReady = isPrimary && !!doc && doc.id === docId && state.form?.id === doc.formVersionId
   const targets = useMemo(() => fieldTargets(pages), [pages])
   const drafts = assessmentReady && staged?.docId === doc.id ? staged.drafts : []
   const overlays = surveyOverlays(drafts, state.current, state.saved, targets)
   const review = assessmentReady ? reviewItems(doc, state.current, state.saved, drafts, targets) : []
-  const topics = assessmentReady ? availableTopics(state.current, targets) : []
+  const topics = assessmentReady ? availableTopics(state.current, targets, open.kind?.required ?? []) : []
 
   useEffect(() => () => clearTimeout(highlightTimer.current), [])
 
@@ -130,17 +145,17 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const canSave = () => adoption.current ?? Promise.resolve(true)
 
   const maxW = Math.round(820 * zoom / 100)
-  const required = !isAdm && doc ? countRequired(state.current) : client?.required ?? { filled: 0, total: 84 }
+  const required = isPrimary && doc && open.kind ? countRequired(state.current, open.kind.required) : client?.required ?? { filled: 0, total: 84 }
   const latestBatch = doc?.batches[0]
   const batchLabel = latestBatch?.label ?? 'AI 書き込み'
   const empty = !!doc && !doc.batches.length && Object.keys(doc.fields).every((k) => k === 'person.name' || k === 'person.sex')
   const hasUpdates = state.updates.size > 0
   const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
-  const incomplete = !isAdm && (jobs[0]?.status === 'partial' || jobs[0]?.status === 'failed') ? jobs[0] : null
+  const incomplete = isPrimary && (jobs[0]?.status === 'partial' || jobs[0]?.status === 'failed') ? jobs[0] : null
 
   const onScroll = () => {
     const el = scroller.current
-    if (!el || isAdm) return
+    if (!el || !paged) return
     const y = el.scrollTop + el.clientHeight * 0.3
     let idx = 0
     pageRefs.current.forEach((p, i) => { if (p && p.offsetTop - el.offsetTop <= y) idx = i })
@@ -155,7 +170,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     if (!docId) return
     await state.flush()
     const blob = await api.pdf(docId)
-    downloadBlob(blob, `${client?.name ?? ''}_${isAdm ? '入院時情報提供書' : 'アセスメント'}.pdf`)
+    downloadBlob(blob, `${client?.name ?? ''}_${kindName}.pdf`)
   }
 
   const pageLabel = (no: number, title: string, i: number) => {
@@ -163,7 +178,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     const dirty = !!(c.ai || c.hand)
     return (
       <div className="plabel" style={{ justifyContent: 'space-between', gap: 8 }}>
-        <span>{isAdm ? title : `${no} ・ ${title}`}</span>
+        <span>{paged ? `${no} ・ ${title}` : title}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: '#5B6672' }}>{dirty ? countText(c) : savedPages.has(no) ? '保存しました' : i === 0 && empty ? 'まだ何も書かれていません' : ''}</span>
           <button type="button" className="pgsave" disabled={!dirty} onClick={async () => { if (!await canSave() || !await state.savePage(no)) return; setSavedPages((s) => new Set(s).add(no)) }} style={dirty ? undefined : { opacity: 0.35, cursor: 'default' }}>このページを保存</button>
@@ -181,15 +196,19 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </a>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{client ? `${client.name} さん` : ' '}</h1>
-          <span style={{ fontSize: 13, color: '#5A6270' }}>{isAdm ? '入院時情報提供書' : 'アセスメント'}</span>
+          <span style={{ fontSize: 13, color: '#5A6270' }}>{kindName}</span>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
-          <button className={`dtab${!isAdm ? ' dtab-on' : ''}`} role="tab" aria-selected={!isAdm} type="button" onClick={() => { setTab('assessment'); setNewOpen(false) }}>アセスメント</button>
-          <button className={`dtab${isAdm ? ' dtab-on' : ''}`} role="tab" aria-selected={isAdm} type="button" onClick={() => void openAdmission()}>入院時情報提供書</button>
+          {(kinds ?? []).filter((k) => k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+            <button key={k.key} className={`dtab${k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={k.key === open.key} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
+          ))}
           <button className="dtab dtab-add" type="button" aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>{client?.name}さんの今の情報から、AI が書き込みます</div>
+              {(kinds ?? []).filter((k) => k.available && k.perClient === 'many').map((k) => (
+                <button key={k.key} className="mi" role="menuitem" type="button" onClick={() => void createKind(k.key)}><span>{k.name}</span></button>
+              ))}
               {newDocMenu.map((d) => (
                 <button key={d.label} className="mi" role="menuitem" type="button" disabled={!d.available} aria-disabled={!d.available} onClick={() => setNewOpen(false)}><span>{d.label}</span>{!d.available && <span className="mi-s coming-soon">{COMING_SOON_LABEL}</span>}</button>
               ))}
@@ -209,7 +228,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
 
       <div className="pc-work-layout">
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isAdm ? '入院時情報提供書' : 'アセスメント用紙'}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
           {pages.map((p, i) => {
             const n = state.updates.get(p.no) ?? 0
             return (
@@ -223,7 +242,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
 
         <section aria-label="書類" style={{ minWidth: 0, minHeight: 0, background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
           <div style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px', padding: '9px 17px 6px', borderBottom: '1px solid #EEF0F3' }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{isAdm ? '入院時情報提供書' : pages[cur]?.title}{' '}<span style={{ fontWeight: 400, color: '#5A6270', marginLeft: 4, fontSize: 12 }}>{isAdm ? '1 / 1 ページ' : `${cur + 1} / ${pages.length || 11} ページ`}</span></h2>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{paged ? pages[cur]?.title : kindName}{' '}<span style={{ fontWeight: 400, color: '#5A6270', marginLeft: 4, fontSize: 12 }}>{paged ? `${cur + 1} / ${pages.length || 11} ページ` : '1 / 1 ページ'}</span></h2>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <span className="lg"><span aria-hidden="true" style={{ width: 14, height: 10, borderRadius: 2, background: 'rgba(36,83,196,0.1)', border: '1px solid rgba(36,83,196,0.45)' }} />入力できる欄</span>
               <span className="lg"><span aria-hidden="true" style={{ width: 14, height: 10, borderRadius: 2, background: 'rgba(240,160,64,0.3)', border: '1px solid rgba(232,145,45,0.7)' }} />今回の録音から</span>
@@ -249,11 +268,11 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
               {incomplete.status === 'partial' ? 'AI が一部の項目を処理できませんでした。用紙の内容を確認してください。' : 'AI 処理を完了できませんでした。録音は保存されています。担当者に確認してください。'}
             </div>}
             {state.error && <div role="alert" style={{ margin: `0 auto 12px`, maxWidth: maxW, color: '#A3261C', fontSize: 13 }}>うまく送れませんでした（{state.error}）。少し待ってから、もう一度直してください。</div>}
-            {isAdm && doc && (
+            {open.fromName && doc && (
               <div style={{ margin: '0 auto 14px', maxWidth: maxW }}>
                 <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 10, padding: '10px 14px', fontSize: 13, lineHeight: 1.5 }}>
                   <span aria-hidden="true" style={{ flex: '0 0 auto', width: 22, height: 22, borderRadius: 6, background: '#1F2430', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AI</span>
-                  <div><strong>アセスメントから {copied} 欄を写しました（橙）。</strong>氏名・生年月日・住所・電話番号などは、アセスメントと同じ値です。どちらかで直すと、もう片方にも入ります。</div>
+                  <div><strong>{open.fromName}から {copied} 欄を写しました（橙）。</strong>写したあとは、どちらかで直しても、もう片方は変わりません。</div>
                 </div>
               </div>
             )}

@@ -6,6 +6,7 @@ import type { SurveySource } from '../core/survey-import.ts'
 import { countRequired } from '../core/required.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
 import { loadFormDef, publishedVersionId } from './forms.ts'
+import { kindOf, primaryKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 
 type Q = Db | Tx
@@ -65,7 +66,8 @@ export interface ClientSummary {
   nextVisitAt: string | null
   isNew: boolean
   updatedAt: string
-  assessmentId: string | null
+  /** 主な書類（form_kinds.is_primary）の id */
+  documentId: string | null
 }
 
 /** 主な書類（form_kinds.is_primary）の値。利用者一覧の要介護度・入力の進み具合はここから出す */
@@ -89,7 +91,7 @@ async function valuesOf(db: Q, officeId: string, clientIds: string[]) {
 export async function listClients(db: Q, officeId: string, opts: { q?: string, sort?: 'updated' | 'name' } = {}): Promise<ClientSummary[]> {
   const q = opts.q?.trim()
   const r = await db.query(
-    `SELECT c.id, c.name, c.status, c.next_visit_at, c.updated_at, d.id AS assessment_id,
+    `SELECT c.id, c.name, c.status, c.next_visit_at, c.updated_at, d.id AS document_id,
             EXISTS (SELECT 1 FROM revisions v WHERE v.document_id = d.id) AS has_rev
      FROM clients c LEFT JOIN documents d ON d.client_id = c.id AND d.kind = (SELECT key FROM form_kinds WHERE is_primary)
      WHERE c.office_id = $1 AND c.archived_at IS NULL ${q ? 'AND c.name ILIKE $2' : ''}
@@ -97,6 +99,7 @@ export async function listClients(db: Q, officeId: string, opts: { q?: string, s
     q ? [officeId, `%${q}%`] : [officeId],
   )
   const values = await valuesOf(db, officeId, r.rows.map((x) => x.id))
+  const { required } = await primaryKind(db)
   return r.rows.map((c) => {
     const v = values.get(c.id) ?? {}
     return {
@@ -105,11 +108,11 @@ export async function listClients(db: Q, officeId: string, opts: { q?: string, s
       sex: (v['person.sex'] as string) ?? null,
       status: c.status,
       careLevel: (v['cert.careLevel'] as string) ?? null,
-      required: countRequired(v),
+      required: countRequired(v, required),
       nextVisitAt: c.next_visit_at ? new Date(c.next_visit_at).toISOString() : null,
       isNew: !c.has_rev && Object.keys(v).filter((k) => k !== 'person.name' && k !== 'person.sex').length === 0,
       updatedAt: new Date(c.updated_at).toISOString(),
-      assessmentId: c.assessment_id,
+      documentId: c.document_id,
     }
   })
 }
@@ -120,8 +123,8 @@ export async function createClient(db: Db, staff: Staff, input: { name: string, 
       'INSERT INTO clients (office_id, name, status, created_by) VALUES ($1,$2,$3,$4) RETURNING id',
       [staff.officeId, input.name, input.status ?? '在宅', staff.id],
     )).rows[0]
-    // 主な書類（アセスメント）も一緒に作る
-    const kind = (await c.query('SELECT key FROM form_kinds WHERE is_primary')).rows[0].key as FormKind
+    // 主な書類（form_kinds.is_primary）も一緒に作る
+    const { key: kind } = await primaryKind(c)
     const version = await publishedVersionId(c, staff.officeId, kind)
     const doc = (await c.query(
       'INSERT INTO documents (office_id, client_id, kind, template_version_id, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id',
@@ -137,7 +140,7 @@ export async function createClient(db: Db, staff: Staff, input: { name: string, 
       await c.query("INSERT INTO document_saved (document_id, key, value, by) VALUES ($1,$2,$3,'cm')", [doc.id, key, JSON.stringify(value)])
     }
     await audit(c, staff, staff.officeId, 'client.create', { clientId: client.id })
-    return { id: client.id as string, assessmentId: doc.id as string }
+    return { id: client.id as string, documentId: doc.id as string }
   })
 }
 
@@ -146,13 +149,14 @@ export async function getClient(db: Q, officeId: string, clientId: string) {
   if (!c) throw new NotFound()
   const docs = (await db.query('SELECT id, kind, template_version_id FROM documents WHERE client_id = $1 AND office_id = $2 ORDER BY created_at', [clientId, officeId])).rows
   const values = (await valuesOf(db, officeId, [clientId])).get(clientId) ?? {}
+  const { required } = await primaryKind(db)
   return {
     id: c.id as string,
     name: c.name as string,
     status: c.status as string,
     nextVisitAt: c.next_visit_at ? new Date(c.next_visit_at).toISOString() : null,
     documents: docs.map((d) => ({ id: d.id as string, kind: d.kind as FormKind, formVersionId: d.template_version_id as string })),
-    required: countRequired(values),
+    required: countRequired(values, required),
   }
 }
 
@@ -296,7 +300,6 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
     const saved = await readSaved(c, d.id)
     const fields = await readFields(c, d.id)
     for (const ch of changes) {
-      if (ch.surveySource && d.kind !== 'assessment') throw new BadRequest('認定調査票はアセスメントに取り込めます')
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
       if (!sameValue(fields[ch.key]?.value ?? null, ch.base ?? null)) throw new Conflict(ch.key)
       if (ch.surveySource && sameValue(ch.base, null) && !sameValue(saved[ch.key]?.value, null)) throw new Conflict(ch.key)
@@ -484,42 +487,65 @@ async function finishJob(c: Tx, input: ApplyInput, batchId: string | null, plan:
   if (!result.rows.length) throw new Conflict('job_lease')
 }
 
-/** 入院時情報提供書を作る。アセスメントに値がある欄を、基本情報も含めて写す（写したあとはつながない。その様式だけの欄は写さない） */
-export async function createAdmission(db: Db, staff: Staff, clientId: string) {
+/** 書類を作るときに入れる、事業所の設定の欄（様式の版が読むものだけ入れる） */
+const settingsOf = (office: { name?: string, phone?: string | null, fax?: string | null } | undefined, staff: Staff): Record<string, unknown> =>
+  ({ 'office.name': office?.name, 'office.careManagerName': staff.name, 'office.phone': office?.phone, 'office.fax': office?.fax })
+
+/**
+ * 書類を作る（docs/再設計/16 の「書類を作る」。どの種類も同じ流れ。AI は使わない）。
+ *   1. 様式を選ぶ: 事業所の様式があればそれ、なければ全体の様式の、公開した版
+ *   2. 同じ key を写す: create_from の種類の書類（何通もあるなら一番新しいもの）から、新しい書類の版が読む key の値をそのまま写す。
+ *      その様式だけの欄（local.*）は写さない。写したあとはつながない
+ *   3. 設定を入れる: 事業所名・電話・FAX・担当ケアマネの氏名（版が読むものだけ）
+ * 写した値と設定は AI の値として入る（書き込みの記録は copy）。1 人 1 通の種類で、もう書類があれば作らずに返す（created: false）
+ */
+export async function createDocument(db: Db, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
   return tx(db, async (c) => {
-    const assess = (await c.query("SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment' FOR UPDATE", [clientId, staff.officeId])).rows[0]
-    if (!assess) throw new NotFound()
-    const existing = (await c.query("SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'admission'", [clientId, staff.officeId])).rows[0]
-    if (existing) return { id: existing.id as string, created: false }
-    const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
-    const version = await publishedVersionId(c, staff.officeId, 'admission')
+    const kind = await kindOf(c, kindKey)
+    if (!kind) throw new BadRequest('書類の種類がありません')
+    // 同じ利用者の書類づくりを 1 つずつにする（何通目か・1 通だけかを決めるため）
+    const client = (await c.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2 AND archived_at IS NULL FOR UPDATE', [clientId, staff.officeId])).rows[0]
+    if (!client) throw new NotFound()
+    const existing = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC LIMIT 1', [clientId, kind.key])).rows[0]
+    if (existing && kind.perClient === 'one') return { id: existing.id as string, kind: kind.key, created: false }
+    const version = await publishedVersionId(c, staff.officeId, kind.key)
+    const seq = Number((await c.query('SELECT coalesce(max(seq), 0) + 1 AS n FROM documents WHERE client_id = $1 AND kind = $2', [clientId, kind.key])).rows[0].n)
     const doc = (await c.query(
-      "INSERT INTO documents (office_id, client_id, kind, template_version_id, created_by) VALUES ($1,$2,'admission',$3,$4) RETURNING id",
-      [staff.officeId, clientId, version, staff.id],
+      'INSERT INTO documents (office_id, client_id, kind, seq, template_version_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [staff.officeId, clientId, kind.key, seq, version, staff.id],
     )).rows[0]
-    const src = await readFields(c, assess.id)
-    const proposed: Record<string, { value: unknown }> = {}
-    for (const key of (await loadFormDef(c, version)).keys) {
-      if (key.startsWith('local.') || !src[key]) continue
-      proposed[key] = { value: src[key].value }
+    const keys = new Set((await loadFormDef(c, version)).keys.filter((k) => !k.startsWith('local.')))
+    const values: Record<string, unknown> = {}
+    let from: string | null = null
+    if (kind.createFrom) {
+      const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom])).rows[0]
+      if (src) {
+        from = (await kindOf(c, kind.createFrom))?.name ?? kind.createFrom
+        for (const [key, f] of Object.entries(await readFields(c, src.id))) if (keys.has(key)) values[key] = f.value
+      }
     }
-    const settings: Record<string, unknown> = { 'office.name': office?.name, 'office.careManagerName': staff.name, 'office.phone': office?.phone, 'office.fax': office?.fax }
-    const changes = Object.entries({ ...Object.fromEntries(Object.entries(proposed).map(([k, v]) => [k, v.value])), ...settings })
-      .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    const batch = (await c.query(
-      "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
-      [staff.officeId, clientId, doc.id, 'AI 書き込み・アセスメントから写した', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
-    )).rows[0]
-    for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
-    await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: 'admission', copied: changes.length })
-    return { id: doc.id as string, created: true }
+    const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
+    for (const [key, value] of Object.entries(settingsOf(office, staff))) if (keys.has(key)) values[key] = value
+    const changes = Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== '')
+    if (changes.length) {
+      const batch = (await c.query(
+        "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
+        [staff.officeId, clientId, doc.id, from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
+      )).rows[0]
+      for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
+    }
+    await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied: changes.length })
+    return { id: doc.id as string, kind: kind.key, created: true }
   })
 }
 
 // ---------- 録音とジョブ ----------
 
-export async function createRecording(db: Tx, staff: Staff, clientId: string, mime: string, deviceRecordingId?: string) {
-  const doc = (await db.query("SELECT id FROM documents WHERE client_id = $1 AND office_id = $2 AND kind = 'assessment'", [clientId, staff.officeId])).rows[0]
+/** 録音を始める。録音は、録音を始めた書類（documentId）につなぐ。省いたときは主な書類 */
+export async function createRecording(db: Tx, staff: Staff, clientId: string, mime: string, deviceRecordingId?: string, documentId?: string) {
+  const doc = (documentId
+    ? await db.query('SELECT id FROM documents WHERE id = $1 AND client_id = $2 AND office_id = $3', [documentId, clientId, staff.officeId])
+    : await db.query('SELECT d.id FROM documents d JOIN form_kinds k ON k.key = d.kind AND k.is_primary WHERE d.client_id = $1 AND d.office_id = $2 ORDER BY d.seq LIMIT 1', [clientId, staff.officeId])).rows[0]
   if (!doc) throw new NotFound()
   const ext = mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac') ? 'm4a' : mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'bin'
   const inserted = (await db.query(

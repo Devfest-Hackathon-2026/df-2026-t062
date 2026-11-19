@@ -8,14 +8,18 @@ import { useDocument } from '../form/useDocument.ts'
 import { useRecorder } from '../form/useRecorder.ts'
 import { api } from '../lib/api.ts'
 import { linkProps } from '../lib/router.tsx'
+import { pickDocument, useFormKinds } from '../form/useFormKinds.ts'
 import { COMING_SOON_LABEL, newDocMenu } from '../lib/docMenu.ts'
 import { countText } from '../components/Chrome.tsx'
 
 export function PadWork({ clientId }: { clientId: string }) {
-  const [tab, setTab] = useState<'assessment' | 'admission'>('assessment')
+  // 開いている書類の種類（空なら主な書類）
+  const [tab, setTab] = useState('')
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient, poll } = useClient(clientId, () => reloadDoc.current())
-  const docId = client?.documents.find((d) => d.kind === tab)?.id
+  const kinds = useFormKinds()
+  const open = pickDocument(kinds, client?.documents, tab)
+  const docId = open.docId
   const state = useDocument(docId)
   reloadDoc.current = () => { void state.reload(); void reloadClient() }
   const recorder = useRecorder(clientId, () => void poll())
@@ -31,8 +35,10 @@ export function PadWork({ clientId }: { clientId: string }) {
   useEffect(() => { setSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount) setSaved(false) }, [state.pendingCount])
 
-  const isAdm = tab === 'admission'
+  const kindName = open.kind?.name ?? ''
   const pages = state.pages
+  /** ページが何枚もある書類（目次・ページの番号を出す） */
+  const paged = open.isPrimary || pages.length > 1
   const doc = state.doc
   const job = jobs[0]
   const running = job && (job.status === 'queued' || job.status === 'processing')
@@ -43,19 +49,20 @@ export function PadWork({ clientId }: { clientId: string }) {
           : 'idle'
   const etaMin = job?.etaSeconds ? Math.max(1, Math.round((job.etaSeconds - (Date.now() - Date.parse(job.createdAt)) / 1000) / 60)) : 4
 
-  const openDoc = async (form: 'assessment' | 'admission') => {
+  // 種類の書類を開く。まだなければ作る（db/repo.ts の createDocument）。many は押すたびに新しい書類を作る
+  const openDoc = async (key: string, opts: { create?: boolean } = {}) => {
     setDocOpen(false)
     setTocOpen(false)
-    if (form === 'admission' && !client?.documents.some((d) => d.kind === 'admission')) {
-      await api.createAdmission(clientId)
+    if (opts.create || !client?.documents.some((d) => d.kind === key)) {
+      await api.createDocument(clientId, key)
       await reloadClient()
     }
-    setTab(form)
+    setTab(key)
   }
 
   const onScroll = () => {
     const el = scroller.current
-    if (!el || isAdm) return
+    if (!el || !paged) return
     const y = el.scrollTop + el.clientHeight * 0.3
     let idx = 0
     pageRefs.current.forEach((p, i) => { if (p && p.offsetTop - el.offsetTop <= y) idx = i })
@@ -80,10 +87,10 @@ export function PadWork({ clientId }: { clientId: string }) {
         <div style={{ fontSize: 19, fontWeight: 700, whiteSpace: 'nowrap' }}>{client ? `${client.name} さん` : ''}</div>
         <button type="button" onClick={() => { setDocOpen(!docOpen); setTocOpen(false) }} aria-expanded={docOpen} style={{ font: 'inherit', fontSize: 16, fontWeight: 700, minHeight: 46, padding: '6px 14px', border: '1px solid #CBD1DA', borderRadius: 10, background: '#F2F5FB', color: '#1F2430', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /></svg>
-          {isAdm ? '入院時情報提供書' : 'アセスメント'}
+          {kindName}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
         </button>
-        {!isAdm && (
+        {paged && (
           <button type="button" onClick={() => { setTocOpen(!tocOpen); setDocOpen(false) }} aria-expanded={tocOpen} style={{ font: 'inherit', fontSize: 16, fontWeight: 700, minHeight: 46, padding: '6px 14px', border: '1px solid #CBD1DA', borderRadius: 10, background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
             <span style={{ color: '#5A6270', fontWeight: 500 }}>{cur + 1} / {pages.length || 11}</span>{pages[cur]?.title}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
@@ -91,10 +98,14 @@ export function PadWork({ clientId }: { clientId: string }) {
         )}
         {docOpen && (
           <div role="menu" style={{ position: 'absolute', left: 150, top: 64, width: 380, background: '#FFFFFF', borderRadius: 16, boxShadow: '0 12px 36px rgba(20,24,32,0.28)', padding: 8, display: 'flex', flexDirection: 'column', zIndex: 20 }}>
-            <button className={menuItem(!isAdm)} role="menuitem" type="button" onClick={() => void openDoc('assessment')}>アセスメント</button>
-            <button className={menuItem(isAdm)} role="menuitem" type="button" onClick={() => void openDoc('admission')}>入院時情報提供書</button>
+            {(kinds ?? []).filter((k) => k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+              <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
+            ))}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
             <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る（{client?.name}さんの今の情報から AI が書き込みます）</div>
+            {(kinds ?? []).filter((k) => k.available && k.perClient === 'many').map((k) => (
+              <button key={k.key} className="toc" role="menuitem" type="button" onClick={() => void openDoc(k.key, { create: true })}>＋ {k.name}</button>
+            ))}
             {newDocMenu.map((d) => (
               <button key={d.label} className="toc" role="menuitem" type="button" disabled={!d.available} aria-disabled={!d.available} onClick={() => setDocOpen(false)} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>＋ {d.label}{!d.available && <span className="coming-soon" style={{ fontSize: 13 }}>{COMING_SOON_LABEL}</span>}</button>
             ))}
@@ -156,10 +167,10 @@ export function PadWork({ clientId }: { clientId: string }) {
         <div role="alert" className="strip" style={{ background: '#FFF4E5' }}>録音を端末に保存できていません。録音を止めるまで、この画面を開いたままにしてください。</div>
       )}
       <div ref={scroller} onScroll={onScroll} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '16px 16px 150px', position: 'relative' }}>
-        {isAdm && doc && (
+        {open.fromName && doc && (
           <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 12, padding: '12px 14px', fontSize: 15, lineHeight: 1.5, marginBottom: 12 }}>
             <span aria-hidden="true" style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 7, background: '#1F2430', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AI</span>
-            <div><strong>アセスメントから {copied} 欄を写しました（橙）。</strong>氏名・住所などはアセスメントと同じ値です。どちらかで直すと、もう片方にも入ります。</div>
+            <div><strong>{open.fromName}から {copied} 欄を写しました（橙）。</strong>写したあとは、どちらかで直しても、もう片方は変わりません。</div>
           </div>
         )}
         {doc && pages.map((p, i) => {
@@ -168,7 +179,7 @@ export function PadWork({ clientId }: { clientId: string }) {
           return (
             <div key={`${doc.id}-${p.no}`} className="pwrap" ref={(el) => { pageRefs.current[i] = el }}>
               <div className="plabel" style={{ justifyContent: 'space-between', gap: 8 }}>
-                <span>{isAdm ? p.title : `${p.no} ・ ${p.title}`}</span>
+                <span>{paged ? `${p.no} ・ ${p.title}` : p.title}</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, color: '#5B6672' }}>{dirty ? countText(c) : savedPages.has(p.no) ? '保存しました' : ''}</span>
                   <button type="button" className="pgsave" disabled={!dirty || phase === 'writing'} onClick={async () => { if (!await state.savePage(p.no)) return; setSavedPages((s) => new Set(s).add(p.no)) }} style={dirty ? undefined : { opacity: 0.35, cursor: 'default' }}>このページを保存</button>
@@ -202,7 +213,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             <button type="button" onClick={() => void recorder.stop()} className="pill" style={{ pointerEvents: 'auto', border: 0, background: '#D93A2B', color: '#FFFFFF', cursor: 'pointer', boxShadow: '0 8px 24px rgba(217,58,43,0.35)' }}><span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 3, background: '#FFFFFF' }} />止める<span style={{ fontWeight: 500, fontSize: 18, opacity: 0.9 }}>{recorder.elapsed}</span></button>
           </>
         ) : phase === 'idle' || phase === 'done' ? (
-          <button type="button" onClick={() => { void recorder.start(); setTab('assessment') }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
+          <button type="button" onClick={() => { void recorder.start(); setTab('') }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
         ) : null}
       </div>
     </div>
