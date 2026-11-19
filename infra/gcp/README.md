@@ -54,7 +54,7 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 | ファイル | 作るもの | 要点 |
 |---|---|---|
 | `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー2つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
-| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。`forms` は様式の元の PDF とページの画像（`pdf/<元の PDF の sha256>/…`）。api は読むだけで、画面には期限つきの URL で渡す |
+| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。`forms` は様式の元の PDF とページの画像（全体は `pdf/<元の PDF の sha256>/…`、事業所の様式は `offices/<office_id>/pdf/<sha256>/…`）。画面には期限つきの URL で渡す。責任者・サイト管理者が上げた PDF は `imports/`（事業所は `offices/<office_id>/imports/`）にブラウザから直接送るので、`app_origins` からの CORS（PUT/POST/OPTIONS）を付ける。自動削除はない（上げた PDF は worker が消す） |
 | `queue.tf` | Cloud Tasksキュー `t062-jobs`、Schedulerジョブ `t062-reconcile` | 同時配信3、最大5回まで間隔を広げて再試行。Schedulerは5分ごとにworkerの `/tasks/reconcile` をOIDCつきでPOST |
 | `worker.tf` | workerのCloud Runサービス、DB移行のCloud Runジョブ | workerは非公開（`invoker_iam_disabled=false`）、タイムアウト1800秒、最小0・最大2、1 CPU・1Gi。移行ジョブはapiの実行用サービスアカウントで動き、DB の移行と様式の登録（`node db/migrate.ts --forms`）を流す |
 | `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは、責任者が職員を登録するとき・サイト管理者が最初の責任者を登録するときに api が作る（本人はパスワードを決めるメールから決める） |
@@ -65,8 +65,8 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 
 | サービスアカウント | 付与する権限 |
 |---|---|
-| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読むだけ）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser`、`aiplatform.user`（書き方の相談で Gemini を呼ぶ）、`firebaseauth.admin`（職員を登録するときに Identity Platform のアカウントを作る。プロジェクト単位） |
-| `cloud-run-worker-runtime`（worker） | `cloudsql.client` と `cloudsql.instanceUser`、`source` に `storage.objectViewer`、`work` に `storage.objectAdmin`、`aiplatform.user`、Speech-to-Text（既定は `roles/speech.client`。workerが認識器を作る場合は変数 `worker_speech_role` を `roles/speech.editor` にする）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
+| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読む）と、上げた PDF の場所（`imports/`・`offices/<office_id>/imports/`）だけに条件つきの `storage.objectCreator`（送信 URL を作る。上書き・削除はできない）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser`、`aiplatform.user`（書き方の相談で Gemini を呼ぶ）、`firebaseauth.admin`（職員を登録するときに Identity Platform のアカウントを作る。プロジェクト単位） |
+| `cloud-run-worker-runtime`（worker） | `cloudsql.client` と `cloudsql.instanceUser`、`source` に `storage.objectViewer`、`work` に `storage.objectAdmin`、`forms` に `storage.objectViewer` と `storage.objectCreator`（様式の取り込み: 上げた PDF を読み、元の PDF とページの画像を新しく置く。上書きはしない）と、上げた PDF の場所だけに条件つきの `storage.objectAdmin`（変換の後に消す）、`aiplatform.user`、Speech-to-Text（既定は `roles/speech.client`。workerが認識器を作る場合は変数 `worker_speech_role` を `roles/speech.editor` にする）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
 | Speech-to-Text service agent | `source` に `storage.bucketViewer` と `storage.objectViewer`。BatchRecognize が `gs://` の録音を直接読むため、API有効化で作られる `service-<project-number>@gcp-sa-speech.iam.gserviceaccount.com` に録音バケットだけの読み取り権限を付ける |
 | `tasks-invoker`（Cloud TasksとSchedulerのOIDCの身元） | workerのCloud Runサービスにだけ `run.invoker` |
 | `github-api-deploy`（デプロイ用） | 上の表のapiと同じ範囲を、workerサービスと移行ジョブにも付ける（`run.developer`）。workerのヘルスチェック呼び出し用にworkerだけ `run.invoker`。workerと移行ジョブの実行用サービスアカウントには `serviceAccountUser` |
@@ -116,7 +116,7 @@ IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTer
 | 初回と、元の PDF が変わったとき | 元の PDF とページの画像を `forms` に入れる | 管理者が手元で `gcloud auth application-default login` のあと、`STORAGE_MODE=gcs GCS_FORMS_BUCKET=$(terraform output -json buckets \| jq -r .forms) npm run forms:assets`（pdftoppm が要る）。場所が元の PDF のハッシュで決まるので DB は要らず、上書きも起きない。入院時情報提供書は公開されていないので、手元の PDF を `forms/tools/templates/admission/base.pdf` に置いたときだけ入る |
 | 新しい版を出したあと | 古い版を指す書類を新しい版に移す | 移行ジョブの引数だけを変えて流す: `gcloud run jobs execute <移行ジョブ> --region <リージョン> --args forms/admin/rebase.ts,--dry-run --wait` で確かめてから、`--dry-run` を外して流す。新しい版が古い版の読んでいた key を全部読むときだけ移す |
 
-`forms` に入れる権限は、管理者の IAM ユーザー（プロジェクトのオーナーなど）を使います。api は読むだけです。
+全体の様式（`pdf/`）を `forms` に入れる権限は、管理者の IAM ユーザー（プロジェクトのオーナーなど）を使います。api は、上げた PDF の送信 URL を作るほかは読むだけです。worker は、上げた PDF から作った様式の PDF と画像を新しく置き（上書きはしない）、上げた PDF を消します。
 
 ## 適用の順序
 

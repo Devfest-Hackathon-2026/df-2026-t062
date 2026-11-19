@@ -73,7 +73,7 @@ before(async () => {
     hasPdf = true
   }
   putFake = async (path, data) => { await storage.writeOnce('forms', path, data, 'image/png') }
-  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter() }) }
+  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport }) }
   const queue = new LocalQueue((id) => runJob(workerDeps, id))
   const server = createApiServer({
     db: async () => db,
@@ -88,6 +88,7 @@ before(async () => {
         enqueues.set(id, (enqueues.get(id) ?? 0) + 1)
         await queue.enqueue(id)
       },
+      async enqueueFormImport() {},
     }),
     // 台本: 録音を探してから、用紙を読んで案を出す
     chat: async () => async ({ contents }) => {

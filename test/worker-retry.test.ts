@@ -6,7 +6,7 @@ import { createPool, tx, type Db } from '../db/pool.ts'
 import { migrate } from '../db/migrate.ts'
 import { seed } from '../db/seed.ts'
 import { applyBatch, completeRecording, createClient, createRecording, activeJobs, type Staff } from '../db/repo.ts'
-import { FakeSpeakers, FakeStt } from '../worker/fake.ts'
+import { FakeSpeakers, FakeStt, fakeFormImport } from '../worker/fake.ts'
 import { reconcile, runJob, type WorkerDeps } from '../worker/jobs.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
 import { LocalStorage } from '../api/storage.ts'
@@ -46,7 +46,7 @@ async function job() {
 }
 
 const providers = (write: Providers['writer']['write']): Providers => ({
-  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: { write },
+  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: { write }, formImport: fakeFormImport,
 })
 const deps = (p: Providers): WorkerDeps => ({ db: async () => db, storage: () => storage, providers: async () => p })
 const value = { 'intake.method': { value: '電話', cite: [] } }

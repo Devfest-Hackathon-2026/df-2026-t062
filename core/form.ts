@@ -65,9 +65,13 @@ export function slotPages(form: Pick<FormDef, 'pages' | 'schemas'>): Map<string,
   return out
 }
 
-/** 版の中身の指紋（同じ中身なら同じ版。登録のとき、変わったかどうかを見る） */
-export function contentOf(input: { kind: FormKind, schemas: TemplateSlot[][], bindings: Bindings, pages: FormPage[] }): string {
-  return JSON.stringify(sortKeys({ kind: input.kind, schemas: input.schemas, bindings: input.bindings, pages: input.pages }))
+/**
+ * 版の中身の指紋（同じ中身なら同じ版。登録のとき、変わったかどうかを見る）。
+ * その様式だけの欄の定義（local_fields）は、あるときだけ入れる（定義のない今の版の指紋を変えないため）
+ */
+export function contentOf(input: { kind: string, schemas: TemplateSlot[][], bindings: Bindings, pages: FormPage[], localFields?: unknown[] }): string {
+  const { kind, schemas, bindings, pages, localFields } = input
+  return JSON.stringify(sortKeys({ kind, schemas, bindings, pages, ...(localFields?.length ? { localFields } : {}) }))
 }
 
 function sortKeys(v: unknown): unknown {
@@ -77,9 +81,13 @@ function sortKeys(v: unknown): unknown {
 }
 
 /**
- * 置き場（非公開の forms の置き場）の中の場所は、元の PDF のハッシュで決める。
- * 同じ PDF なら、版・事業所をまたいで同じファイル（対応だけを直した新しい版は、入れ直さなくてよい）。場所が中身で決まるので上書きは起きない。
+ * 置き場（非公開の forms の置き場）の中の場所は、元の PDF のハッシュで決める（docs/再設計/13_DB設計.md の「PDF の置き場」）。
+ * 全体の様式は pdf/<sha256>/、事業所の様式は offices/<office_id>/pdf/<sha256>/（同じ PDF でも事業所をまたいで共有しない）。
+ * 同じ様式の版どうしは同じファイル（対応だけを直した新しい版は、入れ直さなくてよい）。場所が中身で決まるので上書きは起きない。
  */
-export const basePdfAssetPath = (sha256: string) => `pdf/${sha256}/base.pdf`
+const assetDir = (sha256: string, officeId: string | null) => `${officeId ? `offices/${officeId}/` : ''}pdf/${sha256}`
+export const basePdfAssetPath = (sha256: string, officeId: string | null = null) => `${assetDir(sha256, officeId)}/base.pdf`
 /** ページの画像。PDF の何ページ目か（1 から。様式のページの pdfIndex + 1） */
-export const pageImageAssetPath = (sha256: string, pdfPage: number) => `pdf/${sha256}/pages/p${pdfPage}.png`
+export const pageImageAssetPath = (sha256: string, pdfPage: number, officeId: string | null = null) => `${assetDir(sha256, officeId)}/pages/p${pdfPage}.png`
+/** 上げたままの PDF（変換の前）。全体の様式は imports/<id>.pdf、事業所の様式は offices/<office_id>/imports/<id>.pdf */
+export const importPdfPath = (importId: string, officeId: string | null) => `${officeId ? `offices/${officeId}/` : ''}imports/${importId}.pdf`

@@ -5,9 +5,10 @@
 // worker の道（/tasks/*）はここには置かない（worker/app.ts）。
 import { Hono, type Context, type Handler } from 'hono'
 import { z } from 'zod'
-import { pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
+import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
 import { validValue } from '../core/schema.ts'
+import * as importsDb from '../db/form-imports.ts'
 import * as forms from '../db/forms.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
@@ -71,6 +72,9 @@ const OfficeInput = z.object({
 // 責任者が職員を止める・戻す・役割を変える
 const StaffPatchInput = z.object({ role: z.enum(STAFF_ROLES).optional(), disabled: z.boolean().optional() })
   .refine((v) => v.role !== undefined || v.disabled !== undefined)
+
+// 様式の取り込み: 何の書類の用紙か
+const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
 
 /** 入口の宣言: 操作、またはログインなし（public） */
 export type Declared = Operation | 'public'
@@ -193,7 +197,7 @@ export function createApp(deps: ApiDeps) {
     const storage = deps.storage()
     const window = dailyWindow()
     const pages = await Promise.all(v.pages.map(async (p) => {
-      const path = pageImageAssetPath(v.basePdfSha256, p.pdfIndex + 1)
+      const path = pageImageAssetPath(v.basePdfSha256, p.pdfIndex + 1, v.officeId)
       return { no: p.no, url: await exists(storage, path) ? await storage.signedReadUrl('forms', path, window) : null }
     }))
     const body: FormAssetsView = { pages, hasPdf: await exists(storage, forms.basePdfPath(v)), expiresAt: window.until.toISOString() }
@@ -340,6 +344,32 @@ export function createApp(deps: ApiDeps) {
     const r = await staffDb.createOffice(db, { ...input, admin: { ...input.admin, authUid: account.uid } })
     return json(c, { ...r, accountCreated: account.created }, 201)
   }))
+
+  // ---------- 様式の取り込み（上げた PDF → 下書きの版）。責任者は自分の事業所の様式、サイト管理者は全体の様式 ----------
+
+  type ImportHandler = (c: Context, scope: importsDb.ImportScope, createdBy: string | null, db: Db) => Promise<Response>
+  /** 責任者（/api/office/、form.manage）とサイト管理者（/api/admin/、site.manage）で同じ処理。どこの様式か（scope）だけが違う */
+  const importRoutes = (prefix: '/api/office' | '/api/admin', guard: (h: ImportHandler) => Handler) => {
+    // 取り込みを作り、PDF をブラウザから直接送る URL を返す（置き場は imports/<id>.pdf。中身は worker が確かめる）
+    app.post(`${prefix}/form-imports`, guard(async (c, scope, createdBy, db) => {
+      const { kind } = await body(c, ImportInput)
+      const imp = await importsDb.createImport(db, scope, kind, createdBy)
+      const uploadUrl = await deps.storage().createUploadSession('forms', importPdfPath(imp.id, scope.officeId), 'application/pdf', c.req.header('Origin') ?? undefined)
+      return json(c, { import: imp, uploadUrl }, 201)
+    }))
+    app.get(`${prefix}/form-imports`, guard(async (c, scope, _by, db) => json(c, { imports: await importsDb.listImports(db, scope) })))
+    app.get(`${prefix}/form-imports/:id`, guard(async (c, scope, _by, db) => json(c, { import: await importsDb.getImport(db, scope, c.req.param('id')!) })))
+    // 送り終わり。置き場に届いたのを確かめて、変換を積む（何度呼んでもよい。積むのは待っている間だけ）
+    app.post(`${prefix}/form-imports/:id/complete`, guard(async (c, scope, _by, db) => {
+      const id = c.req.param('id')!
+      const imp = await importsDb.markUploaded(db, scope, id, (path) => deps.storage().size('forms', path), importsDb.MAX_IMPORT_BYTES)
+      if (!imp) return json(c, { error: 'not_uploaded' }, 409)
+      if (imp.status === 'queued') await deps.queue().enqueueFormImport(id, { initial: true })
+      return json(c, { import: imp }, 202)
+    }))
+  }
+  importRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, staff.id, db)))
+  importRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, null, db)))
 
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------
 

@@ -47,6 +47,20 @@
 | `POST /api/office/staff` | 職員を登録する（`{name, email, role: "caremanager"\|"admin"}`。メールは小文字にそろえる）。Identity Platform のアカウントがなければ作る（`accountCreated: true`）。パスワードはここでは決めない: 画面が本人に、パスワードを決めるメール（Firebase の `sendPasswordResetEmail`）を送る。そのアカウントが、もうどこかの職員かサイト管理者なら 409（`already_registered`）。`audit_events` に `staff.create` を残す | `201 {staff, accountCreated}` |
 | `PATCH /api/office/staff/:id` | 職員を止める・戻す・役割を変える（`{role?: "caremanager"\|"admin", disabled?: boolean}`。どちらか 1 つは要る）。ほかの事業所の職員は 404。自分を止める・自分の役割を変えるのは 403。`audit_events` に `staff.update` を残す | `{staff}` |
 
+### 様式の取り込み（責任者は `/api/office/...` で操作は `form.manage`、サイト管理者は `/api/admin/...` で `site.manage`）
+
+責任者は自分の事業所の様式、サイト管理者は全体の様式を取り込む。2 つの入口は同じ処理で、どこの様式か（`form_imports.office_id`）だけが違う。ほかの事業所の取り込み（サイト管理者からは事業所の取り込み、責任者からは全体の取り込み）は 404。
+
+| メソッドとパス | すること | 主な応答 |
+|---|---|---|
+| `POST {prefix}/form-imports` | 取り込みを作る（`{kind}`。`form_kinds` にない種類は 400）。PDF をブラウザから直接送る URL（Cloud Storage の再開できる送信）を返す。置き場は `imports/<id>.pdf`（事業所は `offices/<office_id>/imports/<id>.pdf`） | `201 {import, uploadUrl}` |
+| `POST {prefix}/form-imports/:id/complete` | 送り終わり。置き場に届いたのを確かめて、変換のジョブを積む（何度呼んでもよい）。届いていなければ 409。20MB を超えていれば変換に回さず `failed`（`too_large`） | `202 {import}` |
+| `GET {prefix}/form-imports` | 取り込みの一覧（新しい順に 50 件） | `{imports}` |
+| `GET {prefix}/form-imports/:id` | 変換の途中と結果 | `{import:{id, kind, status, uploaded, errorKind, versionId, review, createdAt, updatedAt}}` |
+
+- `status` は `queued` → `processing` → `succeeded`（`versionId` が下書きの版）／`failed`（`errorKind`）／`matched`（登録済みの全体の様式と同じ PDF。`versionId` はその全体の様式の版で、下書きは作らない）。
+- `review` は、変換が自信のない欄（印字欄の名前と理由）。責任者が確かめる画面で使う。
+
 ### サイト管理者の入口（操作は `site.manage`）
 
 | メソッドとパス | すること | 主な応答 |
@@ -85,7 +99,8 @@
 | メソッドとパス | 呼ぶもの | すること |
 |---|---|---|
 | `POST /tasks/jobs/:id/run` | Cloud Tasks（OIDC） | 録音 1 本の処理。応答の前に終える。失敗は 500（Cloud Tasks が間をあけてやり直す） |
-| `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す |
+| `POST /tasks/form-imports/:id/run` | Cloud Tasks（OIDC） | 上げた PDF から様式の下書きの版を作る（`worker/form-import/job.ts`）。期限つきの印で 1 回だけ動く。済んだら上げたままの PDF を消す。置き場か DB の誤りは 500（3 回で `failed`・`internal`）。変換の失敗（PDF でない など）は 200 で `failed` |
+| `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す（録音と様式の取り込み）。失敗して 7 日たった・送り終わらなかった上げたままの PDF を消す |
 | `GET /health` | — | worker が動いているか |
 
 ### 認定調査票の先行取り込み

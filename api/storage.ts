@@ -28,6 +28,8 @@ export interface Storage {
   size(bucket: Bucket, path: string): Promise<number | null>
   read(bucket: Bucket, path: string): Promise<Uint8Array>
   write(bucket: Bucket, path: string, data: Uint8Array, mime: string): Promise<void>
+  /** 消す（なければ何もしない）。様式の置き場で消すのは、上げたままの PDF（imports/）だけ */
+  remove(bucket: Bucket, path: string): Promise<void>
   /** 置いていなければ置く。同じ中身ならそのまま（same）。別の中身があれば AlreadyExists（様式の置き場は上書きしない） */
   writeOnce(bucket: Bucket, path: string, data: Uint8Array, mime: string, cacheControl?: string): Promise<'written' | 'same'>
   /** 読むための期限つきの URL */
@@ -76,6 +78,10 @@ export class GcsStorage implements Storage {
 
   async write(bucket: Bucket, path: string, data: Uint8Array, mime: string) {
     await (await this.bucket(bucket)).file(path).save(Buffer.from(data), { contentType: mime, resumable: false })
+  }
+
+  async remove(bucket: Bucket, path: string) {
+    await (await this.bucket(bucket)).file(path).delete({ ignoreNotFound: true })
   }
 
   async writeOnce(bucket: Bucket, path: string, data: Uint8Array, mime: string, cacheControl?: string): Promise<'written' | 'same'> {
@@ -194,6 +200,10 @@ export class LocalStorage implements Storage {
   async write(bucket: Bucket, path: string, data: Uint8Array) {
     await mkdir(dirname(this.file(bucket, path)), { recursive: true })
     await writeFile(this.file(bucket, path), data)
+  }
+
+  async remove(bucket: Bucket, path: string) {
+    await unlink(this.file(bucket, path)).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'ENOENT') throw e })
   }
 
   async writeOnce(bucket: Bucket, path: string, data: Uint8Array, _mime?: string, _cacheControl?: string): Promise<'written' | 'same'> {

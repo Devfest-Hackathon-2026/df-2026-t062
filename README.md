@@ -332,7 +332,7 @@ PR と `main` で、型チェック、様式の確かめ、テスト（PostgreSQ
 | `AUTH_MODE` | api | `firebase`（既定）／`dev`（ローカルだけ） |
 | `FIREBASE_PROJECT_ID` | api | ID トークンを確かめるプロジェクト |
 | `STORAGE_MODE`・`GCS_SOURCE_BUCKET`・`GCS_OUTPUT_BUCKET`・`GCS_WORK_BUCKET` | api・worker | `gcs` で Cloud Storage。既定はローカル |
-| `GCS_FORMS_BUCKET` | api・`forms:assets` | 様式の元の PDF とページの画像の置き場（非公開。画面には期限つきの URL） |
+| `GCS_FORMS_BUCKET` | api・worker・`forms:assets` | 様式の元の PDF とページの画像の置き場（非公開。画面には期限つきの URL）。責任者・サイト管理者が上げた PDF もいったんここに置く（worker が変換して消す） |
 | `LOCAL_SIGNING_SECRET` | api（ローカル） | ローカルの期限つきの URL の署名の鍵。なければ起動のたびに作る |
 | `QUEUE_MODE`・`TASKS_QUEUE`・`WORKER_URL`・`TASKS_INVOKER_SA` | api | `tasks` で Cloud Tasks。既定は同じプロセス |
 | `AI_PROVIDER`・`GOOGLE_CLOUD_PROJECT`・`GEMINI_MODEL`・`GEMINI_LOCATION`・`STT_LOCATION` | worker | `vertex` で本物の AI。既定は `fake`。Gemini の既定は `gemini-3.8-flash`（`global`）、文字起こしは `us`（Chirp 3 の日本語は東京では使えない） |

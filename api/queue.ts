@@ -1,8 +1,11 @@
 // ジョブを積む。
-//   QUEUE_MODE=tasks: Cloud Tasks。worker の /tasks/jobs/<id>/run を OIDC トークンつきで呼ぶ
+//   QUEUE_MODE=tasks: Cloud Tasks。worker の /tasks/jobs/<id>/run（録音）・/tasks/form-imports/<id>/run（様式の取り込み）を OIDC トークンつきで呼ぶ
 //   QUEUE_MODE=local（既定）: 同じプロセスで worker の処理を呼ぶ（ローカルとテスト）
 export interface Queue {
+  /** 録音 1 本の処理 */
   enqueue(jobId: string, options?: { initial: boolean }): Promise<void>
+  /** 上げた PDF から様式の下書きを作る */
+  enqueueFormImport(importId: string, options?: { initial: boolean }): Promise<void>
 }
 
 export class CloudTasksQueue implements Queue {
@@ -13,7 +16,15 @@ export class CloudTasksQueue implements Queue {
     this.env = env
   }
 
-  async enqueue(jobId: string, options?: { initial: boolean }) {
+  enqueue(jobId: string, options?: { initial: boolean }) {
+    return this.createTask(`job-${jobId}`, `/tasks/jobs/${jobId}/run`, options)
+  }
+
+  enqueueFormImport(importId: string, options?: { initial: boolean }) {
+    return this.createTask(`form-import-${importId}`, `/tasks/form-imports/${importId}/run`, options)
+  }
+
+  private async createTask(name: string, path: string, options?: { initial: boolean }) {
     const { TASKS_QUEUE, WORKER_URL, TASKS_INVOKER_SA } = this.env
     if (!TASKS_QUEUE || !WORKER_URL || !TASKS_INVOKER_SA) throw new Error('TASKS_QUEUE・WORKER_URL・TASKS_INVOKER_SA を設定してください')
     this.client ??= import('@google-cloud/tasks').then((m) => new m.CloudTasksClient())
@@ -22,12 +33,12 @@ export class CloudTasksQueue implements Queue {
     await client.createTask({
       parent: TASKS_QUEUE,
       task: {
-        // 最初の投入は同じ名前を使う。見回りでの積み直しには別の名前が必要。
-        name: `${TASKS_QUEUE}/tasks/job-${jobId}-${attempt}`,
+        // 最初の投入は同じ名前を使う（2 回積んでも 1 つ）。見回りでの積み直しには別の名前が必要。
+        name: `${TASKS_QUEUE}/tasks/${name}-${attempt}`,
         dispatchDeadline: { seconds: 1800 },
         httpRequest: {
           httpMethod: 'POST',
-          url: `${WORKER_URL}/tasks/jobs/${jobId}/run`,
+          url: `${WORKER_URL}${path}`,
           headers: { 'Content-Type': 'application/json' },
           body: Buffer.from('{}').toString('base64'),
           // audience は worker の URL（パスを含めない）
@@ -42,16 +53,26 @@ export class CloudTasksQueue implements Queue {
 
 export class LocalQueue implements Queue {
   private run: (jobId: string) => Promise<void>
+  private runImport: (importId: string) => Promise<void>
   private tail = Promise.resolve()
 
-  constructor(run: (jobId: string) => Promise<void>) {
+  constructor(run: (jobId: string) => Promise<void>, runImport: (importId: string) => Promise<void> = async () => {}) {
     this.run = run
+    this.runImport = runImport
   }
 
   async enqueue(jobId: string) {
-    // ローカルには見回りがないため、先の録音が終わってから次を処理する。
+    this.later(() => this.run(jobId), { msg: 'job failed', jobId })
+  }
+
+  async enqueueFormImport(importId: string) {
+    this.later(() => this.runImport(importId), { msg: 'form import failed', importId })
+  }
+
+  // ローカルには見回りがないため、先の処理が終わってから次を処理する。
+  private later(fn: () => Promise<void>, log: Record<string, string>) {
     this.tail = this.tail.then(() => new Promise<void>((resolve) => setImmediate(resolve)))
-      .then(() => this.run(jobId))
-      .catch((e) => console.error(JSON.stringify({ msg: 'job failed', jobId, error: String(e?.name ?? 'Error') })))
+      .then(fn)
+      .catch((e) => console.error(JSON.stringify({ ...log, error: String(e?.name ?? 'Error') })))
   }
 }

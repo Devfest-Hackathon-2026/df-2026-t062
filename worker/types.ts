@@ -1,4 +1,5 @@
 // worker の段の約束。中身（STT・Gemini）は差し替えられる（AI_PROVIDER=fake|vertex）。
+import type { Llm } from './vertex/gemini.ts'
 
 /** 原本の発言 1 つ（id は録音をまたいでも重ならない: r<録音の番号>-<連番>） */
 export interface Utterance {
@@ -80,6 +81,8 @@ export interface Providers {
   stt: Stt
   speakers: SpeakerAssigner
   writer: SheetWriter
+  /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
+  formImport: () => Llm
 }
 
 export const ZERO_USAGE: Usage = { calls: 0, promptTokens: 0, cachedTokens: 0, outputTokens: 0, thinkingTokens: 0, yen: 0 }

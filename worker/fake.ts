@@ -2,6 +2,7 @@
 // 何本目の録音かで、演習シナリオ（eval/scenario、公開・架空）の 1 回目・2 回目の記録と正解を返す。
 import { readFileSync } from 'node:fs'
 import { ZERO_USAGE, type Person, type SheetWriter, type SpeakerAssigner, type Stt, type Utterance } from './types.ts'
+import type { Llm } from './vertex/gemini.ts'
 
 const ROOT = new URL('../eval/scenario/', import.meta.url)
 const load = (p: string) => JSON.parse(readFileSync(new URL(p, ROOT), 'utf8'))
@@ -51,3 +52,9 @@ export class FakeWriter implements SheetWriter {
     return { values, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
   }
 }
+
+/** 様式の取り込みの AI の代わり。欄を 1 つも見つけない（ページと要確認だけの下書きになる）。流れを試すため */
+export const fakeFormImport = (): Llm => ({
+  ask: async (_prompt, _schema, meta) => (meta.step === '様式の欄' ? { slots: [], localFields: [] } : { slots: [], fixes: [], removes: [], localFields: [] }),
+  usage: () => ZERO_USAGE,
+})

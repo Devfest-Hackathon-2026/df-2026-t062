@@ -93,7 +93,7 @@ export async function publishedVersionId(db: Q, officeId: string, kind: FormKind
 }
 
 /** 元の PDF の、置き場（forms）の中の場所 */
-export const basePdfPath = (v: Pick<FormVersion, 'basePdfSha256'>) => basePdfAssetPath(v.basePdfSha256)
+export const basePdfPath = (v: Pick<FormVersion, 'basePdfSha256' | 'officeId'>) => basePdfAssetPath(v.basePdfSha256, v.officeId)
 
 // ---------- 登録 ----------
 

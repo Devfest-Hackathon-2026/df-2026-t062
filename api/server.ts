@@ -21,12 +21,14 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
       if (queue) return queue
       if (env.QUEUE_MODE === 'tasks') return (queue = new CloudTasksQueue(env))
       // ローカル: 同じプロセスで worker の処理を呼ぶ
-      return (queue = new LocalQueue(async (jobId) => {
-        const [{ runJob }, { defaultProviders }, { getDb }] = await Promise.all([
-          import('../worker/jobs.ts'), import('../worker/providers.ts'), import('../db/pool.ts'),
-        ])
-        await runJob({ db: getDb, storage: getStorage, providers: () => defaultProviders(env) }, jobId)
-      }))
+      const workerDeps = async () => {
+        const [{ defaultProviders }, { getDb }] = await Promise.all([import('../worker/providers.ts'), import('../db/pool.ts')])
+        return { db: getDb, storage: getStorage, providers: () => defaultProviders(env) }
+      }
+      return (queue = new LocalQueue(
+        async (jobId) => (await import('../worker/jobs.ts')).runJob(await workerDeps(), jobId),
+        async (importId) => (await import('../worker/form-import/job.ts')).runFormImport(await workerDeps(), importId),
+      ))
     },
     chat: () => (chat ??= defaultChat(env)),
     devAuth: env.AUTH_MODE === 'dev',

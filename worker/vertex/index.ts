@@ -15,5 +15,6 @@ export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
     stt: vertexStt(env),
     speakers: speakerAssigner(newLlm),
     writer: sheetWriter(newLlm, { concurrency: Number(env.GEMINI_CONCURRENCY) || 4 }),
+    formImport: newLlm,
   }
 }

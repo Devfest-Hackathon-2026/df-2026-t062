@@ -128,7 +128,7 @@ before(async () => {
   const { LocalStorage } = await import('../api/storage.ts')
   const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-authz-')))
   const { DevAccounts } = await import('../api/auth.ts')
-  const deps: ApiDeps = { db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {} }), devAuth: true, accounts: () => new DevAccounts() }
+  const deps: ApiDeps = { db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {}, async enqueueFormImport() {} }), devAuth: true, accounts: () => new DevAccounts() }
   routes = routeDeclarations(createApp(deps))
   const server = createApiServer(deps)
   server.listen(0, '127.0.0.1')

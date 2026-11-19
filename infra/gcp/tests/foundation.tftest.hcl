@@ -190,9 +190,22 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket.forms.name == "mock-project-t062-forms" &&
       length(google_storage_bucket.forms.cors) == 0 &&
       length(google_storage_bucket.forms.lifecycle_rule) == 0 &&
-      !contains([for e in google_cloud_run_v2_service.worker.template[0].containers[0].env : e.name], "GCS_FORMS_BUCKET")
+      local.worker_env["GCS_FORMS_BUCKET"] == "mock-project-t062-forms"
     )
-    error_message = "The forms bucket keeps form PDFs and page images with no CORS or expiry, and only the API reads it."
+    error_message = "The forms bucket keeps form PDFs and page images with no expiry (the worker removes uploaded imports), and the worker converts uploaded PDFs."
+  }
+
+  assert {
+    condition = (
+      local.forms_imports_condition == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-forms/objects/imports/\") || resource.name.extract(\"projects/_/buckets/mock-project-t062-forms/objects/offices/{office}/imports/\") != \"\"" &&
+      google_storage_bucket_iam_member.api_forms_imports.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.api_forms_imports.condition[0].expression == local.forms_imports_condition &&
+      google_storage_bucket_iam_member.worker_forms_read.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.worker_forms_create.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.worker_forms_imports.role == "roles/storage.objectAdmin" &&
+      google_storage_bucket_iam_member.worker_forms_imports.condition[0].expression == local.forms_imports_condition
+    )
+    error_message = "Only uploaded imports may be created by the API and deleted by the worker; the worker may only add new form assets."
   }
 
   assert {
@@ -270,6 +283,15 @@ run "source_bucket_cors_and_budget" {
       google_storage_bucket.source.cors[0].max_age_seconds == 3600
     )
     error_message = "The source bucket must allow resumable uploads from the app origins."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_bucket.forms.cors) == 1 &&
+      toset(google_storage_bucket.forms.cors[0].origin) == toset(["https://mock-project.web.app", "http://localhost:5173"]) &&
+      toset(google_storage_bucket.forms.cors[0].method) == toset(["PUT", "POST", "OPTIONS"])
+    )
+    error_message = "The forms bucket must allow resumable uploads of form PDFs from the app origins."
   }
 
   assert {

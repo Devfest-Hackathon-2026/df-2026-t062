@@ -125,6 +125,19 @@ resource "google_storage_bucket_iam_member" "api_forms" {
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# 上げる PDF の送信 URL を作る（imports/ の下に新しく置くだけ。上書き・削除はできない）
+resource "google_storage_bucket_iam_member" "api_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
+}
+
 # 録音の送信 URL・様式の画像の期限つきの URL の署名（自分自身の鍵で署名する）
 resource "google_service_account_iam_member" "api_signs_as_itself" {
   service_account_id = google_service_account.runtime.name
@@ -184,6 +197,32 @@ resource "google_storage_bucket_iam_member" "worker_work" {
   bucket = google_storage_bucket.work.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# 様式の取り込み: 上げたままの PDF を読み、元の PDF とページの画像を pdf/<sha256>/ に新しく置く（上書きはしない）
+resource "google_storage_bucket_iam_member" "worker_forms_read" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_storage_bucket_iam_member" "worker_forms_create" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# 変換が済んだ・失敗して 7 日たった上げたままの PDF を消す（imports/ の下だけ）
+resource "google_storage_bucket_iam_member" "worker_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.worker.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
 }
 
 # 書き方の相談で、api が Gemini を呼ぶ
