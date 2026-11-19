@@ -100,6 +100,21 @@ const PlanNeedsInput = z.object({
   needs: z.array(PlanNeedInput).max(50),
 })
 const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
+const PlanScheduleInput = z.object({
+  baseVersion: z.number().int().positive(),
+  slots: z.array(z.object({
+    id: z.string().uuid().optional(),
+    serviceId: z.string().uuid(),
+    scheduleType: z.enum(['weekly', 'other']),
+    weekday: z.number().int().nullish(),
+    start: z.string().max(20).nullish(),
+    end: z.string().max(20).nullish(),
+    endsNextDay: z.boolean().optional(),
+    note: z.string().max(1000).nullish(),
+    periodFrom: z.iso.date().nullish(),
+    periodTo: z.iso.date().nullish(),
+  })).max(500),
+})
 const PlanAiDraftInput = z.object({
   sourceDocumentId: z.string().uuid(),
   sourceRevisionId: z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)]),
@@ -270,6 +285,16 @@ export function createApp(deps: ApiDeps) {
     const input = await body(c, PlanNeedsInput)
     const plan = await carePlans.saveCarePlanNeeds(db, staff, c.req.param('planId')!, input.baseVersion, input.needs)
     return json(c, { plan })
+  }))
+
+  app.put('/api/care-plans/:planId/schedule', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanScheduleInput)
+    return c.json({ plan: await carePlans.saveCarePlanSchedule(db, staff, c.req.param('planId')!, input.baseVersion, input.slots) })
+  }))
+
+  app.post('/api/care-plans/:planId/confirm', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanSaveInput)
+    return c.json(await carePlans.confirmCarePlan(db, staff, c.req.param('planId')!, input.baseVersion))
   }))
 
   app.post('/api/care-plans/:planId/save', staffRoute('care.work', async (c, staff, db) => {

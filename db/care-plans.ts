@@ -1,6 +1,6 @@
 // ケアプラン（#90）の読み書き。計画版・第1〜3表の書類・第2表のニーズ/目標/サービス・AI 原案。
 // 仕様: docs/ケアプラン仕様.md。値そのものは documents ごとの field_values に持ち、計画版の表は stable ID を持つ。
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { validValue } from '../core/schema.ts'
 import { loadFormDef } from './forms.ts'
 import { tx, type Db, type Tx } from './pool.ts'
@@ -83,6 +83,91 @@ export interface SlotView {
   note: string | null
   periodFrom: string | null
   periodTo: string | null
+}
+
+export interface SlotInput {
+  id?: string
+  serviceId: string
+  scheduleType: 'weekly' | 'other'
+  weekday?: number | null
+  start?: string | null
+  end?: string | null
+  endsNextDay?: boolean
+  note?: string | null
+  periodFrom?: string | null
+  periodTo?: string | null
+}
+
+/** 時間軸は週初からの分。日曜の翌日部分は次の週の月曜とも比較する。 */
+export async function saveCarePlanSchedule(db: Db, staff: Staff, planId: string, baseVersion: number, input: SlotInput[]) {
+  return tx(db, async (c) => {
+    const plan = await lockPlan(c, staff.officeId, planId)
+    checkBase(plan, baseVersion)
+    const view = await getCarePlan(c, staff.officeId, planId)
+    const services = new Map(view.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((s) => [s.id, s] as const))))
+    const serviceIds = new Set(services.keys())
+    const existingIds = new Set(view.slots.map((s) => s.id))
+    const seenIds = new Set<string>()
+    const problems: { path: string, reason: string }[] = []
+    const slots: SlotView[] = input.map((s, i) => {
+      const path = `slots.${i}`
+      if (!serviceIds.has(s.serviceId)) problems.push({ path, reason: 'unknown_service' })
+      if (s.id && (!existingIds.has(s.id) || seenIds.has(s.id))) problems.push({ path, reason: 'unknown_id' })
+      if (s.id) seenIds.add(s.id)
+      if (s.periodFrom && s.periodTo && s.periodTo < s.periodFrom) problems.push({ path, reason: 'period_order' })
+      const slot: SlotView = {
+        ...s, id: s.id ?? randomUUID(), weekday: s.weekday ?? null, start: s.start ?? null, end: s.end ?? null,
+        endsNextDay: s.endsNextDay ?? false, note: s.note?.trim() || null,
+        periodFrom: s.periodFrom ?? null, periodTo: s.periodTo ?? null,
+      }
+      if (slot.scheduleType === 'other') {
+        if (slot.weekday !== null || slot.start !== null || slot.end !== null || slot.endsNextDay || !slot.note) problems.push({ path, reason: 'invalid_other' })
+      } else {
+        const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+        if (!slot.weekday || slot.weekday < 1 || slot.weekday > 7 ||
+            !slot.start || !slot.end || !time.test(slot.start) || !time.test(slot.end) ||
+            (slot.endsNextDay ? slot.end >= slot.start : slot.end <= slot.start)) problems.push({ path, reason: 'invalid_time' })
+      }
+      return slot
+    })
+    if (problems.length) throw new PlanValidationFailed(problems)
+    const minutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3))
+    for (let i = 0; i < slots.length; i++) {
+      const a = slots[i]
+      if (a.scheduleType !== 'weekly') continue
+      const startA = (a.weekday! - 1) * 1440 + minutes(a.start!)
+      const endA = (a.weekday! - 1) * 1440 + minutes(a.end!) + (a.endsNextDay ? 1440 : 0)
+      for (const b of slots.slice(0, i)) {
+        if (b.scheduleType !== 'weekly' || a.serviceId !== b.serviceId) continue
+        const duplicate = a.weekday === b.weekday && a.start === b.start && a.end === b.end && a.endsNextDay === b.endsNextDay &&
+          a.periodFrom === b.periodFrom && a.periodTo === b.periodTo
+        const service = services.get(a.serviceId)!
+        const fromA = a.periodFrom ?? service.periodFrom ?? view.effectiveFrom
+        const fromB = b.periodFrom ?? service.periodFrom ?? view.effectiveFrom
+        const toA = a.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
+        const toB = b.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
+        const startB = (b.weekday! - 1) * 1440 + minutes(b.start!)
+        const endB = (b.weekday! - 1) * 1440 + minutes(b.end!) + (b.endsNextDay ? 1440 : 0)
+        const overlap = fromA <= toB && fromB <= toA &&
+          [-10080, 0, 10080].some((offset) => startA < endB + offset && startB + offset < endA)
+        if (duplicate || overlap) problems.push({ path: `slots.${i}`, reason: duplicate ? 'duplicate' : 'overlap' })
+      }
+    }
+    if (problems.length) throw new PlanValidationFailed(problems)
+    // 全体置換だが ID は維持する。時刻の入れ替え時にも一意制約に途中で触れない。
+    await c.query('DELETE FROM care_plan_service_slots WHERE plan_id = $1', [planId])
+    for (const [i, s] of slots.entries()) {
+      await c.query(
+        `INSERT INTO care_plan_service_slots
+         (id, plan_id, service_id, schedule_type, weekday, start_time, end_time, ends_next_day, note, period_from, period_to, ordinal)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [s.id, planId, s.serviceId, s.scheduleType, s.weekday, s.start, s.end, s.endsNextDay, s.note, s.periodFrom, s.periodTo, i + 1],
+      )
+    }
+    await bumpPlan(c, planId)
+    await audit(c, staff, staff.officeId, 'care_plan.schedule', { clientId: plan.clientId }, { planId, slots: slots.length })
+    return getCarePlan(c, staff.officeId, planId)
+  })
 }
 
 export interface CarePlanAiDraftView {
@@ -875,6 +960,7 @@ export async function saveCarePlan(db: Db, staff: Staff, planId: string, baseVer
       const r = await saveDocumentInTx(c, staff, doc(formNo).documentId, { scope: 'document' })
       revisions.push({ formNo, rev: r.rev })
     }
+    await c.query('UPDATE care_plans SET saved_structure = $2 WHERE id = $1', [plan.id, JSON.stringify({ needs, slots })])
     await bumpPlan(c, plan.id)
     await audit(c, staff, staff.officeId, 'care_plan.save', { clientId: plan.clientId, documentId: doc(1).documentId }, {
       planId: plan.id, revisions,
@@ -885,6 +971,78 @@ export async function saveCarePlan(db: Db, staff: Staff, planId: string, baseVer
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null
+}
+
+/** キー順に依存しない JSON。ハッシュと保存済み判定で同じ正規化を使う。 */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    return `{${Object.keys(row).sort().map((key) => `${JSON.stringify(key)}:${canonical(row[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+/** #94 はこのスナップショットだけを読み、編集中の計画版を再参照しない。 */
+export async function confirmCarePlan(db: Db, staff: Staff, planId: string, baseVersion: number) {
+  return tx(db, async (c) => {
+    const initial = await getCarePlan(c, staff.officeId, planId)
+    // 同じ利用者の同時確定を直列化する（古い確定版の置換も同じロック内）。
+    await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 90))', [initial.clientId])
+    const plan = await lockPlan(c, staff.officeId, planId)
+    checkBase(plan, baseVersion)
+    const view = await getCarePlan(c, staff.officeId, planId)
+    const saved = (await c.query('SELECT saved_structure FROM care_plans WHERE id = $1', [planId])).rows[0].saved_structure
+    if (!saved || canonical(saved) !== canonical({ needs: view.needs, slots: view.slots })) throw new PlanUnsavedChanges()
+    const revisions: { documentId: string, revisionId: string, values: Record<string, unknown> }[] = []
+    for (const document of view.documents) {
+      await c.query('SELECT id FROM documents WHERE id = $1 FOR UPDATE', [document.documentId])
+      const latest = (await c.query(
+        'SELECT id, "values", template_version_id FROM revisions WHERE document_id = $1 ORDER BY rev DESC LIMIT 1',
+        [document.documentId],
+      )).rows[0]
+      const fields = await readFields(c, document.documentId)
+      const current = Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value]))
+      if (!latest || latest.template_version_id !== document.formVersionId || canonical(latest.values) !== canonical(current)) throw new PlanUnsavedChanges()
+      revisions.push({ documentId: document.documentId, revisionId: latest.id, values: latest.values })
+    }
+    if (revisions.length !== 3) throw new PlanUnsavedChanges()
+    const snapshot = {
+      schemaVersion: 1,
+      plan: { id: view.id, clientId: view.clientId, effectiveFrom: view.effectiveFrom, effectiveTo: view.effectiveTo },
+      plan1: revisions[0].values,
+      needs: view.needs,
+      slots: view.slots,
+      services: view.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((s) => ({
+        serviceId: s.id, needId: n.id, shortGoalId: g.id, content: s.content, serviceKind: s.kind,
+        provider: s.provider, insured: s.insured, frequencyText: s.frequency,
+        periodFrom: s.periodFrom, periodTo: s.periodTo,
+        weekly: view.slots.filter((slot) => slot.serviceId === s.id && slot.scheduleType === 'weekly').map((slot) => ({
+          slotId: slot.id, weekday: slot.weekday, start: slot.start, end: slot.end, endsNextDay: slot.endsNextDay,
+          periodFrom: slot.periodFrom, periodTo: slot.periodTo,
+        })),
+        other: view.slots.filter((slot) => slot.serviceId === s.id && slot.scheduleType === 'other').map((slot) => ({
+          slotId: slot.id, note: slot.note, periodFrom: slot.periodFrom, periodTo: slot.periodTo,
+        })),
+      })))),
+    }
+    const hash = createHash('sha256').update(canonical(snapshot)).digest('hex')
+    await c.query("UPDATE care_plans SET status = 'superseded', updated_at = now() WHERE client_id = $1 AND status = 'confirmed'", [plan.clientId])
+    await c.query("UPDATE care_plans SET status = 'confirmed', confirmed_at = now(), confirmed_by = $2, lock_version = lock_version + 1, updated_at = now() WHERE id = $1", [planId, staff.id])
+    const confirmation = (await c.query(
+      `INSERT INTO care_plan_confirmations
+       (plan_id, document_1_id, document_1_revision_id, document_2_id, document_2_revision_id,
+        document_3_id, document_3_revision_id, snapshot, snapshot_sha256, confirmed_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, confirmed_at`,
+      [planId, revisions[0].documentId, revisions[0].revisionId, revisions[1].documentId, revisions[1].revisionId,
+        revisions[2].documentId, revisions[2].revisionId, JSON.stringify(snapshot), hash, staff.id],
+    )).rows[0]
+    await audit(c, staff, staff.officeId, 'care_plan.confirm', { clientId: plan.clientId }, { planId, confirmationId: confirmation.id, snapshotSha256: hash })
+    return {
+      plan: await getCarePlan(c, staff.officeId, planId),
+      confirmation: { id: confirmation.id as string, snapshotSha256: hash, confirmedAt: new Date(confirmation.confirmed_at).toISOString() },
+    }
+  })
 }
 
 /** AI の出力の形を確かめる。形が違えば null（failed / invalid_json） */
@@ -1145,11 +1303,24 @@ export async function planFormNoOfDocument(db: Q, officeId: string, documentId: 
 
 /** 第2/3表の射影を汎用の欄の直しで変えようとしていないか */
 export async function assertGenericDocumentEdits(db: Q, officeId: string, documentId: string, keys: string[]) {
+  await assertPlanDocumentDraft(db, officeId, documentId)
   const formNo = await planFormNoOfDocument(db, officeId, documentId)
   if (formNo && keys.some((k) => PROJECTION_KEYS[formNo].has(k))) throw new UsePlanApi()
 }
 
 /** 第2/3表を汎用の保存・印字欄の直しで変えようとしていないか */
 export async function assertGenericDocumentSave(db: Q, officeId: string, documentId: string) {
+  await assertPlanDocumentDraft(db, officeId, documentId)
   if (await planFormNoOfDocument(db, officeId, documentId)) throw new UsePlanApi()
+}
+
+async function assertPlanDocumentDraft(db: Q, officeId: string, documentId: string) {
+  // UUID でない通常の書類リクエストは既存の NotFound 処理に任せる。
+  if (!/^[0-9a-f-]{36}$/i.test(documentId)) return
+  const result = await db.query(
+    `SELECT p.status FROM care_plans p JOIN care_plan_documents d ON d.plan_id = p.id
+     WHERE d.document_id = $1 AND p.office_id = $2`,
+    [documentId, officeId],
+  )
+  if (result.rows[0] && result.rows[0].status !== 'draft') throw new PlanNotDraft()
 }

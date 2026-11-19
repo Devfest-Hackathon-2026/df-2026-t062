@@ -185,6 +185,93 @@ before(async () => {
 
 after(async () => close())
 
+test('第3表は stable ID を保ち、時刻・重複・翌日の重なり・事業所境界を検証する', { skip }, async () => {
+  let plan = await createPlan(clients.sato)
+  const needs = await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })
+  plan = (needs.body as { plan: PlanBody }).plan
+  const serviceId = plan.needs![0].shortGoals[0].services[0].id
+  const path = `/api/care-plans/${plan.id}/schedule`
+  const slot = { serviceId, scheduleType: 'weekly', weekday: 7, start: '23:00', end: '01:00', endsNextDay: true }
+  assert.equal((await call(path, { method: 'PUT', token: OTHER, body: JSON.stringify({ baseVersion: plan.lockVersion, slots: [] }) })).status, 404)
+  const result = await put(path, { baseVersion: plan.lockVersion, slots: [slot, { serviceId, scheduleType: 'other', note: '月2回' }] })
+  assert.equal(result.status, 200, JSON.stringify(result.body))
+  const saved = (result.body as { plan: PlanBody }).plan
+  const slots = saved.slots as { id: string }[]
+  assert.equal(slots.length, 2)
+  assert.equal((await put(path, { baseVersion: plan.lockVersion, slots: [] })).status, 409)
+  for (const [candidate, reason] of [
+    [[{ ...slot, start: '24:00' }], 'invalid_time'],
+    [[{ ...slot, end: '23:00' }], 'invalid_time'],
+    [[slot, slot], 'duplicate'],
+    [[slot, { ...slot, weekday: 1, start: '00:30', end: '02:00', endsNextDay: false }], 'overlap'],
+    [[{ serviceId, scheduleType: 'other', note: ' ' }], 'invalid_other'],
+    [[{ ...slot, serviceId: '00000000-0000-4000-8000-000000000000' }], 'unknown_service'],
+    [[{ ...slot, periodFrom: '2027-04-01', periodTo: '2026-04-01' }], 'period_order'],
+  ] as const) {
+    const invalid = await put(path, { baseVersion: saved.lockVersion, slots: candidate })
+    assert.equal(invalid.status, 422, JSON.stringify(invalid.body))
+    assert.ok((invalid.body as { problems: { reason: string }[] }).problems.some((p) => p.reason === reason), JSON.stringify(invalid.body))
+  }
+  const updated = await put(path, { baseVersion: saved.lockVersion, slots: [{ ...slot, id: slots[0].id, end: '02:00' }] })
+  assert.equal(updated.status, 200, JSON.stringify(updated.body))
+  assert.equal(((updated.body as { plan: PlanBody }).plan.slots as { id: string }[])[0].id, slots[0].id)
+  const current = (updated.body as { plan: PlanBody }).plan
+  // 接する枠、異なるサービス、適用期間が重ならない同時刻は許す。
+  const valid = await put(path, { baseVersion: current.lockVersion, slots: [
+    { ...slot, id: slots[0].id },
+    { ...slot, weekday: 1, start: '01:00', end: '02:00', endsNextDay: false },
+    { ...slot, serviceId: plan.needs![0].shortGoals[1].services[0].id },
+    { ...slot, weekday: 2, periodFrom: '2026-04-01', periodTo: '2026-04-30' },
+    { ...slot, weekday: 2, periodFrom: '2026-05-01', periodTo: '2026-05-31' },
+  ] })
+  assert.equal(valid.status, 200, JSON.stringify(valid.body))
+  const copy = await createPlan(clients.sato, { copyFromPlanId: plan.id })
+  assert.equal(copy.slots!.length, 5)
+  assert.ok((copy.slots as { id: string }[]).every((s) => !(valid.body as { plan: PlanBody }).plan.slots!.some((old) => (old as { id: string }).id === s.id)))
+})
+
+test('確定には3表の保存が必要で、期間だけの変更も検出し、確定後は改定版で訂正する', { skip }, async () => {
+  let plan = await createPlan(clients.sato)
+  const confirm = () => post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: plan.lockVersion })
+  assert.equal((await post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: plan.lockVersion }, '')).status, 401)
+  assert.equal((await post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: plan.lockVersion }, OTHER)).status, 404)
+  assert.equal((await confirm()).status, 409)
+  plan = ((await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })).body as { plan: PlanBody }).plan
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  const payload = plan.needs!
+  payload[0].longGoal.periodTo = '2027-02-28'
+  plan = ((await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: payload })).body as { plan: PlanBody }).plan
+  const unsaved = await confirm()
+  assert.equal(unsaved.status, 409)
+  assert.equal((unsaved.body as { error: string }).error, 'unsaved_changes')
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  const edited = await patch(`/api/documents/${planDoc(plan, 1).documentId}/fields`, {
+    changes: [{ key: 'plan.overallPolicy', value: '人が直した未保存の方針', base: null }],
+  })
+  assert.equal(edited.status, 200, JSON.stringify(edited.body))
+  assert.equal((await confirm()).status, 409)
+  plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  const confirmed = await confirm()
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body))
+  const body = confirmed.body as { plan: PlanBody, confirmation: { id: string, snapshotSha256: string } }
+  assert.equal(body.plan.status, 'confirmed')
+  assert.match(body.confirmation.snapshotSha256, /^[a-f0-9]{64}$/)
+  const row = (await db.query('SELECT snapshot FROM care_plan_confirmations WHERE id = $1', [body.confirmation.id])).rows[0]
+  assert.equal(row.snapshot.schemaVersion, 1)
+  assert.equal(row.snapshot.plan1['plan.overallPolicy'], '人が直した未保存の方針')
+  assert.equal(row.snapshot.services[0].serviceId, plan.needs![0].shortGoals[0].services[0].id)
+  assert.equal((await savePlan(body.plan)).status, 409)
+  assert.equal((await confirm()).status, 409)
+  assert.equal((await patch(`/api/documents/${planDoc(plan, 1).documentId}/fields`, {
+    changes: [{ key: 'plan.overallPolicy', base: '人が直した未保存の方針', value: '確定後の変更' }],
+  })).status, 409)
+  assert.equal((await put(`/api/care-plans/${plan.id}/schedule`, { baseVersion: body.plan.lockVersion, slots: [] })).status, 409)
+  const next = await createPlan(clients.sato, { copyFromPlanId: plan.id })
+  plan = ((await savePlan(next)).body as { plan: PlanBody }).plan
+  assert.equal((await confirm()).status, 200)
+  assert.equal((await getPlan(body.plan.id)).status, 'superseded')
+})
+
 test('計画版の作成・読み取りは事業所で絞られ、401・404 を返す', { skip }, async () => {
   assert.equal((await post(`/api/clients/${clients.sato}/care-plans`, { effectiveFrom: '2026-04-01' }, '')).status, 401)
   assert.equal((await post(`/api/clients/${clients.sato}/care-plans`, { effectiveFrom: '2026-04-01' }, OTHER)).status, 404)
