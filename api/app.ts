@@ -16,6 +16,10 @@ import * as staffDb from '../db/staff.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
+import { previewPdf, publishProblems } from './form-check.ts'
+import { checkDraftVersion } from '../worker/form-import/check.ts'
+import { BindingSchema, FormPageSchema, LocalFieldSchema, PdfmeSlotSchema } from '../worker/form-import/contract.ts'
+import type { LocalField } from '../worker/form-import/draft.ts'
 import { allows, operationsOf, STAFF_ROLES, type Operation } from './permissions.ts'
 import type { Queue } from './queue.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
@@ -75,6 +79,16 @@ const StaffPatchInput = z.object({ role: z.enum(STAFF_ROLES).optional(), disable
 
 // 様式の取り込み: 何の書類の用紙か
 const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
+// 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
+const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
+const FormVersionPatch = z.object({
+  base: Sha256,
+  schemas: z.array(z.array(PdfmeSlotSchema)).max(100).optional(),
+  bindings: z.record(z.string(), BindingSchema).optional(),
+  pages: z.array(FormPageSchema).min(1).max(100).optional(),
+  localFields: z.array(LocalFieldSchema).optional(),
+}).refine((v) => v.schemas || v.bindings || v.pages || v.localFields)
+const PublishInput = z.object({ base: Sha256 })
 
 /** 入口の宣言: 操作、またはログインなし（public） */
 export type Declared = Operation | 'public'
@@ -191,18 +205,19 @@ export function createApp(deps: ApiDeps) {
     return json(c, { formVersion: forms.viewOf(v) })
   }))
 
-  // ページの画像の期限つきの URL（1 日の区切りでそろえるので、同じ日は同じ URL）と、元の PDF があるか
-  app.get('/api/form-versions/:id/assets', staffRoute('care.work', async (c, staff, db) => {
-    const v = await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)
+  /** ページの画像の期限つきの URL（1 日の区切りでそろえるので、同じ日は同じ URL）と、元の PDF があるか */
+  const assetsOf = async (v: forms.FormVersion): Promise<FormAssetsView> => {
     const storage = deps.storage()
     const window = dailyWindow()
     const pages = await Promise.all(v.pages.map(async (p) => {
       const path = pageImageAssetPath(v.basePdfSha256, p.pdfIndex + 1, v.officeId)
       return { no: p.no, url: await exists(storage, path) ? await storage.signedReadUrl('forms', path, window) : null }
     }))
-    const body: FormAssetsView = { pages, hasPdf: await exists(storage, forms.basePdfPath(v)), expiresAt: window.until.toISOString() }
-    return json(c, body)
-  }))
+    return { pages, hasPdf: await exists(storage, forms.basePdfPath(v)), expiresAt: window.until.toISOString() }
+  }
+
+  app.get('/api/form-versions/:id/assets', staffRoute('care.work', async (c, staff, db) =>
+    json(c, await assetsOf(await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)))))
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
 
@@ -371,6 +386,51 @@ export function createApp(deps: ApiDeps) {
   importRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, staff.id, db)))
   importRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, null, db)))
 
+  // ---------- 様式の版（下書き）を確かめる・直す・捨てる・試し印字・公開する ----------
+  // 責任者は自分の事業所の様式（全体の様式は読むだけ。変えようとすると 403）、サイト管理者は全体の様式。ほかの事業所の様式は 404。
+  // 公開した版・退いた版は直せない（409）。下書きは直すたびに中身が変わるので、ブラウザに覚えさせない
+
+  type VersionHandler = (c: Context, scope: forms.ManagerScope, db: Db) => Promise<Response>
+  /** 責任者・サイト管理者に見せる版（置き場の場所は渡さない）と、公開前の確かめのうち印字しないで分かるもの */
+  const managerView = (v: forms.FormVersion) => ({
+    formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
+    problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+  })
+  const versionRoutes = (prefix: '/api/office' | '/api/admin', guard: (h: VersionHandler) => Handler) => {
+    app.get(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => json(c, managerView(await forms.versionForManager(db, scope, c.req.param('id')!)))))
+    app.get(`${prefix}/form-versions/:id/assets`, guard(async (c, scope, db) => json(c, await assetsOf(await forms.versionForManager(db, scope, c.req.param('id')!)))))
+    app.patch(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
+      const { base, ...patch } = await body(c, FormVersionPatch)
+      return json(c, managerView(await forms.updateDraft(db, scope, c.req.param('id')!, base, patch as forms.DraftPatch)))
+    }))
+    app.delete(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
+      await forms.deleteDraft(db, scope, c.req.param('id')!)
+      return c.body(null, 204)
+    }))
+    // 試し印字: 架空の値（forms/samples の架空の利用者と、その様式だけの欄の型ごとの値）で印字した PDF
+    app.post(`${prefix}/form-versions/:id/preview`, guard(async (c, scope, db) => {
+      const v = await forms.versionForManager(db, scope, c.req.param('id')!)
+      const pdf = await previewPdf(deps.storage(), v)
+      return new Response(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), {
+        headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(`${v.name}_v${v.version}_試し印字.pdf`)}`, 'Cache-Control': 'no-store' },
+      })
+    }))
+    // 公開: 確かめて、通れば公開する（その様式の今の版は退く）。通らなければ 422 と理由の一覧
+    app.post(`${prefix}/form-versions/:id/publish`, guard(async (c, scope, db) => {
+      const { base } = await body(c, PublishInput)
+      const id = c.req.param('id')!
+      const v = await forms.versionForManager(db, scope, id)
+      if (v.officeId !== scope.officeId) throw new repo.Forbidden('全体の様式は変えられません')
+      if (v.status !== 'draft') throw new forms.NotDraft(id)
+      if (v.contentSha !== base) throw new repo.Conflict('form_version')
+      const problems = await publishProblems(deps.storage(), v)
+      if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
+      return json(c, managerView(await forms.publishDraft(db, scope, id, base)))
+    }))
+  }
+  versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
+  versionRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, db)))
+
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------
 
   // ブラウザからの送信を受ける（Cloud Storage の再開できる送信と同じ約束）
@@ -404,6 +464,7 @@ export function createApp(deps: ApiDeps) {
     if ((err as { code?: string }).code === '22P02') return json(c, { error: 'not_found' }, 404)
     if (err instanceof repo.Forbidden) return json(c, { error: 'forbidden', message: err.message }, 403)
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
+    if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
     if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
     if (err instanceof repo.BadRequest) return json(c, { error: 'bad_request', message: err.message }, 400)
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)

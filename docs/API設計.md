@@ -27,7 +27,7 @@
 | `POST /api/clients` | 利用者を追加（`{name, sex?, status?}`）。空のアセスメントも作る | `201 {id, assessmentId}` |
 | `GET /api/clients/:id` | 利用者・書類・処理中のジョブ | `{client, jobs}` |
 | `POST /api/clients/:id/documents` | 入院時情報提供書を作る（`{form:"admission"}`）。アセスメントから写す。あれば今のものを返す | `201/200 {id}` |
-| `GET /api/form-versions/:id` | 様式の版（欄の位置・対応・ページ）。その事業所が見てよい版だけ（ほかは 404）。中身は変わらないので `ETag`・`Cache-Control: private, immutable`（`If-None-Match` で 304） | `{formVersion}` |
+| `GET /api/form-versions/:id` | 様式の版（欄の位置・対応・ページ）。その事業所が見てよい版だけ（ほかの事業所の版と、下書きの版は 404。下書きは責任者の入口で読む）。中身は変わらないので `ETag`・`Cache-Control: private, immutable`（`If-None-Match` で 304） | `{formVersion}` |
 | `GET /api/form-versions/:id/assets` | ページの画像の期限つきの URL（UTC の 0 時から 48 時間。同じ日は同じ URL）と、元の PDF が置き場にあるか。画像がまだなければ `url: null` | `{pages:[{no, url}], hasPdf, expiresAt}` |
 | `GET /api/documents/:id` | 欄の今の値・保存した値・版の番号・最近の書き込み・使う様式の版 | `{document}`（`kind`、`formVersionId`） |
 | `POST /api/documents/:id/edits` | 用紙の印字欄の直し（`{formVersionId, edits:[{slot, text}]}`）。書類の行を止め、その時点の値に、様式の版の対応で 1 つずつ当てる。当てられない直しは理由を返す（ほかは当てる）。画面の様式の版が書類の版と違えば 409 | `{results:[{slot, reason?}], document}` |
@@ -61,6 +61,19 @@
 - `status` は `queued` → `processing` → `succeeded`（`versionId` が下書きの版）／`failed`（`errorKind`）／`matched`（登録済みの全体の様式と同じ PDF。`versionId` はその全体の様式の版で、下書きは作らない）。
 - `review` は、変換が自信のない欄（印字欄の名前と理由）。責任者が確かめる画面で使う。
 
+### 様式の版の下書きを確かめる・直す・捨てる・試し印字・公開する（責任者は `/api/office/...` で `form.manage`、サイト管理者は `/api/admin/...` で `site.manage`）
+
+責任者は自分の事業所の様式を直せる。全体の様式は、下書きでない版を読むだけ（変えようとすると 403。全体の様式の下書きは見えない）。サイト管理者は全体の様式。ほかの事業所の様式は 404。公開した版・退いた版は直せない・捨てられない（409 `not_draft`）。下書きは直すたびに中身が変わるので、ブラウザに覚えさせない（`Cache-Control: no-store`）。
+
+| メソッドとパス | すること | 主な応答 |
+|---|---|---|
+| `GET {prefix}/form-versions/:id` | 版の中身（状態・全体の様式か・その様式だけの欄の定義を含む）と、印字しないで分かる公開前の確かめ（下の 1〜3） | `{formVersion:{id, kind, name, version, status, global, schemas, bindings, pages, localFields, contentSha}, problems}` |
+| `GET {prefix}/form-versions/:id/assets` | ページの画像の期限つきの URL と、元の PDF があるか（ケアマネの入口と同じ形） | `{pages, hasPdf, expiresAt}` |
+| `PATCH {prefix}/form-versions/:id` | 下書きを直す（`{base, schemas?, bindings?, pages?, localFields?}`。送った部分だけを替える）。`base` は画面が元にした `contentSha` で、今と違えば 409（ほかの人が先に直した） | `{formVersion, problems}` |
+| `DELETE {prefix}/form-versions/:id` | 下書きを捨てる（取り込みの `versionId` は空になる） | `204` |
+| `POST {prefix}/form-versions/:id/preview` | 試し印字。架空の値（`forms/samples` の架空の利用者と、その様式だけの欄の型ごとの値）で印字した PDF。元の PDF が置き場になければ 503 | `application/pdf` |
+| `POST {prefix}/form-versions/:id/publish` | 公開（`{base}`）。公開前の確かめ（[13_DB設計.md](再設計/13_DB設計.md)）: 1. すべての印字欄に対応がある 2. 対応の key が fields.json か `local_fields` にある 3. `local_fields` の key は `local.` で始まり重ならない 4. 架空の値で実際に印字できる。通らなければ 422 と理由。通れば公開し、その様式の今の版は退く。その事業所の新しい書類から使う（今の書類は作ったときの版のまま） | `{formVersion, problems}`／`422 {error:"not_publishable", problems}` |
+
 ### サイト管理者の入口（操作は `site.manage`）
 
 | メソッドとパス | すること | 主な応答 |
@@ -90,7 +103,8 @@
 | 403 | 役割が、入口の宣言した操作を許さない。責任者が自分を止める・自分の役割を変える。サイト管理者の入口で、`site_admins` にいない |
 | 404 | ない、ほかの事業所のもの、ID の形でない |
 | 400 | 入力の形・値が違う |
-| 409 | 登録しようとしたアカウントが、もう職員かサイト管理者（`already_registered`）。録音がまだ置き場に届いていない。直しの元にした値（`base`）や様式の版が、サーバーで変わっていた（画面は読み直す） |
+| 409 | 登録しようとしたアカウントが、もう職員かサイト管理者（`already_registered`）。録音・様式の PDF がまだ置き場に届いていない。直しの元にした値（`base`）や様式の版が、サーバーで変わっていた（画面は読み直す）。公開した様式の版を直そうとした（`not_draft`） |
+| 422 | 様式の下書きが、公開前の確かめを通らない（`not_publishable` と理由の一覧） |
 | 503 | 様式の元の PDF が置き場にない（`npm run forms:assets`） |
 | 500 | それ以外。ログには道と誤りの種類だけを出す（中身は出さない） |
 

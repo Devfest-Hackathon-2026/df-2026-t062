@@ -9,9 +9,8 @@
 // 受けるのは文字の入った PDF（Word・Excel などから出したもの）。スキャンした紙（文字のない PDF）は受けない（#110 で決めた）。
 // 記入済みの用紙かどうかは見分けない（上げる画面で白紙を上げるよう伝える。13_DB設計.md の form_imports）。
 import { createHash } from 'node:crypto'
-import { BY_KEY } from '../../core/fields.ts'
-import { checkBindings, type Bindings } from '../../core/binding.ts'
 import type { Ask } from '../vertex/gemini.ts'
+import { checkDraftVersion } from './check.ts'
 import { convertPage, type PageDraft } from './convert.ts'
 import { openPdf } from './pdf.ts'
 import { catalog as defaultCatalog } from './prompt.ts'
@@ -115,34 +114,5 @@ export async function importPdf(data: Uint8Array, deps: ImportDeps): Promise<Imp
   }
 }
 
-/**
- * 版の出口の確かめ（13_DB設計.md の「様式を公開する前の確かめ」と同じ 3 つ）:
- *   1. すべての印字欄に対応がある（対応だけあって印字欄がないものもない）
- *   2. 対応が指す key が、fields.json か、その版の local_fields にある
- *   3. local_fields の key は local. で始まり、版の中で重ならない
- */
-export function checkDraftVersion(v: Pick<DraftVersion, 'schemas' | 'bindings' | 'localFields'>): string[] {
-  const errors: string[] = []
-  const names = new Set(v.schemas.flat().map((s) => s.name))
-  for (const n of names) if (!v.bindings[n]) errors.push(`${n}: 印字欄に対応がない`)
-  for (const n of Object.keys(v.bindings)) if (!names.has(n)) errors.push(`${n}: 対応があるのに印字欄がない`)
-  const localKeys = new Set(v.localFields.map((f) => f.key))
-  const shared: Bindings = {}
-  for (const [n, b] of Object.entries(v.bindings)) {
-    if (b.ref.key.startsWith('local.')) {
-      if (!localKeys.has(b.ref.key)) errors.push(`${n}: fields.json にも local_fields にもない key ${b.ref.key}`)
-    } else if (BY_KEY.has(b.ref.key)) {
-      shared[n] = b
-    } else {
-      errors.push(`${n}: fields.json にも local_fields にもない key ${b.ref.key}`)
-    }
-  }
-  errors.push(...checkBindings(shared))
-  const seen = new Set<string>()
-  for (const f of v.localFields) {
-    if (seen.has(f.key)) errors.push(`local_fields: ${f.key} が重なっている`)
-    seen.add(f.key)
-    if (!f.key.startsWith('local.')) errors.push(`local_fields: ${f.key} が local. で始まらない`)
-  }
-  return errors
-}
+// 版の出口の確かめは check.ts（api の公開前の確かめも使うので、PDF を読むモジュールを読み込まないファイルに置く）
+export { checkDraftVersion }

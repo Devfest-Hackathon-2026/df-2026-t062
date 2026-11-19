@@ -1,12 +1,16 @@
-// 様式と様式の版の読み書き。版の中身は書き換えない（DB のトリガーでも止める）ので、読んだ版はプロセスの中で覚えておく。
+// 様式と様式の版の読み書き。公開した版・退いた版の中身は書き換えない（DB のトリガーでも止める）ので、読んだ版はプロセスの中で覚えておく。
+// 下書きの版（draft）は責任者・サイト管理者が直せるので覚えない（読むたびに DB から読む）。
 import { createHash } from 'node:crypto'
 import { checkBindings, formKeys, type Bindings } from '../core/binding.ts'
 import { basePdfAssetPath, contentOf, toFormDef, type FormDef, type FormKind, type FormPage, type FormVersionView, type TemplateSlot } from '../core/form.ts'
 import { tx, type Db, type Tx } from './pool.ts'
+import { Conflict, Forbidden } from './repo.ts'
 
 type Q = Db | Tx
 
 export class FormNotFound extends Error {}
+/** 下書きでない版（公開した・退いた版）を直そうとした（409） */
+export class NotDraft extends Error {}
 
 export interface FormVersion {
   id: string
@@ -20,6 +24,8 @@ export interface FormVersion {
   schemas: TemplateSlot[][]
   bindings: Bindings
   pages: FormPage[]
+  /** その様式だけの欄の定義（fields.json の欄と同じ形。key は local. で始まる） */
+  localFields: unknown[]
   contentSha: string
   basePdfSha256: string
 }
@@ -40,32 +46,42 @@ function rowToVersion(r: Record<string, unknown>): FormVersion {
     schemas: r.schemas as TemplateSlot[][],
     bindings: r.bindings as Bindings,
     pages: r.pages as FormPage[],
+    localFields: (r.local_fields as unknown[] | null) ?? [],
     contentSha: r.content_sha as string,
     basePdfSha256: r.base_pdf_sha256 as string,
   }
 }
 
-const SELECT = `SELECT v.id, v.template_id, v.version, v.status, v.schemas, v.bindings, v.pages, v.content_sha, v.base_pdf_sha256,
+const SELECT = `SELECT v.id, v.template_id, v.version, v.status, v.schemas, v.bindings, v.pages, v.local_fields, v.content_sha, v.base_pdf_sha256,
                        t.kind, t.name, t.title, t.office_id
                 FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id`
 
-/** 版を読む（中身は変わらないので覚えておく。状態だけは読むたびに変わりうるので、状態を使うときは読み直す） */
+/**
+ * 版を読む。公開した・退いた版は中身が変わらないので覚えておく（状態だけは変わりうるので、状態を使うときは readVersion で読み直す）。
+ * 下書きは覚えない
+ */
 export async function loadVersion(db: Q, id: string): Promise<FormVersion> {
   const hit = cache.get(id)
   if (hit) return hit
-  const r = (await db.query(`${SELECT} WHERE v.id = $1`, [id])).rows[0]
-  if (!r) throw new FormNotFound(id)
-  const v = rowToVersion(r)
-  cache.set(id, v)
+  const v = await readVersion(db, id)
+  if (v.status !== 'draft') cache.set(id, v)
   return v
+}
+
+/** 版を DB から読む（覚えたものを使わない） */
+export async function readVersion(db: Q, id: string, opts: { forUpdate?: boolean } = {}): Promise<FormVersion> {
+  const r = (await db.query(`${SELECT} WHERE v.id = $1${opts.forUpdate ? ' FOR UPDATE OF v' : ''}`, [id])).rows[0]
+  if (!r) throw new FormNotFound(id)
+  return rowToVersion(r)
 }
 
 /** 共通の仕組みで使う形（読む key つき） */
 export async function loadFormDef(db: Q, id: string): Promise<FormDef> {
   const hit = defs.get(id)
   if (hit) return hit
-  const def = toFormDef(viewOf(await loadVersion(db, id)))
-  defs.set(id, def)
+  const v = await loadVersion(db, id)
+  const def = toFormDef(viewOf(v))
+  if (v.status !== 'draft') defs.set(id, def)
   return def
 }
 
@@ -73,11 +89,87 @@ export function viewOf(v: FormVersion): FormVersionView {
   return { id: v.id, kind: v.kind, name: v.name, version: v.version, schemas: v.schemas, bindings: v.bindings, pages: v.pages, contentSha: v.contentSha }
 }
 
-/** その事業所が見てよい版か（全事業所の様式か、その事業所の様式）。だめなら FormNotFound */
+/**
+ * ケアマネが見てよい版か（全事業所の様式か、その事業所の様式で、下書きでない）。だめなら FormNotFound。
+ * 下書きは書類から指せず、責任者が直している途中なので、ケアマネの入口からは見えない（責任者の入口は versionForManager）
+ */
 export async function versionForOffice(db: Q, officeId: string, id: string): Promise<FormVersion> {
   const v = await loadVersion(db, id).catch(() => null)
-  if (!v || (v.officeId !== null && v.officeId !== officeId)) throw new FormNotFound(id)
+  if (!v || v.status === 'draft' || (v.officeId !== null && v.officeId !== officeId)) throw new FormNotFound(id)
   return v
+}
+
+// ---------- 責任者（自分の事業所の様式）とサイト管理者（全体の様式）が、下書きを直す・消す・公開する ----------
+
+/** どこの様式を扱うか。officeId が null ならサイト管理者（全体の様式） */
+export interface ManagerScope { officeId: string | null }
+
+/**
+ * 責任者・サイト管理者が読んでよい版。責任者は自分の事業所の様式と、全体の様式の下書きでない版（読むだけ）。サイト管理者は全体の様式。
+ * ほかの事業所の様式は FormNotFound（404）
+ */
+export async function versionForManager(db: Q, scope: ManagerScope, id: string, opts: { forUpdate?: boolean } = {}): Promise<FormVersion> {
+  const v = await readVersion(db, id, opts).catch((e) => { if (e instanceof FormNotFound || (e as { code?: string }).code === '22P02') return null; throw e })
+  if (!v) throw new FormNotFound(id)
+  const mine = v.officeId === scope.officeId
+  const global = v.officeId === null
+  if (!mine && !(global && scope.officeId !== null && v.status !== 'draft')) throw new FormNotFound(id)
+  return v
+}
+
+/** 直してよい下書き。全体の様式を責任者が直そうとしたら Forbidden（403）、下書きでなければ NotDraft（409） */
+async function draftForManager(c: Tx, scope: ManagerScope, id: string): Promise<FormVersion> {
+  const v = await versionForManager(c, scope, id, { forUpdate: true })
+  if (v.officeId !== scope.officeId) throw new Forbidden('全体の様式は変えられません')
+  if (v.status !== 'draft') throw new NotDraft(id)
+  return v
+}
+
+export interface DraftPatch {
+  schemas?: TemplateSlot[][]
+  bindings?: Bindings
+  pages?: FormPage[]
+  localFields?: unknown[]
+}
+
+/**
+ * 下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。今と違えば Conflict（409。ほかの人が先に直した）。
+ * 様式・版の番号・元の PDF は変えない（DB のトリガーでも止める）
+ */
+export async function updateDraft(db: Db, scope: ManagerScope, id: string, base: string, patch: DraftPatch): Promise<FormVersion> {
+  return tx(db, async (c) => {
+    const v = await draftForManager(c, scope, id)
+    if (v.contentSha !== base) throw new Conflict('form_version')
+    const next = { kind: v.kind, schemas: patch.schemas ?? v.schemas, bindings: patch.bindings ?? v.bindings, pages: patch.pages ?? v.pages, localFields: patch.localFields ?? v.localFields }
+    const contentSha = createHash('sha256').update(contentOf(next)).digest('hex')
+    await c.query(
+      'UPDATE form_template_versions SET schemas = $2, bindings = $3, pages = $4, local_fields = $5, content_sha = $6 WHERE id = $1',
+      [id, JSON.stringify(next.schemas), JSON.stringify(next.bindings), JSON.stringify(next.pages), JSON.stringify(next.localFields), contentSha],
+    )
+    return readVersion(c, id)
+  })
+}
+
+/** 下書きを捨てる（取り込みの version_id は空になる） */
+export async function deleteDraft(db: Db, scope: ManagerScope, id: string): Promise<void> {
+  await tx(db, async (c) => {
+    await draftForManager(c, scope, id)
+    await c.query('DELETE FROM form_template_versions WHERE id = $1', [id])
+  })
+}
+
+/**
+ * 確かめた下書きを公開する。base は確かめたときの中身の指紋（確かめたあとに直されていたら Conflict）。
+ * その様式の今の版は退く。事業所の新しい書類から、この版を使う（今の書類は、作ったときの版のまま）
+ */
+export async function publishDraft(db: Db, scope: ManagerScope, id: string, base: string): Promise<FormVersion> {
+  return tx(db, async (c) => {
+    const v = await draftForManager(c, scope, id)
+    if (v.contentSha !== base) throw new Conflict('form_version')
+    await c.query('SELECT id FROM form_templates WHERE id = $1 FOR UPDATE', [v.templateId])
+    await publish(c, v.templateId, id)
+    return readVersion(c, id)
+  })
 }
 
 /** 新しい書類に使う版。事業所の様式があればそれ、なければ全事業所の様式の、使う版（published） */
