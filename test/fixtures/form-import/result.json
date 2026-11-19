@@ -1,0 +1,239 @@
+{
+  "status": "succeeded",
+  "basePdfSha256": "625f6cbc632e68a61883621b9fb58c7a853dee76cad3dae8980e117dec9be6bd",
+  "draft": {
+    "schemas": [
+      [
+        {
+          "name": "p1_氏名",
+          "content": "",
+          "position": {
+            "x": 60.65,
+            "y": 30.95
+          },
+          "width": 78.4,
+          "height": 8.1,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 10,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.1,
+          "dynamicFontSize": {
+            "min": 5,
+            "max": 10,
+            "fit": "horizontal"
+          }
+        },
+        {
+          "name": "p1_ペット有",
+          "content": "",
+          "position": {
+            "x": 32.68,
+            "y": 50.38
+          },
+          "width": 3.39,
+          "height": 3.47,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 8,
+          "alignment": "center",
+          "verticalAlignment": "middle",
+          "lineHeight": 1
+        },
+        {
+          "name": "p1_ペット無",
+          "content": "",
+          "position": {
+            "x": 42.59,
+            "y": 50.38
+          },
+          "width": 3.38,
+          "height": 3.47,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 8,
+          "alignment": "center",
+          "verticalAlignment": "middle",
+          "lineHeight": 1
+        },
+        {
+          "name": "p1_家族の氏名",
+          "content": "",
+          "position": {
+            "x": 50,
+            "y": 70
+          },
+          "width": 60,
+          "height": 5,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 10,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.1,
+          "dynamicFontSize": {
+            "min": 5,
+            "max": 10,
+            "fit": "horizontal"
+          }
+        },
+        {
+          "name": "p1_課題1",
+          "content": "",
+          "position": {
+            "x": 30,
+            "y": 96
+          },
+          "width": 40,
+          "height": 5,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 10,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.1,
+          "dynamicFontSize": {
+            "min": 5,
+            "max": 10,
+            "fit": "horizontal"
+          }
+        },
+        {
+          "name": "p1_課題2",
+          "content": "",
+          "position": {
+            "x": 80,
+            "y": 96
+          },
+          "width": 40,
+          "height": 5,
+          "type": "text",
+          "fontName": "BIZUDPGothic",
+          "fontColor": "#1a3fa0",
+          "characterSpacing": 0,
+          "fontSize": 10,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.1,
+          "dynamicFontSize": {
+            "min": 5,
+            "max": 10,
+            "fit": "horizontal"
+          }
+        }
+      ]
+    ],
+    "bindings": {
+      "p1_氏名": {
+        "op": "text@1",
+        "ui": "text",
+        "ref": {
+          "key": "person.name"
+        }
+      },
+      "p1_ペット有": {
+        "op": "option@1",
+        "ui": "check",
+        "ref": {
+          "key": "local.pet"
+        },
+        "is": {
+          "eq": "有"
+        }
+      },
+      "p1_ペット無": {
+        "op": "option@1",
+        "ui": "check",
+        "ref": {
+          "key": "local.pet"
+        },
+        "is": {
+          "eq": "無"
+        }
+      },
+      "p1_家族の氏名": {
+        "op": "text@1",
+        "ui": "text",
+        "ref": {
+          "key": "family.members",
+          "path": [
+            0,
+            "name"
+          ]
+        }
+      },
+      "p1_課題1": {
+        "op": "text@1",
+        "ui": "text",
+        "ref": {
+          "key": "local.issue_1"
+        }
+      },
+      "p1_課題2": {
+        "op": "text@1",
+        "ui": "text",
+        "ref": {
+          "key": "local.issue_2"
+        }
+      }
+    },
+    "pages": [
+      {
+        "no": 1,
+        "pdfIndex": 0,
+        "title": "1 ページ",
+        "width": 210,
+        "height": 297
+      }
+    ],
+    "localFields": [
+      {
+        "key": "local.pet",
+        "label": "ペットの有無",
+        "type": "enum",
+        "choices": [
+          "有",
+          "無"
+        ]
+      },
+      {
+        "key": "local.issue_1",
+        "label": "課題（1 行目）",
+        "type": "longtext",
+        "note": "本人が困っていること"
+      },
+      {
+        "key": "local.issue_2",
+        "label": "課題（2 行目）",
+        "type": "longtext",
+        "note": "本人が困っていること"
+      }
+    ],
+    "review": [
+      {
+        "slot": "p1_家族の氏名",
+        "reason": "どの行の欄か分からないので、1 行目にした（family.members[].name）"
+      }
+    ]
+  },
+  "stats": [
+    {
+      "page": 1,
+      "rounds": 2,
+      "outside": 0,
+      "cells": 2,
+      "boxes": 2
+    }
+  ]
+}

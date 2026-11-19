@@ -22,7 +22,7 @@ const v2: Visit = { id: 'v2', date: '2026-11-08', scenes: [{ id: 's2', kind: '�
 
 type Handler = (prompt: string, schema: any, meta: AskMeta) => unknown
 const fakeLlm = (h: Handler, log: AskMeta[] = []) => (): Llm => ({
-  ask: async (p, s, m) => { log.push(m); return h(p, s, m) },
+  ask: async (p, s, m) => { log.push(m); return h(p as string, s, m) }, // 録音の書き込みは文字だけを渡す
   usage: () => ({ ...ZERO_USAGE, calls: log.length }),
 })
 
