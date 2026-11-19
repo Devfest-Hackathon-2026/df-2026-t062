@@ -269,3 +269,64 @@ export function acceptUpdate(spec: Spec, rec: { changed?: boolean, value?: unkno
   if (!cite.some((i) => newIds.has(i))) return [null, [], '新しい記録を根拠に挙げていない']
   return [v, cite, null]
 }
+
+// ================================================================ 指示文の書式・答えの形・呼び出しの並べ方（2 層改と要約から書く流れで共通）
+
+export const TYPE_JA: Record<string, string> = {
+  enum: '1 つ選ぶ', multi: 'いくつか選ぶ', bool: 'はい・いいえ', number: '数', date: '日付（YYYY-MM-DD）',
+  text: '短い文字', longtext: '文章（longtext）', object: 'まとまり（中の項目ごとに書く）',
+  list: '表（1 行が 1 つのまとまり。行ごとに中の項目を書く）',
+}
+
+export function fmtField(s: Spec): string {
+  const lines = [`### ${s.key}（${s.label}）`, `- 型: ${TYPE_JA[s.type]}`, `- 用紙の場所: ${s.where}`]
+  if (s.choices?.length) lines.push(`- 選択肢: ${s.choices.join(' ／ ')}`)
+  if (s.subs?.length) {
+    const subs = s.subs.map((x) => `${x.key}（${x.label}、${TYPE_JA[x.type]}${x.choices?.length ? `：${x.choices.join('／')}` : ''}）`)
+    lines.push(`- 中の項目: ${subs.join('、')}`)
+  }
+  if (s.note) lines.push(`- 注: ${s.note}`)
+  return lines.join('\n')
+}
+
+/** Python の json.dumps(ensure_ascii=False) と同じ区切り（", " と ": "）で出す */
+export function pyJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(pyJson).join(', ')}]`
+  if (v !== null && typeof v === 'object') return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ')}}`
+  return JSON.stringify(v)
+}
+export const fmtValue = (v: unknown) => (v === null || v === undefined ? '（空）' : pyJson(v))
+
+/** 欄ごとに {value, from} を返させる JSON Schema（id は自由な文字列） */
+export function fieldSchema(specs: Spec[], citeKey = 'from') {
+  const props = Object.fromEntries(specs.map((s) => [s.key, {
+    type: 'object',
+    properties: { value: valueSchema(s), [citeKey]: { type: 'array', items: { type: 'string' } } },
+    required: ['value', citeKey],
+  }]))
+  return { type: 'object', properties: props, required: specs.map((s) => s.key) }
+}
+
+/** 同時に動かす数を絞って、順番どおりに結果を返す */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker))
+  return out
+}
+
+/** 最初の 1 つを済ませてから、残りを mapLimit で呼ぶ（同じ前置きを先にキャッシュに載せる）。順番どおりに返す */
+export async function warmThenMap<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  if (items.length <= 1) return mapLimit(items, limit, fn)
+  const head = await fn(items[0])
+  return [head, ...await mapLimit(items.slice(1), limit, fn)]
+}
+
+export type Settled<T> = { ok: true, value: T } | { ok: false }
+export const settle = async <T>(p: Promise<T>): Promise<Settled<T>> => p.then((value) => ({ ok: true as const, value }), () => ({ ok: false as const }))

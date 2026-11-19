@@ -1,5 +1,5 @@
 // DB の読み書き。api と worker が共通に使う。どの関数も office_id で絞る。
-import { planBatch, sameValue, type BatchPlan, type CurrentField } from '../core/apply-batch.ts'
+import { planBatch, sameValue, type BatchPlan, type Cite, type CurrentField } from '../core/apply-batch.ts'
 import { saveOneHunk } from '../core/diff.ts'
 import { slotPages, type FormKind } from '../core/form.ts'
 import type { SurveySource } from '../core/survey-import.ts'
@@ -433,7 +433,7 @@ export interface ApplyInput {
   jobId?: string
   /** Worker の今回の実行。ジョブ完了と用紙への反映を同じ transaction で確定する */
   completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown> }
-  proposed: Record<string, { value: unknown, cite?: string[] }>
+  proposed: Record<string, { value: unknown, cite?: Cite }>
   /** プログラムが決める欄の値（1 回目の録音の日をアセスメント実施日にする、など） */
   system?: Record<string, unknown>
 }

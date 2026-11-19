@@ -13,12 +13,18 @@ export interface CurrentField {
   by: Who
 }
 
+/**
+ * 値の根拠。2 層改は根拠の発言の id の配列。録音からの書き込み（要約から書く）は、もとにした要約の行（recording_summaries.id）。
+ * 根拠はケアマネに見せない（docs/再設計/17 の「書く・全体のまとめ」）
+ */
+export type Cite = string[] | { kind: 'summary', ids: string[] }
+
 export interface BatchChange {
   key: string
   op: 'add' | 'update'
   before: unknown
   after: unknown
-  cite?: string[]
+  cite?: Cite
 }
 
 export interface BatchPlan {
@@ -49,7 +55,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
  */
 export function planBatch(
   current: Record<string, CurrentField | undefined>,
-  proposed: Record<string, { value: unknown, cite?: string[] }>,
+  proposed: Record<string, { value: unknown, cite?: Cite }>,
   /** プログラムが決める欄（アセスメント実施日など）。AI の欄でなくても書く（ケアマネの値は守る） */
   systemKeys: ReadonlySet<string> = new Set(),
   /** 書類の様式の版の欄の辞書（その様式だけの欄を見分ける） */

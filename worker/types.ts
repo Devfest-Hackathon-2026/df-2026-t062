@@ -1,5 +1,7 @@
 // worker の段の約束。中身（STT・Gemini）は差し替えられる（AI_PROVIDER=fake|vertex）。
+import type { Cite } from '../core/apply-batch.ts'
 import type { FormDef } from '../core/form.ts'
+import type { Topic } from '../core/topics.ts'
 import type { Llm } from './vertex/gemini.ts'
 
 /** 原本の発言 1 つ（id は録音をまたいでも重ならない: r<録音の番号>-<連番>） */
@@ -57,8 +59,8 @@ export interface SpeakerAssigner {
 
 export interface ProposedValue {
   value: unknown
-  /** 根拠の発言の id */
-  cite?: string[]
+  /** 根拠（2 層改は発言の id、要約から書くときは要約の行） */
+  cite?: Cite
 }
 
 export interface WriterResult {
@@ -79,10 +81,54 @@ export interface SheetWriter {
   write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean, form: FormDef }): Promise<WriterResult>
 }
 
+// ---------- 録音からの書き込み（作り替え。docs/再設計/17_録音からの書き込み.md） ----------
+
+/** 使う要約の 1 行（録音 1 本・項目 1 つ。recording_summaries の 1 行） */
+export interface SummaryLine {
+  /** recording_summaries.id（値の根拠に残す） */
+  id: string
+  /** 項目の id */
+  topic: string
+  /** その書類につながった録音の何本目か（1 から） */
+  seq: number
+  /** 録音の日（日本の日付、YYYY-MM-DD） */
+  date: string
+  text: string
+  /** 今回の録音の要約か */
+  isNew: boolean
+}
+
+/** 3. 要約: 新しい録音を 1 回だけ全部読み、AI の項目ごとに要約する。話に出なかった項目は返さない */
+export interface Summarizer {
+  summarize(input: { kindName: string, topics: Topic[], utterances: Utterance[], people: Person[] }): Promise<{ texts: Record<string, string>, usage: Usage }>
+}
+
+export interface TopicWriterInput {
+  /** 書類の種類の名前（form_kinds.name） */
+  kindName: string
+  /** 使う項目の一覧（全体の一覧に事業所の書き足しと足した項目を合わせたもの） */
+  topics: Topic[]
+  /** 使う要約（足していく種類は 1 回目から全部、単体の種類は今回の録音だけ） */
+  summaries: SummaryLine[]
+  /** 足していく種類の 2 回目から。欄を選ぶ AI に、今回足した分の印と、欄の今の値を見せる */
+  showNew: boolean
+  /** 書類の今の値 */
+  current: Record<string, unknown>
+  /** 録音がつながった書類の様式の版 */
+  form: FormDef
+}
+
+/** 4〜7. 欄を選ぶ → 項目ごとに書く → 全体のまとめ → 最後のチェック。返す値の根拠は要約の行 */
+export interface TopicWriter {
+  write(input: TopicWriterInput): Promise<WriterResult>
+}
+
 export interface Providers {
   stt: Stt
   speakers: SpeakerAssigner
   writer: SheetWriter
+  /** 録音からの書き込みの作り替え（要約から書く）。あれば 2 層改（writer）の代わりに使う（RECORDING_WRITER=summary） */
+  recording?: { summarizer: Summarizer, writer: TopicWriter }
   /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
   formImport: () => Llm
 }

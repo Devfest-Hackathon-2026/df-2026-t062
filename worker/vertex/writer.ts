@@ -10,18 +10,16 @@ import type { Person, SheetWriter, Visit, WriterResult } from '../types.ts'
 import * as P from './prompts.ts'
 import { SUMMARY, bundleItems, groupByBundle } from './bundles.ts'
 import {
-  DOC_SCENE_KINDS, acceptUpdate, atoms, candidateFields, dropAtoms, item23Names, mergeFields, needsDocument,
-  validateValue, valueSchema, type Rec, type Spec,
+  DOC_SCENE_KINDS, acceptUpdate, atoms, candidateFields, dropAtoms, fieldSchema, fmtField, fmtValue, item23Names, mapLimit, mergeFields, needsDocument,
+  settle, TYPE_JA, validateValue, valueSchema, warmThenMap, type Rec, type Spec,
 } from './common.ts'
+
+// 前からの入口（テストと eval が使う）
+export { fieldSchema, fmtField, mapLimit, warmThenMap }
 import type { Llm } from './gemini.ts'
 
 const ITEM23 = item23Names()
 
-const TYPE_JA: Record<string, string> = {
-  enum: '1 つ選ぶ', multi: 'いくつか選ぶ', bool: 'はい・いいえ', number: '数', date: '日付（YYYY-MM-DD）',
-  text: '短い文字', longtext: '文章（longtext）', object: 'まとまり（中の項目ごとに書く）',
-  list: '表（1 行が 1 つのまとまり。行ごとに中の項目を書く）',
-}
 
 // ================================================================ 書式（pipelines.py の fmt_*）
 
@@ -50,24 +48,7 @@ function fmtScene(v: LooseVisit, s: Scene): string {
 
 export const fmtRecord = (visits: LooseVisit[]) => visits.flatMap((v) => v.scenes.map((s) => fmtScene(v, s))).join('\n\n')
 
-export function fmtField(s: Spec): string {
-  const lines = [`### ${s.key}（${s.label}）`, `- 型: ${TYPE_JA[s.type]}`, `- 用紙の場所: ${s.where}`]
-  if (s.choices?.length) lines.push(`- 選択肢: ${s.choices.join(' ／ ')}`)
-  if (s.subs?.length) {
-    const subs = s.subs.map((x) => `${x.key}（${x.label}、${TYPE_JA[x.type]}${x.choices?.length ? `：${x.choices.join('／')}` : ''}）`)
-    lines.push(`- 中の項目: ${subs.join('、')}`)
-  }
-  if (s.note) lines.push(`- 注: ${s.note}`)
-  return lines.join('\n')
-}
 
-/** Python の json.dumps(ensure_ascii=False) と同じ区切り（", " と ": "）で出す */
-function pyJson(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(pyJson).join(', ')}]`
-  if (v !== null && typeof v === 'object') return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ')}}`
-  return JSON.stringify(v)
-}
-const fmtValue = (v: unknown) => (v === null || v === undefined ? '（空）' : pyJson(v))
 
 function fmtSheet(fields: Record<string, Rec>, byKey: Map<string, Spec>): string {
   const lines = Object.entries(fields).filter(([k, r]) => byKey.has(k) && r.value !== null && r.value !== undefined)
@@ -79,15 +60,6 @@ function fmtSheet(fields: Record<string, Rec>, byKey: Map<string, Spec>): string
 
 const isRecord = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)
 
-/** 欄ごとに {value, from} を返させる JSON Schema（id は自由な文字列） */
-export function fieldSchema(specs: Spec[], citeKey = 'from') {
-  const props = Object.fromEntries(specs.map((s) => [s.key, {
-    type: 'object',
-    properties: { value: valueSchema(s), [citeKey]: { type: 'array', items: { type: 'string' } } },
-    required: ['value', citeKey],
-  }]))
-  return { type: 'object', properties: props, required: specs.map((s) => s.key) }
-}
 
 /** 2 回目の直しの答えの形。直す欄の名前を changed に並べさせる（欄ごとに changed を持たせると、形が大きくなり Gemini が受け付けない） */
 export function updateSchema(specs: Spec[]) {
@@ -98,29 +70,7 @@ export function updateSchema(specs: Spec[]) {
   return { type: 'object', properties: props, required: ['changed'] }
 }
 
-/** 同時に動かす数を絞って、順番どおりに結果を返す */
-export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length)
-  let next = 0
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++
-      out[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker))
-  return out
-}
 
-/** 最初の 1 つを済ませてから、残りを mapLimit で呼ぶ（同じ前置きを先にキャッシュに載せる）。順番どおりに返す */
-export async function warmThenMap<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  if (items.length <= 1) return mapLimit(items, limit, fn)
-  const head = await fn(items[0])
-  return [head, ...await mapLimit(items.slice(1), limit, fn)]
-}
-
-type Settled<T> = { ok: true, value: T } | { ok: false }
-const settle = async <T>(p: Promise<T>): Promise<Settled<T>> => p.then((value) => ({ ok: true as const, value }), () => ({ ok: false as const }))
 
 // ================================================================ 本体
 
