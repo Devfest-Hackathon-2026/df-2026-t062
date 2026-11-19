@@ -211,6 +211,7 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
   if (dup.length) errors.push(`印字欄の名前が重なっている: ${[...new Set(dup)].join(', ')}`)
   for (const n of names) if (!input.bindings[n]) errors.push(`対応のない印字欄: ${n}`)
   for (const n of Object.keys(input.bindings)) if (!names.includes(n)) errors.push(`印字欄のない対応: ${n}`)
+  for (const slot of input.schemas.flat()) if (input.bindings[slot.name]?.op === 'diagram@1' && slot.type !== 'image') errors.push(`${slot.name}: 図の印字欄はimage型が必要です`)
   errors.push(...checkBindings(input.bindings))
   for (const p of input.pages) if (!input.schemas[p.pdfIndex]) errors.push(`ページ ${p.no} の pdfIndex ${p.pdfIndex} に欄がない`)
   return errors

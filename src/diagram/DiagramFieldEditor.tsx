@@ -77,7 +77,7 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
   const paletteDrag = usePaletteDrag((object, client) => { const at = point(client); if (at) add(object, at) })
   function close() { if (!busy && (!changed || window.confirm('この図の変更を破棄して戻りますか？'))) onClose() }
   function pointerDown(e: PointerEvent<HTMLDivElement>) {
-    if (busy || !e.isPrimary || e.button !== 0) return
+    if (busy || confirm || !e.isPrimary || e.button !== 0) return
     const at = point({ x: e.clientX, y: e.clientY }); if (!at) return
     if (pendingBody) { add({ kind: pendingBody }, at); return }
     // Rooms are always behind other objects, including hit testing.
@@ -87,7 +87,7 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
     if (hit) { drag.current = { id: hit.id, x: at.x, y: at.y, doc: history[index], moved: false }; e.currentTarget.setPointerCapture(e.pointerId) }
   }
   function pointerMove(e: PointerEvent<HTMLDivElement>) {
-    const g = drag.current; if (!g) return
+    const g = drag.current; if (!g || busy || confirm) return
     const at = point({ x: e.clientX, y: e.clientY }); if (!at) return
     if (Math.hypot(at.x - g.x, at.y - g.y) < 2 && !g.moved) return
     g.moved = true

@@ -5,6 +5,7 @@ import { diagramSchema, nextDiagram, validDiagramUpdate } from '../core/diagram/
 import { diagramSvg, roomsBehind } from '../core/diagram/svg.ts'
 import { validValue } from '../core/schema.ts'
 import { checkBindings, editSlot, formKeys } from '../core/binding.ts'
+import { checkVersion } from '../db/forms.ts'
 import { readSeed } from '../forms/admin/files.ts'
 import { diagramImage } from '../api/diagram-image.ts'
 import { checkProposal, type ChatDocument } from '../api/chat.ts'
@@ -56,6 +57,8 @@ test('the verified assessment adapter owns all three positions; normal text edit
     assert.equal(slot.type, 'image')
     assert.ok('reason' in editSlot(form.bindings, {}, name, 'arbitrary'))
   }
+  const wrong = { ...form, schemas: form.schemas.map((page) => page.map((slot) => form.bindings[slot.name]?.op === 'diagram@1' ? { ...slot, type: 'text' as const } : slot)) }
+  assert.ok(checkVersion(wrong).some((message) => message.includes('image型')))
   assert.ok(checkBindings({ invalid: { op: 'diagram@1', ui: 'diagram', ref: { key: 'client.name' } } }).length)
 })
 test('AI proposals use the shared schema, captured baseRevision and one atomic field value', () => {
