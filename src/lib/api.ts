@@ -5,6 +5,7 @@ import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.
 
 import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
 import type { ChatMessage, ChatReply } from '../../api/chat.ts'
+import type { InspectionSummary, InspectionView } from '../../db/inspections.ts'
 import { readChatStream } from './chatStream.ts'
 
 export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff }
@@ -94,6 +95,10 @@ export const api = {
   save: (id: string, body: { scope: 'document' } | { scope: 'page', page: number } | { scope: 'hunk', key: string, hunkIndex: number }) =>
     req<{ rev: number, document: DocumentView }>('POST', `/api/documents/${id}/save`, body),
   jobs: (clientId: string) => req<{ jobs: JobView[] }>('GET', `/api/clients/${clientId}/jobs`),
+  /** AI 点検（#113）。始める・これまでの点検・1 回の結果 */
+  startInspection: (clientId: string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {}),
+  inspections: (clientId: string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections`),
+  inspection: (id: string) => req<{ inspection: InspectionView }>('GET', `/api/inspections/${id}`),
   startRecording: (clientId: string, mime: string, deviceRecordingId: string, expiredUploadUrl?: string) =>
     req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl }),
   completeRecording: (id: string, durationMs: number, bytes: number) =>

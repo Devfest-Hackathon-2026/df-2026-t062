@@ -3,6 +3,8 @@ import type { FieldDict } from '../../core/dictionary.ts'
 import { SurveyImport } from '../survey/SurveyImport.tsx'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
+import { PetInspection, useInspections } from './PetInspection.tsx'
+import { menuStatus } from './petInspection.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
 import type { ChatEntry } from './petChat.ts'
 import { fieldLabel, type availableTopics, type ReviewItem } from './petAssessment.ts'
@@ -11,6 +13,7 @@ import './PetHelper.css'
 const menus = [
   { id: 'documents', icon: 'file-earmark-arrow-down', title: '書類を取り込む' },
   { id: 'review', icon: 'check2-circle', title: '確認する' },
+  { id: 'inspect', icon: 'clipboard-check', title: '点検する' },
   { id: 'interview', icon: 'lightbulb', title: '面談のヒント' },
   { id: 'revise', icon: 'pencil', title: '書き方を相談する' },
 ] as const
@@ -18,6 +21,8 @@ const menus = [
 type Menu = typeof menus[number]['id']
 
 interface Props {
+  /** 点検（AI 点検）の相手。なければ「点検する」を出さない */
+  clientId?: string
   available: boolean
   clientName: string
   review: ReviewItem[]
@@ -30,7 +35,7 @@ interface Props {
   chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, dict?: FieldDict }
 }
 
-export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
+export function PetHelper({ clientId, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
@@ -42,6 +47,8 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
   const previousMenu = useRef<Menu | null>(null)
   const menuButtons = useRef<Partial<Record<Menu, HTMLButtonElement | null>>>({})
   const pending = review.filter((item) => !item.confirmed).length
+  const inspections = useInspections(clientId)
+  const inspectStatus = menuStatus(inspections.list)
 
   useEffect(() => {
     body.current?.scrollTo(0, 0)
@@ -70,10 +77,11 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
           <>
             <PetMessage home>今日は何から<br />一緒に進めましょうか？</PetMessage>
             <div className="assistant-stack assistant-menu">
-              {menus.map(({ id, icon, title }) => (
+              {menus.filter(({ id }) => id !== 'inspect' || clientId).map(({ id, icon, title }) => (
                 <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className="assistant-card" onClick={() => open(id)}>
                   <PetIcon name={icon} />
-                  <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}</span>
+                  <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}
+                    {id === 'inspect' && inspectStatus && <small className={`insp-tone-${inspectStatus.tone}`}>{inspectStatus.text}</small>}</span>
                   <PetIcon name="chevron-right" />
                 </button>
               ))}
@@ -122,6 +130,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
             {!topics.length && <p className="assistant-empty">{available ? '面談のヒントに対応する空欄はありません。' : 'アセスメントを開くと面談のヒントを表示します。'}</p>}
           </>
         )}
+        {menu === 'inspect' && clientId && <PetInspection clientId={clientId} list={inspections.list} reload={inspections.reload} onJump={jump} />}
         {menu === 'revise' && (
           <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet}
             onJump={available ? jump : undefined} dict={chat.dict} />
