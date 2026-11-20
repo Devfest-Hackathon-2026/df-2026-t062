@@ -68,7 +68,7 @@
 .cp-embedded .cp-header {padding:8px 0; background:transparent; border:0}
 .cp-embedded .cp-planbar {padding:8px 12px; border:1px solid #E1E4EA; border-radius:12px; gap:8px; font-size:12px}
 .cp-embedded .cp-info,.cp-embedded .cp-error,.cp-embedded .cp-notice {margin:8px 0; font-size:13px}
-.cp-embedded .cp-layout {grid-template-columns:clamp(160px,14.7vw,233px) minmax(0,1fr); gap:17px; padding:12px 0 0; flex:1 1 auto; min-height:0}
+.cp-embedded .cp-layout {grid-template-columns:clamp(160px,14.7vw,233px) minmax(0,1fr); gap:17px; padding:0; flex:1 1 auto; min-height:0}
 .cp-embedded .cp-nav {flex-direction:column; flex-wrap:nowrap}
 .cp-embedded .cp-nav .nav-i {width:100%; flex:0 0 auto}
 @media(max-width:620px) {
@@ -76,4 +76,22 @@
   .cp-embedded .cp-layout {grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr)}
   .cp-embedded .cp-nav {flex-direction:row; flex-wrap:wrap}
   .cp-embedded .cp-nav .nav-i {width:auto}
+}
+
+.cp-nav-title {font-size:13px; font-weight:700; color:#5A6270; padding:0 8px 6px}
+.cp-controls {margin-top:16px; padding:12px 4px 0; border-top:1px solid #E1E4EA}
+.cp-controls .cp-header,.cp-controls .cp-planbar {display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:0; border:0; background:transparent; font-size:12px}
+.cp-controls .cp-header {margin-bottom:16px}
+.cp-controls .cp-header label {margin:0; min-width:0}
+.cp-controls .cp-header h1 {font-size:16px}
+.cp-controls .btn {white-space:normal; text-align:left; justify-content:flex-start; width:100%; box-sizing:border-box}
+.cp-controls .cp-status {align-self:flex-start}
+.cp-controls select {width:100%}
+.cp-sheet-scroll>.document-output {margin-bottom:12px}
+@media(max-width:1100px) {
+  .cp-work:not(.cp-embedded) .cp-controls {width:100%; margin-top:8px}
+}
+@media(max-width:620px) {
+  .cp-embedded .cp-nav {max-height:240px}
+  .cp-embedded .cp-controls {width:100%}
 }

@@ -105,7 +105,6 @@ export function PadWork({ clientId }: { clientId: string }) {
             {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
               <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
             ))}
-            {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc" role="menuitem" disabled={recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>ケアプラン</button>}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
             <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る（{client?.name}さんの今の情報から AI が書き込みます）</div>
             {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
@@ -114,6 +113,10 @@ export function PadWork({ clientId }: { clientId: string }) {
             {newDocMenu.map((d) => (
               <button key={d.label} className="toc" role="menuitem" type="button" disabled={!d.available} aria-disabled={!d.available} onClick={() => setDocOpen(false)} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>＋ {d.label}{!d.available && <span className="coming-soon" style={{ fontSize: 13 }}>{COMING_SOON_LABEL}</span>}</button>
             ))}
+            <div className="care-plan-menu-section">
+              <div className="care-plan-menu-title">ケアプラン</div>
+              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
+            </div>
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>

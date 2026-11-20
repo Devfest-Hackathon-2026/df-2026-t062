@@ -6,6 +6,7 @@ import { H, W } from '../form/layout.ts'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { availableTopics, fieldTargets, mergeSurveyDrafts, reviewItems, stageSurvey, surveyOverlays, type SurveyDraft } from '../components/petAssessment.ts'
 import { FormPage } from '../form/FormPage.tsx'
+import { DocumentOutput } from '../form/DocumentOutput.tsx'
 import { SheetToolbar } from '../form/SheetToolbar.tsx'
 import { useClient } from '../form/useClient.ts'
 import { pickDocument, useFormKinds } from '../form/useFormKinds.ts'
@@ -21,6 +22,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
   const [carePlanOpen, setCarePlanOpen] = useState(false)
+  const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
   const [planDirty, setPlanDirty] = useState(false)
   const [planBusy, setPlanBusy] = useState(false)
   const reloadDoc = useRef<() => void>(() => {})
@@ -223,7 +225,6 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
             <button key={k.key} className={`dtab${!carePlanOpen && k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={!carePlanOpen && k.key === open.key} disabled={planBusy} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
-          {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`dtab${carePlanOpen ? ' dtab-on' : ''}`} role="tab" aria-selected={carePlanOpen} type="button" disabled={planBusy} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}>ケアプラン</button>}
           <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -237,19 +238,14 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             </div>
           )}
         </div>
-        {!carePlanOpen && <div style={{ flex: '1 1 360px', display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '0 1 334px', minWidth: 220 }}>
-            <div style={{ fontSize: 12, color: '#5A6270' }}>必須 {required.total} 欄のうち {required.filled} 欄が入っています</div>
-            <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: '#DCE0E6', marginTop: 4 }}>{required.filled > 0 && <div style={{ height: 8, background: '#2F5FD0', width: `${(required.filled / required.total * 100).toFixed(1)}%` }} />}</div>
-          </div>
-          <button className="btn" type="button" onClick={() => void exportPdf()} disabled={!docId}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></svg>書類を出力
-          </button>
-        </div>}
+        {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`care-plan-entry${carePlanOpen ? ' care-plan-entry-on' : ''}`} aria-pressed={carePlanOpen} type="button" disabled={planBusy} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
+        {carePlanOpen ? <div className="pc-work-output" ref={setPlanOutputTarget} /> : <DocumentOutput
+          status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
+          progress={required} disabled={!docId} onExport={() => void exportPdf()} />}
       </div>
 
       <div className="pc-work-layout">
-        {carePlanOpen ? <CarePlanWork embedded clientId={clientId} clientName={client?.name ?? ''} touch={false}
+        {carePlanOpen ? <CarePlanWork embedded outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
           onDirtyChange={setPlanDirty} onBusyChange={setPlanBusy} onBack={() => { setCarePlanOpen(false); setPlanDirty(false) }} /> : <>
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
