@@ -81,7 +81,8 @@ def mark(c, height, box, faint=False):
 def write_fixture(path, basic, notes, boxes, answers, cases, difficult):
     pages = [*PdfReader(BytesIO(basic)).pages, *PdfReader(BytesIO(notes)).pages]
     writer = PdfWriter()
-    for index, page in enumerate(pages, 1):
+    for index, source_page in enumerate(pages, 1):
+        page = writer.add_page(source_page)
         width, height = float(page.mediabox.width), float(page.mediabox.height)
         buffer = BytesIO()
         c = Canvas(buffer, pagesize=(width, height))
@@ -115,7 +116,6 @@ def write_fixture(path, basic, notes, boxes, answers, cases, difficult):
         c.showPage()
         c.save()
         page.merge_page(PdfReader(buffer).pages[0])
-        writer.add_page(page)
     writer.add_metadata({'/Title': '架空の認定調査票（難読版）' if difficult else '架空の認定調査票（通常版）'})
     with path.open('wb') as file:
         writer.write(file)
@@ -141,6 +141,15 @@ def main():
         path = args.out / filename
         write_fixture(path, basic, notes, boxes, answers, cases, difficult)
         print(path)
+    manifest = {
+        'synthetic': True,
+        'basicSha256': BASIC_SHA,
+        'notesSha256': NOTES_SHA,
+        'goldSha256': sha256((HERE / 'gold.tsv').read_bytes()).hexdigest(),
+        'files': {name: sha256((args.out / name).read_bytes()).hexdigest()
+                  for name in ['survey-clean.pdf', 'survey-difficult.pdf']},
+    }
+    (args.out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 
 
 if __name__ == '__main__':

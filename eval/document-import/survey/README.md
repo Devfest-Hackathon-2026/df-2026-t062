@@ -30,3 +30,26 @@ python3 -m venv .data/survey-venv
 ```
 
 難読版は印の濃さと数だけを変えたPDF。写真の傾き、影、手書き文字の認識精度を測るには、別の入力サンプルを追加する。
+
+## 汎用読取経路の評価（#18）
+
+`make_fixtures.py` は生成したPDFと正解表のハッシュを `manifest.json` に残す。`pypdf` 7以降にも対応する。実利用者の資料を評価先に置かない。
+
+```sh
+# 費用を使わず、架空資料の検証・スキャンと別紙画像の生成・既存画素解析を実行
+node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
+  --out .data/document-eval/dry --cases clean,difficult,scan,png,jpeg
+
+# 通常の取込ジョブを実Geminiで通す。環境には DATABASE_URL、GOOGLE_CLOUD_PROJECT、
+# GEMINI_LOCATION と、それと同じ DOCUMENT_INPUT_APPROVED_LOCATION を設定する
+node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
+  --out .data/document-eval/live --cases clean --budget-yen 50 --live
+```
+
+`--cases` は `clean,difficult,scan,png,jpeg` から選ぶ。`--live` の既定は無効。通常ジョブを隔離したDBスキーマと非公開のローカル原本保存で実行し、終わるとそのDBと原本を消す。録音ジョブは使わない。要約・候補生成・根拠の保持は通常のworkerと同じ経路で測る。モデルのJSON Schemaフォールバックも実運用と同じ条件にする。評価時のwriterの同時実行数は1とする。
+
+予算は集計した見込費用が指定額に達したら次の呼び出しを止める。既に実行中の呼び出しと、その中のリトライ分は超過しうる。まず通常版1件で実測してから対象を広げる。
+
+`report.json` に完全一致・誤候補・欠落・対象項目の安全な保留・根拠IDの追跡率・時間・使用量・見込費用を残す。複数選択の順序は比べない。既存画素解析の比較は、ブラウザと同じ `readRowMarks` をNodeのPDF描画に当てた3項目の比較。ブラウザUIそのものの測定ではない。`png` と `jpeg` は異なる書式の合成別紙で、実在する別自治体の様式の検証を代替しない。
+
+生成候補・原文・要約と、架空資料のモデル応答は、診断用として指定した出力先だけに保存する。出力先はgit管理外の `.data/` を使う。要確認はその項目の番号・名称と結びつく記録がある場合だけ成功と数える。特記事項の意味の一致とケアマネによる確認所要時間は別途評価する。人の確認時間は自動で作らず `null` にする。

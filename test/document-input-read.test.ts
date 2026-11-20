@@ -74,3 +74,29 @@ test('処理地域の明示確認がないと書類読取を有効にしない�
   const approved = vertexProviders({ GOOGLE_CLOUD_PROJECT: 'synthetic-project', GEMINI_LOCATION: 'global', DOCUMENT_INPUT_APPROVED_LOCATION: 'global' })
   assert.equal(typeof approved.documentRead!().ask, 'function')
 })
+
+test('補助領域の座標が逆転していても原文を失わず、領域は不明にする。JSON Schemaの配列はitemsで定義する', async () => {
+  const canvas = createCanvas(10, 10)
+  const result = await readDocument(canvas.toBuffer('image/png'), { id: 'invalid-region', mime: 'image/png', ask: async (_prompt, schema) => {
+    const encoded = JSON.stringify(schema)
+    assert.equal(encoded.includes('prefixItems'), false)
+    assert.equal(encoded.includes('$schema'), false)
+    assert.equal(encoded.includes('pattern'), false)
+    assert.equal(encoded.includes('minLength'), false)
+    return { entries: [{ text: '移動は見守り。', recordedOn: null, region: [0.7, 0.2, 0.3, 0.4], uncertain: false }], issues: [] }
+  } })
+  assert.equal(result.evidence[0].region, null)
+  assert.equal(result.evidence[0].text, '移動は見守り。')
+  assert.equal(result.evidence[0].uncertain, false)
+})
+
+test('領域がページ外・長さ違いなら不明にし、原文は保持する', async () => {
+  const canvas = createCanvas(10, 10)
+  for (const region of [[0.1, 0.1, 0.5, 1.2], [0.1, 0.2]]) {
+    const result = await readDocument(canvas.toBuffer('image/png'), { id: 'unknown-region', mime: 'image/png', ask: async () => ({
+      entries: [{ text: '食事は見守り。', recordedOn: null, region, uncertain: false }], issues: [],
+    }) })
+    assert.equal(result.evidence[0].region, null)
+    assert.equal(result.evidence[0].text, '食事は見守り。')
+  }
+})
