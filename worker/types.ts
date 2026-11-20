@@ -74,7 +74,7 @@ export interface SheetWriter {
    * 1 回目（その書類に AI が書いた値がない）: 記録の全部から書く。
    * 2 回目から: 今の値と新しい記録だけで直す（2 層改の工夫 3）。
    */
-  write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean }): Promise<WriterResult>
+  write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean, allowedKeys?: string[] }): Promise<WriterResult>
 }
 
 export interface Providers {
@@ -83,6 +83,8 @@ export interface Providers {
   writer: SheetWriter
   /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
   formImport: () => Llm
+  /** 記入済み原本の読取。利用地域の確認後に有効にする */
+  documentRead?: () => Llm
 }
 
 export const ZERO_USAGE: Usage = { calls: 0, promptTokens: 0, cachedTokens: 0, outputTokens: 0, thinkingTokens: 0, yen: 0 }

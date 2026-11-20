@@ -1,0 +1,22 @@
+.document-input { display: grid; gap: 12px; }
+.document-input > p { margin: 0; overflow-wrap: anywhere; }
+.document-input-source { margin-top: 16px; padding: 12px; border: 1px solid #dfdcea; border-radius: 12px; background: white; }
+.document-input-source > summary { cursor: pointer; overflow-wrap: anywhere; }
+.document-input-source > summary small { display: block; margin-top: 4px; color: #656174; }
+.document-input-source > button { margin: 12px 0; }
+.document-input-source label { display: block; font-size: 13px; line-height: 1.7; }
+.document-input-source blockquote { margin: 10px 0; border-left: 3px solid #ded8f5; padding-left: 9px; overflow-wrap: anywhere; }
+.document-input-source blockquote p { white-space: pre-wrap; font-size: 13px; }
+.document-input-source small { overflow-wrap: anywhere; }
+.document-input-candidate { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e7e4ee; }
+.document-input-candidate textarea { display: block; width: 100%; min-height: 84px; padding: 8px; border: 1px solid #bcb7ca; border-radius: 7px; font: inherit; resize: vertical; }
+.document-input-candidate > p { font-size: 13px; }
+.document-input-value { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.document-input-source button { border: 1px solid #cac2e5; border-radius: 7px; background: #fff; color: #34215d; padding: 7px 10px; cursor: pointer; }
+.document-input-source button:disabled { opacity: .5; cursor: default; }
+.document-input-warning { color: #8a4d10; font-size: 13px; }
+.document-input-candidate fieldset { border: 1px solid #e7e4ee; border-radius: 7px; margin: 8px 0; padding: 8px; min-width: 0; }
+.document-input-candidate legend { font-size: 13px; }
+.document-input-candidate input:not([type=checkbox]), .document-input-candidate select { display: block; width: 100%; padding: 7px; font: inherit; border: 1px solid #bcb7ca; border-radius: 6px; }
+.document-input-row + .document-input-row { border-top: 1px solid #e7e4ee; margin-top: 8px; padding-top: 8px; }
+.document-input-source > a { display: inline-block; margin: 12px 0; }

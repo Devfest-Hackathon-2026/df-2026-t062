@@ -229,3 +229,23 @@ test('話した人: 知っている人はそのまま、新しい人は役割つ
   assert.deepEqual(r.map, { speaker_1: '甲斐', speaker_2: '長男の妻', speaker_3: null })
   assert.deepEqual(r.newPeople, [{ label: '長男の妻', role: '家族', relation: '長男の妻' }])
 })
+
+test('書類入力は対象版のキーに限定し、原本の記録日と根拠IDを共通writerに渡す', async () => {
+  const key = 'survey.2_2'
+  const visit: Visit = { id: 'document-1', date: '不明', scenes: [{ id: 'page-1', kind: '書類', entries: [
+    { id: 'document-1-p1-1', speaker: null, text: '移動は一部介助。', date: '2026-11-01' },
+  ] }] }
+  const writer = sheetWriter(fakeLlm((prompt, schema, meta) => {
+    assert.match(prompt, /記録日 2026-11-01/)
+    if (meta.step === '欄の値') {
+      assert.deepEqual(Object.keys(schema.properties), [key])
+      return { [key]: { value: '一部介助', from: ['document-1-p1-1'] }, 'person.name': { value: '候補外', from: ['document-1-p1-1'] } }
+    }
+    if (meta.step === '読み直し') return { checks: [{ id: key, verdict: 'ok', from: ['document-1-p1-1'] }] }
+    throw new Error('対象外の欄は呼ばない')
+  }))
+  const result = await writer.write({ visits: [visit], newVisitId: visit.id, people: [], current: {}, first: true, allowedKeys: [key] })
+  assert.deepEqual(result.values, { [key]: { value: '一部介助', cite: ['document-1-p1-1'] } })
+  const empty = await writer.write({ visits: [visit], newVisitId: visit.id, people: [], current: {}, first: true, allowedKeys: [] })
+  assert.deepEqual(empty.values, {})
+})

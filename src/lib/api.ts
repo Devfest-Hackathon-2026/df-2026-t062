@@ -1,4 +1,5 @@
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
+import type { DocumentInputView, DocumentMime } from '../../core/document-input.ts'
 import type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff } from '../../db/repo.ts'
 import type { FormKindRow } from '../../db/kinds.ts'
 import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.ts'
@@ -55,6 +56,19 @@ async function fail(res: Response): Promise<never> {
 const versions = new Map<string, Promise<FormVersionView>>()
 
 export const api = {
+  documentInputs: (id: string) => req<{ inputs: DocumentInputView[] }>('GET', `/api/documents/${id}/inputs`),
+  startDocumentInput: (id: string, body: { fileName: string, sha256: string, bytes: number, mime: DocumentMime, expiredUploadUrl?: string }) =>
+    req<{ input: DocumentInputView, uploadUrl: string | null }>('POST', `/api/documents/${id}/inputs`, body),
+  retryDocumentInput: (id: string) => req<{ input: DocumentInputView }>('POST', `/api/document-inputs/${id}/retry`, {}),
+  completeDocumentInput: (id: string) => req<{ input: DocumentInputView }>('POST', `/api/document-inputs/${id}/complete`, {}),
+  adoptDocumentInput: (id: string, changes: { key: string, value: unknown, base: unknown }[]) =>
+    req<{ document: DocumentView }>('POST', `/api/document-inputs/${id}/adopt`, { identityConfirmed: true, changes }),
+  async documentOriginal(id: string): Promise<Blob> {
+    const token = await tokenSource()
+    const res = await fetch(`/api/document-inputs/${id}/original`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!res.ok) await fail(res)
+    return res.blob()
+  },
   formVersion(id: string): Promise<FormVersionView> {
     let p = versions.get(id)
     if (!p) {

@@ -40,7 +40,7 @@ function entryLine(scene: Scene, e: Entry): string {
   if (e.speaker) return `[${e.id}] ${e.speaker}: ${e.text}`
   const kind = e.kind ?? SCENE_ENTRY_KIND[scene.kind] ?? scene.kind
   const label = kind === '経過' ? '経過の記録' : kind === '観察' ? `${scene.by ?? ''}の観察の記録` : kind
-  return `[${e.id}]（${label}）${e.text}`
+  return `[${e.id}]（${label}${e.date ? `・記録日 ${e.date}` : ''}）${e.text}`
 }
 
 const visitHead = (v: LooseVisit) => [v.date, v.title].filter(Boolean).join(' ')
@@ -282,7 +282,7 @@ export interface WriterOptions {
 export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetWriter {
   const limit = Math.max(1, opts.concurrency ?? 4)
   return {
-    async write({ visits, newVisitId, current, people, first }): Promise<WriterResult> {
+    async write({ visits, newVisitId, current, people, first, allowedKeys }): Promise<WriterResult> {
       const llm = newLlm()
       const ctx: Ctx = { llm, people, limit, stats: {}, failed: new Set(), incompleteFields: new Set() }
       const idx = visits.findIndex((v) => v.id === newVisitId)
@@ -292,9 +292,11 @@ export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetW
       const newIds = new Set(visit.scenes.flatMap((s) => s.entries.map((e) => e.id)))
       // 工夫 4: 書類から写す欄は、書類の記録がまだないときは書かせない
       const hasDocs = upto.some((v) => v.scenes.some((s) => DOC_SCENE_KINDS.has(s.kind)))
-      const groups = groupByBundle(SPECS.filter((s) => hasDocs || !needsDocument(s)))
+      const allowed = allowedKeys ? new Set(allowedKeys) : null
+      const specs = SPECS.filter((s) => !allowed || allowed.has(s.key))
+      const groups = groupByBundle(specs.filter((s) => hasDocs || !needsDocument(s)))
       // 読み直しは、書類の有無にかかわらず全部の欄を対象にする（pipelines.py の ctx.groups）
-      const allGroups = groupByBundle(SPECS)
+      const allGroups = groupByBundle(specs)
       const values: Record<string, Rec> = {}
       // 記録の全部を先頭に置いた前置き（1 回目の全部の呼び出しと、2 回目の読み直しで同じ）
       const fullHead = contextOf(ctx, '記録', fmtRecord(upto))

@@ -2,6 +2,7 @@
 import { planBatch, sameValue, type BatchPlan, type CurrentField } from '../core/apply-batch.ts'
 import { saveOneHunk } from '../core/diff.ts'
 import { slotPages, type FormKind } from '../core/form.ts'
+import type { DocumentSource } from '../core/document-input.ts'
 import type { SurveySource } from '../core/survey-import.ts'
 import { countRequired } from '../core/required.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
@@ -13,7 +14,7 @@ type Q = Db | Tx
 
 export interface Staff { id: string, officeId: string, name: string, email: string | null, role: string, officeName: string }
 
-export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource }
+export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource, documentSource?: DocumentSource }
 export interface SavedRow { value: unknown, by: Who }
 
 export interface DocumentView {
@@ -177,7 +178,8 @@ async function readFields(db: Q, documentId: string): Promise<Record<string, Fie
   const out: Record<string, FieldRow> = {}
   for (const row of r.rows) {
     out[row.key] = { value: row.value, aiValue: row.ai_value, by: row.by, batchId: row.batch_id, updatedAt: new Date(row.updated_at).toISOString(),
-      ...(row.cite?.kind === 'survey-import' ? { surveySource: row.cite as SurveySource } : {}) }
+      ...(row.cite?.kind === 'survey-import' ? { surveySource: row.cite as SurveySource } : {}),
+      ...(row.cite?.kind === 'document-input' ? { documentSource: row.cite as DocumentSource } : {}) }
   }
   return out
 }
@@ -254,7 +256,7 @@ async function writeField(c: Tx, officeId: string, clientId: string, documentId:
        by = EXCLUDED.by,
        batch_id = coalesce(EXCLUDED.batch_id, field_values.batch_id),
        cite = CASE
-         WHEN field_values.cite->>'kind' = 'survey-import' THEN EXCLUDED.cite
+         WHEN field_values.cite->>'kind' IN ('survey-import', 'document-input') THEN EXCLUDED.cite
          ELSE coalesce(EXCLUDED.cite, field_values.cite)
        END,
        updated_by = EXCLUDED.updated_by,
@@ -286,6 +288,7 @@ export interface FieldChange {
   base: unknown
   mode?: 'edit' | 'revert'
   surveySource?: SurveySource
+  documentSource?: DocumentSource
 }
 
 /**
@@ -293,8 +296,8 @@ export interface FieldChange {
  * 「前の文に戻す」（mode=revert）で保存した値と同じに戻ったときは、保存したときの by に戻す。
  * 画面が見ていた値（base）とサーバーの今の値が違えば、何も変えずに Conflict（AI が書いたばかりの値を上書きしない）。
  */
-export async function patchFields(db: Db, staff: Staff, documentId: string, changes: FieldChange[]) {
-  return tx(db, async (c) => {
+export async function patchFields(db: Db, staff: Staff, documentId: string, changes: FieldChange[], run: <T>(fn: (c: Tx) => Promise<T>) => Promise<T> = (fn) => tx(db, fn)) {
+  return run(async (c) => {
     const d = await lockDocument(c, staff.officeId, documentId)
     const allowed = await allowedKeys(c, d.versionId)
     const saved = await readSaved(c, d.id)
@@ -308,7 +311,7 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
       const back = ch.mode === 'revert' && saved[ch.key] && sameValue(saved[ch.key].value, ch.value)
       const cur = fields[ch.key]
       const by: Who = back ? saved[ch.key].by : ch.mode === 'revert' && cur ? cur.by : 'cm'
-      await writeField(c, staff.officeId, d.clientId, d.id, ch.key, ch.value, by, staff.id, { cite: ch.surveySource })
+      await writeField(c, staff.officeId, d.clientId, d.id, ch.key, ch.value, by, staff.id, { cite: ch.documentSource ?? ch.surveySource })
     }
     const values = applyChanges(plainValues(fields), changes.map((ch) => ({ key: ch.key, value: ch.value })))
     await afterEdit(c, staff, d, changes.map((ch) => ch.key), values)

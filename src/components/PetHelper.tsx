@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DocumentInput } from '../document-input/DocumentInput.tsx'
 import { SurveyImport } from '../survey/SurveyImport.tsx'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
@@ -18,6 +19,8 @@ type Menu = typeof menus[number]['id']
 
 interface Props {
   available: boolean
+  beforeDocumentAdopt: () => Promise<boolean>
+  onDocumentApplied: () => void
   clientName: string
   review: ReviewItem[]
   topics: ReturnType<typeof availableTopics>
@@ -29,7 +32,7 @@ interface Props {
   chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void }
 }
 
-export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
+export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, beforeDocumentAdopt, onDocumentApplied }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
@@ -79,7 +82,10 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
             </div>
           </>
         )}
-        <SurveyImport active={menu === 'documents'} available={available} clientName={clientName} onPreview={onPreview} onIdentity={onIdentity} verifiedSources={verifiedSources} />
+        {menu === 'documents' && <>
+          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
+          {available && <details><summary>広島市版3項目の比較用読取</summary><SurveyImport active available={available} clientName={clientName} onPreview={onPreview} onIdentity={onIdentity} verifiedSources={verifiedSources} /></details>}
+        </>}
         {menu === 'review' && (
           <>
             <PetMessage>未確認の項目が{pending}件あります。<br />項目を選ぶと、用紙の該当欄に移動します。</PetMessage>

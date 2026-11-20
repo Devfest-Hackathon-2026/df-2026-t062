@@ -28,6 +28,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
       return (queue = new LocalQueue(
         async (jobId) => (await import('../worker/jobs.ts')).runJob(await workerDeps(), jobId),
         async (importId) => (await import('../worker/form-import/job.ts')).runFormImport(await workerDeps(), importId),
+        async (id) => (await import('../worker/document-input/job.ts')).runDocumentInput(await workerDeps(), id),
       ))
     },
     chat: () => (chat ??= defaultChat(env)),

@@ -3,6 +3,8 @@
 //   サイト管理者の入口（/api/admin/...）: siteRoute。site_admins にいなければ 403
 //   ログインなしの入口: openRoute（health と、ローカルの置き場だけの、署名で確かめる入口）
 // worker の道（/tasks/*）はここには置かない（worker/app.ts）。
+import * as documentInputs from '../db/document-inputs.ts'
+import { documentInputPath } from '../core/document-input.ts'
 import { Hono, type Context, type Handler } from 'hono'
 import { z } from 'zod'
 import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
@@ -261,6 +263,46 @@ export function createApp(deps: ApiDeps) {
       },
     })
     return new Response(stream, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' } })
+  }))
+
+  app.post('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) => {
+    const r = await documentInputs.startInput(db, staff, c.req.param('id')!, await body(c, documentInputs.DocumentUploadInput), deps.storage(), c.req.header('Origin'))
+    return json(c, r, 201)
+  }))
+  app.get('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inputs: await documentInputs.listInputs(db, staff, c.req.param('id')!) })))
+  app.get('/api/document-inputs/:id', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { input: await documentInputs.inputView(db, staff, c.req.param('id')!) })))
+  app.post('/api/document-inputs/:id/complete', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const queue = deps.queue()
+    if (!queue.enqueueDocumentInput) throw new repo.BadRequest('書類読取を設定してください')
+    await documentInputs.completeInput(db, staff, id, deps.storage())
+    const input = await documentInputs.inputView(db, staff, id)
+    if (input.status === 'queued') await queue.enqueueDocumentInput(id, { initial: true })
+    return json(c, { input }, 202)
+  }))
+  app.post('/api/document-inputs/:id/retry', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const queue = deps.queue()
+    if (!queue.enqueueDocumentInput) throw new repo.BadRequest('書類読取を設定してください')
+    await documentInputs.retryInput(db, staff, id)
+    await queue.enqueueDocumentInput(id)
+    return json(c, { input: await documentInputs.inputView(db, staff, id) }, 202)
+  }))
+  app.get('/api/document-inputs/:id/original', staffRoute('care.work', async (c, staff, db) => {
+    const r = await documentInputs.getInput(db, staff.officeId, c.req.param('id')!)
+    const data = await deps.storage().read('source', documentInputPath(staff.officeId, r.client_id, r.id))
+    return new Response(new Blob([new Uint8Array(data)], { type: r.mime }), { headers: {
+      'Content-Type': r.mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(r.file_name)}`,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox",
+    } })
+  }))
+  app.post('/api/document-inputs/:id/adopt', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, z.object({ identityConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown(), base: z.unknown() })).min(1).max(200) }))
+    if (new Set(input.changes.map((ch) => ch.key)).size !== input.changes.length) throw new repo.BadRequest('同じ欄が重複しています')
+    const document = await documentInputs.adoptInput(db, staff, c.req.param('id')!, input.changes)
+    return json(c, { document })
   }))
 
   app.post('/api/documents/:id/survey-import', staffRoute('care.work', async (c, staff, db) => {
