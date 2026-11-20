@@ -163,6 +163,19 @@ test('mapLimit は同時に動かす数を絞り、順番どおりに返す', as
   assert.deepEqual(r, [2, 4, 6, 8, 10, 12])
   assert.equal(peak, 2)
 })
+test('Gemini: 認証・通信が応答しなくても時間切れで中断し、再試行回数を守る', async () => {
+  const signals: AbortSignal[] = []
+  const client = { generate({ signal }: { signal: AbortSignal }) {
+    signals.push(signal)
+    // AbortSignalを処理しない認証待ちでも、呼出側を止めない。
+    return new Promise<never>(() => {})
+  } }
+  const llm = geminiFactory({}, { client, timeoutMs: 10, retries: 1, sleep: async () => {} })()
+  await assert.rejects(llm.ask('p', null, { step: 'timeout-test' }), { name: 'TimeoutError' })
+  assert.equal(signals.length, 2)
+  assert.ok(signals.every((signal) => signal.aborted))
+  assert.equal(llm.usage().calls, 0, '返答のない呼出の費用は未取得で、実際の課金0を意味しない')
+})
 
 test('Gemini: 失敗したらやり直し、schema を断られたら schema なしで聞き直す。使った量と円を数える（キャッシュに当たった分は安い単価）', async () => {
   const calls: { schema: unknown | null, thinkingLevel?: string }[] = []

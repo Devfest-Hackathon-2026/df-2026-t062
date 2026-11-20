@@ -98,6 +98,9 @@ export async function openPdf(data: Uint8Array): Promise<OpenedPdf> {
     cMapUrl: join(pdfjsDir, 'cmaps') + '/',
     cMapPacked: true,
     standardFontDataUrl: join(pdfjsDir, 'standard_fonts') + '/',
+    wasmUrl: join(pdfjsDir, 'wasm') + '/',
+    // 演算子・文字の復号失敗も部分成功として扱わない。
+    stopAtErrors: true,
     disableFontFace: true,
     useSystemFonts: false,
     verbosity: 0,
@@ -112,6 +115,16 @@ export async function openPdf(data: Uint8Array): Promise<OpenedPdf> {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     await page.render({ canvas: canvas as never, canvasContext: ctx as never, viewport }).promise
+    // PDF.jsは画像だけの復号失敗をnullとして描画を続けることがある。
+    // 白紙に見える原本を読取へ渡さず、画像XObjectの欠落をエラーにする。
+    const operators = await page.getOperatorList()
+    for (let index = 0; index < operators.fnArray.length; index++) {
+      if (operators.fnArray[index] !== OPS.paintImageXObject && operators.fnArray[index] !== OPS.paintImageXObjectRepeat) continue
+      const id = operators.argsArray[index]?.[0]
+      if (typeof id !== 'string') continue
+      const objects = id.startsWith('g_') ? page.commonObjs : page.objs
+      if (!objects.has(id) || !objects.get(id)) throw new Error('pdf_image_decode_failed')
+    }
     return canvas
   }
 
