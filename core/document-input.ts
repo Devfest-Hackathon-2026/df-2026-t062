@@ -24,7 +24,7 @@ export interface DocumentCandidate {
 export interface DocumentReadResult {
   visit: Visit
   evidence: DocumentEvidence[]
-  issues: { page: number, text: string }[]
+  issues: { page: number, text: string, labels?: string[] }[]
 }
 export interface DocumentInputResult extends DocumentReadResult {
   candidates: DocumentCandidate[]

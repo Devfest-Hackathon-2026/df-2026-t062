@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DOCUMENT_MIMES, MAX_DOCUMENT_BYTES, type DocumentCandidate, type DocumentInputView, type DocumentMime } from '../../core/document-input.ts'
 import type { FieldDict } from '../../core/dictionary.ts'
 import { CandidateEditor } from './CandidateEditor.tsx'
+import { OriginalPreview } from './OriginalPreview.tsx'
 import { api, ApiError } from '../lib/api.ts'
 import { upload } from '../form/recordingUpload.ts'
 import { fieldLabel } from '../components/petAssessment.ts'
@@ -102,21 +103,39 @@ function InputReview({ input, dict, clientName, original, retry, beforeAdopt, on
   original: () => Promise<string | null>, retry: () => Promise<void>, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
   const [identity, setIdentity] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
+  const [previewPage, setPreviewPage] = useState<number | null>(null)
+  const [opening, setOpening] = useState(false)
+  const previewTrigger = useRef<HTMLElement | null>(null)
   const [retrying, setRetrying] = useState(false)
   const [error, setError] = useState('')
+  const openOriginal = async (page: number, trigger?: HTMLElement) => {
+    if (opening) return
+    previewTrigger.current = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    setOpening(true)
+    try {
+      const source = url ?? await original()
+      if (source) { setUrl(source); setPreviewPage(page) }
+    } finally { setOpening(false) }
+  }
   return <details className="document-input-source" open>
     <summary><strong>{input.fileName}</strong><small>{stateLabel[input.status]}</small></summary>
-    {url ? <a href={url} target="_blank" rel="noopener noreferrer">原本を表示</a>
-      : <button type="button" onClick={async () => setUrl(await original())}>原本を準備</button>}
+    <button type="button" disabled={opening} onClick={(event) => void openOriginal(1, event.currentTarget)}>{opening ? '原本を開いています…' : '原本を表示'}</button>
+    {url && previewPage !== null && <OriginalPreview key={previewPage} url={url} mime={input.mime} fileName={input.fileName} page={previewPage} onClose={() => {
+      setPreviewPage(null)
+      previewTrigger.current?.focus({ preventScroll: true })
+    }} />}
     {input.status === 'review' && <>
       <label><input type="checkbox" checked={identity} onChange={(e) => setIdentity(e.target.checked)} />原本が{clientName}さんのものだと確認しました</label>
-      {input.result?.issues.map((issue, i) => <p key={i} className="document-input-warning">p.{issue.page} 要確認 — {issue.text}</p>)}
+      {!!input.result?.issues.length && <details className="document-input-warnings" open={input.result.issues.length <= 3}>
+        <summary>確認が必要な箇所 {input.result.issues.length}件</summary>
+        {input.result.issues.map((issue, i) => <p key={i} className="document-input-warning">p.{issue.page} 要確認 — {issue.text}</p>)}
+      </details>}
       {input.result?.evidence.some((e) => e.uncertain) && <p className="document-input-warning">判読が不確かな箇所があります。候補には使わず、下の原文に残しています。</p>}
       <details><summary>読み取った原文</summary>{input.result?.evidence.map((e) => <blockquote key={e.id}>
         <small>p.{e.page}／記録日 {e.recordedOn ?? '不明'}{e.uncertain ? '／判読要確認' : ''}</small><p>{e.text}</p>
       </blockquote>)}</details>
       {input.result?.candidates.map((candidate) => <CandidateReview key={candidate.key} dict={dict} candidate={candidate} input={input}
-        identity={identity} originalUrl={url} beforeAdopt={beforeAdopt} onApplied={onApplied} />)}
+        identity={identity} openOriginal={openOriginal} openingOriginal={opening} beforeAdopt={beforeAdopt} onApplied={onApplied} />)}
       {!input.result?.candidates.length && <p>反映できる候補はありません。原文と原本をご確認ください。</p>}
       {!!input.result?.incompleteFields.length && <p>候補にできなかった項目があります。原本をご確認ください。</p>}
     </>}
@@ -131,8 +150,8 @@ function InputReview({ input, dict, clientName, original, retry, beforeAdopt, on
     </>}
   </details>
 }
-function CandidateReview({ candidate, dict, input, identity, originalUrl, beforeAdopt, onApplied }: { candidate: DocumentCandidate, dict: FieldDict,
-  input: DocumentInputView, identity: boolean, originalUrl: string | null, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
+function CandidateReview({ candidate, dict, input, identity, openOriginal, openingOriginal, beforeAdopt, onApplied }: { candidate: DocumentCandidate, dict: FieldDict,
+  input: DocumentInputView, identity: boolean, openOriginal: (page: number, trigger?: HTMLElement) => Promise<void>, openingOriginal: boolean, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
   const [value, setValue] = useState(candidate.value)
   const field = dict.get(candidate.key)
   const [busy, setBusy] = useState(false)
@@ -155,7 +174,7 @@ function CandidateReview({ candidate, dict, input, identity, originalUrl, before
     </p>
     {field && <CandidateEditor field={field} value={adopted ? input.adoptedValues[candidate.key] : value} disabled={busy || adopted} onChange={setValue} />}
     {input.result?.evidence.filter((e) => candidate.cite.includes(e.id)).map((e) => <blockquote key={e.id}>
-      <small>{originalUrl ? <a href={`${originalUrl}#page=${e.page}`} target="_blank" rel="noopener noreferrer">原本 p.{e.page}</a> : <>原本 p.{e.page}</>}／記録日 {e.recordedOn ?? '不明'}</small><p>{e.text}</p><small>根拠ID {e.id}</small>
+      <small><button type="button" className="document-input-source-link" disabled={openingOriginal} onClick={(event) => void openOriginal(e.page, event.currentTarget)}>原本 p.{e.page}を確認</button>／記録日 {e.recordedOn ?? '不明'}</small><p>{e.text}</p><small>根拠ID {e.id}</small>
     </blockquote>)}
     <button type="button" disabled={!identity || busy || adopted} onClick={() => void adopt()}>{adopted ? '採用済み' : busy ? '反映中…' : '確認してこの候補を採用'}</button>
     {error && <p role="alert">{error}</p>}

@@ -25,22 +25,23 @@ import { summarizer } from '../../worker/vertex/summarizer.ts'
 import { topicWriter } from '../../worker/vertex/topic-writer.ts'
 import { ZERO_USAGE, type Usage } from '../../worker/types.ts'
 
-export interface Gold { key: string, expected: unknown, review: boolean }
+export interface Gold { key: string, expected: unknown, review: boolean, mayReview?: boolean }
 /** 欠落と誤った候補を分ける。要確認の欄は候補を出さず、要確認の記録があるときだけ成功。 */
 export function score(result: DocumentInputResult, gold: Gold[]) {
   const candidates = new Map(result.candidates.map((c) => [c.key, c]))
   let exact = 0, wrong = 0, missing = 0, safeReview = 0
   for (const item of gold) {
     const candidate = candidates.get(item.key)
+    const itemNumber = item.key.replace('survey.', '').replace('_', '-')
+    const label = spec(item.key)?.label.replace(/^\S+\s*/, '')
+    const relevant = [...result.issues.flatMap((issue) => issue.labels ?? []), ...result.evidence.filter((e) => e.uncertain).map((e) => e.text)]
+      .some((text) => text.includes(itemNumber) || !!label && text.includes(label))
     if (item.review) {
-      const itemNumber = item.key.replace('survey.', '').replace('_', '-')
-      const label = spec(item.key)?.label.replace(/^\S+\s*/, '')
-      const relevant = [...result.issues.map((issue) => issue.text), ...result.evidence.filter((e) => e.uncertain).map((e) => e.text)]
-        .some((text) => text.includes(itemNumber) || !!label && text.includes(label))
       if (!candidate && relevant) safeReview++
       else if (candidate) wrong++
       else missing++
-    } else if (!candidate) missing++
+    } else if (!candidate && item.mayReview && relevant) safeReview++
+    else if (!candidate) missing++
     else {
       const multi = spec(item.key)?.type === 'multi'
       const proposed = multi && Array.isArray(candidate.value) ? [...candidate.value].sort() : candidate.value
@@ -53,6 +54,10 @@ export function score(result: DocumentInputResult, gold: Gold[]) {
   const withEvidence = result.candidates.filter((c) => c.cite.length && c.cite.every((id) => refs.has(id))).length
   return { total: gold.length, exact, wrong, missing, safeReview, candidateCount: result.candidates.length, withEvidence,
     evidenceCoverage: result.candidates.length ? withEvidence / result.candidates.length : null }
+}
+
+export function passes(metrics: ReturnType<typeof score>): boolean {
+  return metrics.total > 0 && metrics.wrong === 0 && metrics.missing === 0 && metrics.exact + metrics.safeReview === metrics.total && metrics.withEvidence === metrics.candidateCount
 }
 
 async function baseline(file: Uint8Array) {
@@ -81,9 +86,13 @@ async function prepare(fixtures: string, requested: Set<string>) {
   const manifest = JSON.parse(await readFile(join(fixtures, 'manifest.json'), 'utf8'))
   const goldBytes = await readFile(new URL('./survey/gold.tsv', import.meta.url))
   if (manifest.synthetic !== true || manifest.goldSha256 !== createHash('sha256').update(goldBytes).digest('hex')) throw new Error('make_fixtures.py で現在の正解表の架空資料を生成してください')
-  for (const name of ['survey-clean.pdf', 'survey-difficult.pdf', ...(requested.has('blank') ? ['survey-blank.pdf'] : []), ...(requested.has('osaka') ? ['osaka.pdf'] : [])]) {
+  for (const name of ['survey-clean.pdf', 'survey-difficult.pdf', ...(requested.has('blank') ? ['survey-blank.pdf'] : []), ...(requested.has('osaka') ? ['osaka.pdf'] : []),
+    ...['photo', 'ticks', 'unreadable'].filter((id) => requested.has(id)).map((id) => `${id}.jpg`)]) {
     const bytes = await readFile(join(fixtures, name))
     if (createHash('sha256').update(bytes).digest('hex') !== manifest.files[name]) throw new Error('生成後に検証資料が変更されています')
+  }
+  for (const id of ['photo', 'ticks', 'unreadable'].filter((id) => requested.has(id))) {
+    if (!Array.isArray(manifest.imageCases?.[id]?.gold) || !manifest.imageCases[id].gold.length) throw new Error('missing_evaluation_gold')
   }
   const clean = await readFile(join(fixtures, 'survey-clean.pdf'))
   const original = await openPdf(clean)
@@ -112,13 +121,16 @@ async function prepare(fixtures: string, requested: Set<string>) {
     const bytes = mime === 'image/png' ? canvas.toBuffer('image/png') : canvas.toBuffer('image/jpeg')
     await writeFile(join(fixtures, name), bytes)
   }
+  return manifest as { imageCases?: Record<string, { gold: Gold[] }> }
 }
 
 export async function main() {
   const { values: args } = parseArgs({ options: {
     fixtures: { type: 'string' }, out: { type: 'string' }, live: { type: 'boolean', default: false },
     cases: { type: 'string', default: 'clean' }, 'budget-yen': { type: 'string', default: '50' }, concurrency: { type: 'string', default: '1' },
+    'require-pass': { type: 'boolean', default: false },
   } })
+  if (args['require-pass'] && !args.live) throw new Error('require_pass_needs_live')
   if (!args.fixtures || !args.out) throw new Error('--fixtures と --out を指定してください')
   const fixtures = resolve(args.fixtures), output = resolve(args.out)
   const budget = Number(args['budget-yen'])
@@ -126,9 +138,9 @@ export async function main() {
   if (!Number.isFinite(budget) || budget <= 0 || budget > 200) throw new Error('budget-yen は0より大きく200以下にしてください')
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error('concurrency は1〜4にしてください')
   const requested = new Set(args.cases!.split(','))
-  if ([...requested].some((id) => !['clean', 'difficult', 'blank', 'scan', 'png', 'jpeg', 'osaka'].includes(id))) throw new Error('cases は clean,difficult,blank,scan,png,jpeg,osaka から選んでください')
+  if ([...requested].some((id) => !['clean', 'difficult', 'blank', 'scan', 'png', 'jpeg', 'osaka', 'photo', 'ticks', 'unreadable'].includes(id))) throw new Error('unknown_evaluation_case')
   await mkdir(output, { recursive: true })
-  await prepare(fixtures, requested)
+  const manifest = await prepare(fixtures, requested)
   const all = [
     { id: 'clean', file: 'survey-clean.pdf', mime: 'application/pdf' },
     { id: 'difficult', file: 'survey-difficult.pdf', mime: 'application/pdf' },
@@ -137,6 +149,9 @@ export async function main() {
     { id: 'png', file: 'discharge.png', mime: 'image/png' },
     { id: 'jpeg', file: 'opinion.jpg', mime: 'image/jpeg' },
     { id: 'osaka', file: 'osaka.pdf', mime: 'application/pdf' },
+    { id: 'photo', file: 'photo.jpg', mime: 'image/jpeg' },
+    { id: 'ticks', file: 'ticks.jpg', mime: 'image/jpeg' },
+    { id: 'unreadable', file: 'unreadable.jpg', mime: 'image/jpeg' },
   ] as const
   const cases = [...requested].map((id) => all.find((item) => item.id === id)!)
   const gold = (await readFile(new URL('./survey/gold.tsv', import.meta.url), 'utf8')).trim().split('\n').slice(1).map((line) => {
@@ -205,12 +220,18 @@ export async function main() {
       try { await runDocumentInput({ db: async () => db, storage: () => storage, providers: async () => providers }, started.input.id) }
       catch { failed = true }
       const view = await inputView(db, staff, started.input.id)
-      const expected = item.id === 'png' || item.id === 'jpeg' || item.id === 'osaka' ? gold.filter((g) => SURVEY_IMPORT_KEYS.includes(g.key as never))
+      const expected = ['photo', 'ticks', 'unreadable'].includes(item.id) ? manifest.imageCases?.[item.id]?.gold
+        : item.id === 'png' || item.id === 'jpeg' || item.id === 'osaka' ? gold.filter((g) => SURVEY_IMPORT_KEYS.includes(g.key as never))
         : gold.map((g) => ({ ...g, review: item.id === 'difficult' && ['survey.2_2', 'survey.2_4'].includes(g.key) || item.id === 'blank' && g.key === 'survey.2_5' }))
+      if (!expected?.length) throw new Error('missing_evaluation_gold')
       const result = { sha256: createHash('sha256').update(file).digest('hex'), status: view.status, errorKind: view.errorKind, failed, elapsedMs: Date.now() - t0,
         metrics: view.result ? score(view.result, expected) : null, usage: view.result?.usage ?? null }
       const results = report.results as Record<string, unknown>
       results[item.id] = result
+      report.allScoredCasesPass = Object.values(results).every((value) => {
+        const item = value as typeof result
+        return item.status === 'review' && !item.failed && !!item.metrics && passes(item.metrics)
+      })
       // 中間結果は架空資料に限り保存する。実資料の本文や応答を評価用に保存しない。
       const row = (await db.query('SELECT pages,summary_bundle FROM document_inputs WHERE id=$1', [view.id])).rows[0]
       await writeFile(join(output, `${item.id}-synthetic.json`), JSON.stringify({ ...row, result: view.result }, null, 2))
@@ -218,11 +239,13 @@ export async function main() {
       await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
       console.log(JSON.stringify({ case: item.id, ...result }))
       if (failed || view.status !== 'review') { process.exitCode = 1; break }
+      if (args['require-pass'] && !report.allScoredCasesPass) { process.exitCode = 1; break }
     }
   } finally {
     await db.query(`DROP SCHEMA ${schema} CASCADE`); await db.end()
     await rm(join(output, 'storage'), { recursive: true, force: true })
   }
+  if (args['require-pass'] && (limited || Object.keys(report.results as object).length !== cases.length)) process.exitCode = 1
   console.log(JSON.stringify({ usage: usage(), budgetReached: limited }))
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main()

@@ -111,3 +111,10 @@ test('領域がページ外・長さ違いなら不明にし、原文は保持�
     assert.equal(result.evidence[0].text, '食事は見守り。')
   }
 })
+test('原文を読めない行でも、明示された確認対象を自由文の警告と分けて保持する', async () => {
+  const result = await readDocument(createCanvas(10, 10).toBuffer('image/png'), { id: 'labels', mime: 'image/png', ask: async () => ({
+    entries: [], issues: ['移動以外は未記入です'], reviewLabels: ['食事摂取'],
+  }) })
+  assert.deepEqual(result.issues.flatMap((issue) => issue.labels ?? []), ['食事摂取'])
+  assert.ok(result.issues.some((issue) => issue.text === '移動以外は未記入です' && !issue.labels))
+})

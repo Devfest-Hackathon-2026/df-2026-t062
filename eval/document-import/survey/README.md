@@ -62,6 +62,20 @@ node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
 
 `--concurrency` はwriterの並列数（1〜4、既定1）。並列数4なら複数の実行中呼出が予算を超過しうる。比較時はモデル、並列数とコード版を記録する。原本の読取と補助画像での選択欄照合も通常ジョブに含めて測る。
 
+## 追加の画像条件
+
+```sh
+.data/survey-venv/bin/python eval/document-import/survey/make_image_cases.py \
+  --source /path/to/osaka-original.pdf --out .data/survey-import-fixtures
+node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
+  --out .data/document-eval/images --cases ticks,photo,unreadable \
+  --concurrency 4 --budget-yen 55 --require-pass --live
+```
+
+`ticks` は前のケースと異なる3つの回答を、手描き風の線で合成する。実際の手書き文字ではない。`photo` は傾き3.5度・影・ぼけ・JPEG圧縮を合成し、実写ではない。`unreadable` は3項目の回答部分を隠し、見出しを残す。
+
+`--require-pass` は採点結果が不合格・未完了なら終了コードを失敗にする。通常の明瞭なケースは完全一致、判読不能のケースは対象に結びつく明示的な保留が必要。`photo` の正解表では `mayReview` を指定し、正しい候補か明示的な保留を安全性の合格条件とする。保留を完全一致に加算せず、精度と候補を出せた割合を別に記録する。この安全性判定は確認作業の短縮を保証しない。
+
 予算は集計した見込費用が指定額に達したら次の呼び出しを止める。既に実行中の呼び出しと、その中のリトライ分は超過しうる。まず通常版1件で実測してから対象を広げる。
 
 `report.json` に完全一致・誤候補・欠落・対象項目の安全な保留・根拠IDの追跡率・時間・使用量・見込費用を残す。複数選択の順序は比べない。既存画素解析の比較は、ブラウザと同じ `readRowMarks` をNodeのPDF描画に当てた3項目の比較。ブラウザUIそのものの測定ではない。`png` と `jpeg` は異なる書式の合成別紙で、実在する別自治体の様式の検証を代替しない。
