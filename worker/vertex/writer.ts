@@ -10,20 +10,16 @@ import type { Person, SheetWriter, Visit, WriterResult } from '../types.ts'
 import * as P from './prompts.ts'
 import { SUMMARY, bundleItems, groupByBundle } from './bundles.ts'
 import {
-  DOC_SCENE_KINDS, acceptUpdate, atoms, candidateFields, dropAtoms, item23Names, mergeFields, needsDocument,
-  validateValue, valueSchema, type Rec, type Spec,
+  DOC_SCENE_KINDS, acceptUpdate, atoms, candidateFields, dropAtoms, fieldSchema, fmtField, fmtValue, item23Names, mapLimit, mergeFields, needsDocument,
+  settle, TYPE_JA, validateValue, valueSchema, warmThenMap, type Rec, type Spec,
 } from './common.ts'
+
+// 前からの入口（テストと eval が使う）
+export { fieldSchema, fmtField, mapLimit, warmThenMap }
 import type { Llm } from './gemini.ts'
 
-const SPECS = candidateFields()
-const BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
 const ITEM23 = item23Names()
 
-const TYPE_JA: Record<string, string> = {
-  enum: '1 つ選ぶ', multi: 'いくつか選ぶ', bool: 'はい・いいえ', number: '数', date: '日付（YYYY-MM-DD）',
-  text: '短い文字', longtext: '文章（longtext）', object: 'まとまり（中の項目ごとに書く）',
-  list: '表（1 行が 1 つのまとまり。行ごとに中の項目を書く）',
-}
 
 // ================================================================ 書式（pipelines.py の fmt_*）
 
@@ -40,7 +36,7 @@ function entryLine(scene: Scene, e: Entry): string {
   if (e.speaker) return `[${e.id}] ${e.speaker}: ${e.text}`
   const kind = e.kind ?? SCENE_ENTRY_KIND[scene.kind] ?? scene.kind
   const label = kind === '経過' ? '経過の記録' : kind === '観察' ? `${scene.by ?? ''}の観察の記録` : kind
-  return `[${e.id}]（${label}${e.date ? `・記録日 ${e.date}` : ''}）${e.text}`
+  return `[${e.id}]（${label}）${e.text}`
 }
 
 const visitHead = (v: LooseVisit) => [v.date, v.title].filter(Boolean).join(' ')
@@ -52,28 +48,11 @@ function fmtScene(v: LooseVisit, s: Scene): string {
 
 export const fmtRecord = (visits: LooseVisit[]) => visits.flatMap((v) => v.scenes.map((s) => fmtScene(v, s))).join('\n\n')
 
-export function fmtField(s: Spec): string {
-  const lines = [`### ${s.key}（${s.label}）`, `- 型: ${TYPE_JA[s.type]}`, `- 用紙の場所: ${s.where}`]
-  if (s.choices?.length) lines.push(`- 選択肢: ${s.choices.join(' ／ ')}`)
-  if (s.subs?.length) {
-    const subs = s.subs.map((x) => `${x.key}（${x.label}、${TYPE_JA[x.type]}${x.choices?.length ? `：${x.choices.join('／')}` : ''}）`)
-    lines.push(`- 中の項目: ${subs.join('、')}`)
-  }
-  if (s.note) lines.push(`- 注: ${s.note}`)
-  return lines.join('\n')
-}
 
-/** Python の json.dumps(ensure_ascii=False) と同じ区切り（", " と ": "）で出す */
-function pyJson(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(pyJson).join(', ')}]`
-  if (v !== null && typeof v === 'object') return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ')}}`
-  return JSON.stringify(v)
-}
-const fmtValue = (v: unknown) => (v === null || v === undefined ? '（空）' : pyJson(v))
 
-function fmtSheet(fields: Record<string, Rec>): string {
-  const lines = Object.entries(fields).filter(([k, r]) => BY_KEY.has(k) && r.value !== null && r.value !== undefined)
-    .map(([k, r]) => `- ${BY_KEY.get(k)!.label}（${k}）: ${fmtValue(r.value)}`)
+function fmtSheet(fields: Record<string, Rec>, byKey: Map<string, Spec>): string {
+  const lines = Object.entries(fields).filter(([k, r]) => byKey.has(k) && r.value !== null && r.value !== undefined)
+    .map(([k, r]) => `- ${byKey.get(k)!.label}（${k}）: ${fmtValue(r.value)}`)
   return lines.join('\n') || '（まだ何も書いていない）'
 }
 
@@ -81,15 +60,6 @@ function fmtSheet(fields: Record<string, Rec>): string {
 
 const isRecord = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)
 
-/** 欄ごとに {value, from} を返させる JSON Schema（id は自由な文字列） */
-export function fieldSchema(specs: Spec[], citeKey = 'from') {
-  const props = Object.fromEntries(specs.map((s) => [s.key, {
-    type: 'object',
-    properties: { value: valueSchema(s), [citeKey]: { type: 'array', items: { type: 'string' } } },
-    required: ['value', citeKey],
-  }]))
-  return { type: 'object', properties: props, required: specs.map((s) => s.key) }
-}
 
 /** 2 回目の直しの答えの形。直す欄の名前を changed に並べさせる（欄ごとに changed を持たせると、形が大きくなり Gemini が受け付けない） */
 export function updateSchema(specs: Spec[]) {
@@ -100,29 +70,7 @@ export function updateSchema(specs: Spec[]) {
   return { type: 'object', properties: props, required: ['changed'] }
 }
 
-/** 同時に動かす数を絞って、順番どおりに結果を返す */
-export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length)
-  let next = 0
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++
-      out[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker))
-  return out
-}
 
-/** 最初の 1 つを済ませてから、残りを mapLimit で呼ぶ（同じ前置きを先にキャッシュに載せる）。順番どおりに返す */
-export async function warmThenMap<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  if (items.length <= 1) return mapLimit(items, limit, fn)
-  const head = await fn(items[0])
-  return [head, ...await mapLimit(items.slice(1), limit, fn)]
-}
-
-type Settled<T> = { ok: true, value: T } | { ok: false }
-const settle = async <T>(p: Promise<T>): Promise<Settled<T>> => p.then((value) => ({ ok: true as const, value }), () => ({ ok: false as const }))
 
 // ================================================================ 本体
 
@@ -134,6 +82,8 @@ interface Ctx {
   stats: Record<string, number>
   failed: Set<string>
   incompleteFields: Set<string>
+  /** この書類の版で書く欄（key → 欄） */
+  byKey: Map<string, Spec>
 }
 
 function markFailed(ctx: Ctx, group: string, specs: Spec[], prefix = '') {
@@ -253,7 +203,7 @@ async function final(ctx: Ctx, groups: Map<string, Spec[]>, fields: Record<strin
   const specs = groups.get(SUMMARY.id) ?? []
   if (!specs.length) return {}
   const prompt = head + P.fill(P.FINAL, {
-    evidence: '発言・記録', rules: P.WRITE_RULES, extra_rules: P.COLUMN_RULES, fields: specs.map(fmtField).join('\n\n'), sheet: fmtSheet(fields),
+    evidence: '発言・記録', rules: P.WRITE_RULES, extra_rules: P.COLUMN_RULES, fields: specs.map(fmtField).join('\n\n'), sheet: fmtSheet(fields, ctx.byKey),
   })
   const r = await settle(ctx.llm.ask(prompt, fieldSchema(specs), { step: '全体のまとめ', group: SUMMARY.id }))
   if (!r.ok) { markFailed(ctx, SUMMARY.id, specs); return {} }
@@ -282,9 +232,11 @@ export interface WriterOptions {
 export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetWriter {
   const limit = Math.max(1, opts.concurrency ?? 4)
   return {
-    async write({ visits, newVisitId, current, people, first, allowedKeys }): Promise<WriterResult> {
+    async write({ visits, newVisitId, current, people, first, form }): Promise<WriterResult> {
+      // 書く欄は、録音がつながった書類の様式の版から決める
+      const specs = candidateFields(form)
       const llm = newLlm()
-      const ctx: Ctx = { llm, people, limit, stats: {}, failed: new Set(), incompleteFields: new Set() }
+      const ctx: Ctx = { llm, people, limit, stats: {}, failed: new Set(), incompleteFields: new Set(), byKey: new Map(specs.map((s) => [s.key, s])) }
       const idx = visits.findIndex((v) => v.id === newVisitId)
       const upto = (idx < 0 ? visits : visits.slice(0, idx + 1)) as LooseVisit[]
       const visit = upto[upto.length - 1]
@@ -292,8 +244,6 @@ export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetW
       const newIds = new Set(visit.scenes.flatMap((s) => s.entries.map((e) => e.id)))
       // 工夫 4: 書類から写す欄は、書類の記録がまだないときは書かせない
       const hasDocs = upto.some((v) => v.scenes.some((s) => DOC_SCENE_KINDS.has(s.kind)))
-      const allowed = allowedKeys ? new Set(allowedKeys) : null
-      const specs = SPECS.filter((s) => !allowed || allowed.has(s.key))
       const groups = groupByBundle(specs.filter((s) => hasDocs || !needsDocument(s)))
       // 読み直しは、書類の有無にかかわらず全部の欄を対象にする（pipelines.py の ctx.groups）
       const allGroups = groupByBundle(specs)
@@ -320,7 +270,7 @@ export function sheetWriter(newLlm: () => Llm, opts: WriterOptions = {}): SheetW
       } else {
         // 今の値（この様式の欄で、値のあるもの）
         const fields: Record<string, Rec> = {}
-        for (const [k, v] of Object.entries(current)) if (BY_KEY.has(k) && v !== null && v !== undefined) fields[k] = { value: v, cite: [] }
+        for (const [k, v] of Object.entries(current)) if (ctx.byKey.has(k) && v !== null && v !== undefined) fields[k] = { value: v, cite: [] }
         const newHead = contextOf(ctx, '新しい記録', fmtRecord([visit]))   // 直す係には、新しい記録だけを見せる
         const jobs = [...groups]   // 全体のまとめも、同じやり方で直す
         const results = await warmThenMap(jobs, limit, async ([id, specs]) => [id, specs, await settle(update(ctx, id, specs, fields, visit, newHead))] as const)

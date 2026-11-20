@@ -1,9 +1,9 @@
 // 2 層改の、AI を使わない部分。design/runner/common.py の写し（欄の候補・値の形・値の確かめ・読み直しの単位・2 回目の受け入れ）。
 import { isDeepStrictEqual } from 'node:util'
-import { FIELDS, FIELD_LIST, choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import { writableFields } from '../../core/dictionary.ts'
+import { FIELDS, choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import type { FormDef } from '../../core/form.ts'
 
-// AI が書く欄の出どころ（AI基盤の設計 ⑥）
-const WRITABLE_SOURCES = new Set(['talk', 'doc', 'draft'])
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export interface SubSpec { key: string, label: string, type: string, choices: string[] | null }
@@ -27,21 +27,31 @@ export const norm = (s: unknown) => String(s).normalize('NFKC').replace(/\s+/g, 
 
 const sub = (s: FieldSpec): SubSpec => ({ key: s.key, label: s.label ?? s.key, type: s.type, choices: s.choices ? choicesOf(s) : null })
 
-/** AI が書く欄（その様式にあり、出どころに会話・書類・案がある欄。図は除く） */
-export function candidateFields(form = 'assess', list: FieldSpec[] = FIELD_LIST): Spec[] {
-  const out: Spec[] = []
-  for (const f of list) {
-    if (!f.forms || !(form in f.forms) || f.type === 'image') continue
-    const sources = f.source ?? []
-    if (!sources.some((s) => WRITABLE_SOURCES.has(s.split(':')[0]))) continue
-    out.push({
-      key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
-      choices: f.choices ? choicesOf(f) : null,
-      subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
-      note: f.note ?? null, where: f.forms[form], source: sources,
-    })
+/** 版で、key を読む印字欄のあるページ（例: p.1 面談票）。複数のページにあれば「・」でつなぐ */
+function pagesOfKeys(form: Pick<FormDef, 'bindings' | 'schemas' | 'pages'>): Map<string, string> {
+  const pageOf = new Map<string, string>()
+  for (const p of form.pages) for (const s of form.schemas[p.pdfIndex] ?? []) pageOf.set(s.name, `p.${p.no} ${p.title}`)
+  const out = new Map<string, Set<string>>()
+  for (const [slot, b] of Object.entries(form.bindings)) {
+    const page = pageOf.get(slot)
+    if (page) out.set(b.ref.key, (out.get(b.ref.key) ?? new Set()).add(page))
   }
-  return out
+  return new Map([...out].map(([k, v]) => [k, [...v].join('・')]))
+}
+
+/**
+ * AI が書く欄。録音がつながった書類の様式の版から決める（core/dictionary.ts の writableFields。図は除く）。
+ * 用紙の場所は、2 層改がアセスメントの 23 項目で組んだ書き方なので、fields.json の欄はアセスメント用紙での場所（forms.assess）を使い、
+ * それがない欄（その様式だけの欄など）は、版のページにする（録音からの書き込みの作り替え #114 まで）
+ */
+export function candidateFields(form: FormDef): Spec[] {
+  const pages = pagesOfKeys(form)
+  return writableFields(form).map((f) => ({
+    key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
+    choices: f.choices ? choicesOf(f) : null,
+    subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
+    note: f.note ?? null, where: f.forms?.assess ?? pages.get(f.key) ?? '', source: f.source ?? [],
+  }))
 }
 
 /** 23 項目の番号ごと。番号のない欄（全体のまとめなど）は 0 */
@@ -259,3 +269,64 @@ export function acceptUpdate(spec: Spec, rec: { changed?: boolean, value?: unkno
   if (!cite.some((i) => newIds.has(i))) return [null, [], '新しい記録を根拠に挙げていない']
   return [v, cite, null]
 }
+
+// ================================================================ 指示文の書式・答えの形・呼び出しの並べ方（2 層改と要約から書く流れで共通）
+
+export const TYPE_JA: Record<string, string> = {
+  enum: '1 つ選ぶ', multi: 'いくつか選ぶ', bool: 'はい・いいえ', number: '数', date: '日付（YYYY-MM-DD）',
+  text: '短い文字', longtext: '文章（longtext）', object: 'まとまり（中の項目ごとに書く）',
+  list: '表（1 行が 1 つのまとまり。行ごとに中の項目を書く）',
+}
+
+export function fmtField(s: Spec): string {
+  const lines = [`### ${s.key}（${s.label}）`, `- 型: ${TYPE_JA[s.type]}`, `- 用紙の場所: ${s.where}`]
+  if (s.choices?.length) lines.push(`- 選択肢: ${s.choices.join(' ／ ')}`)
+  if (s.subs?.length) {
+    const subs = s.subs.map((x) => `${x.key}（${x.label}、${TYPE_JA[x.type]}${x.choices?.length ? `：${x.choices.join('／')}` : ''}）`)
+    lines.push(`- 中の項目: ${subs.join('、')}`)
+  }
+  if (s.note) lines.push(`- 注: ${s.note}`)
+  return lines.join('\n')
+}
+
+/** Python の json.dumps(ensure_ascii=False) と同じ区切り（", " と ": "）で出す */
+export function pyJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(pyJson).join(', ')}]`
+  if (v !== null && typeof v === 'object') return `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${pyJson(x)}`).join(', ')}}`
+  return JSON.stringify(v)
+}
+export const fmtValue = (v: unknown) => (v === null || v === undefined ? '（空）' : pyJson(v))
+
+/** 欄ごとに {value, from} を返させる JSON Schema（id は自由な文字列） */
+export function fieldSchema(specs: Spec[], citeKey = 'from') {
+  const props = Object.fromEntries(specs.map((s) => [s.key, {
+    type: 'object',
+    properties: { value: valueSchema(s), [citeKey]: { type: 'array', items: { type: 'string' } } },
+    required: ['value', citeKey],
+  }]))
+  return { type: 'object', properties: props, required: specs.map((s) => s.key) }
+}
+
+/** 同時に動かす数を絞って、順番どおりに結果を返す */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker))
+  return out
+}
+
+/** 最初の 1 つを済ませてから、残りを mapLimit で呼ぶ（同じ前置きを先にキャッシュに載せる）。順番どおりに返す */
+export async function warmThenMap<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  if (items.length <= 1) return mapLimit(items, limit, fn)
+  const head = await fn(items[0])
+  return [head, ...await mapLimit(items.slice(1), limit, fn)]
+}
+
+export type Settled<T> = { ok: true, value: T } | { ok: false }
+export const settle = async <T>(p: Promise<T>): Promise<Settled<T>> => p.then((value) => ({ ok: true as const, value }), () => ({ ok: false as const }))

@@ -15,7 +15,7 @@ import { seed } from '../db/seed.ts'
 import * as repo from '../db/repo.ts'
 import { runDocumentInput, reconcileDocumentInputs } from '../worker/document-input/job.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
-import { FakeStt, FakeSpeakers, fakeFormImport } from '../worker/fake.ts'
+import { FakeStt, FakeSpeakers, FakeWriter, fakeFormImport } from '../worker/fake.ts'
 
 const skip = !process.env.DATABASE_URL && 'DATABASE_URL がないため省略'
 const schema = `t_document_inputs_${process.pid}`
@@ -28,28 +28,34 @@ let sibling: string
 let app: ReturnType<typeof createApp>
 let readCalls = 0
 let writeCalls = 0
+let summaryCalls = 0
 let failWrite = false
 let enqueueFails = false
 const queued: string[] = []
 const data = createCanvas(40, 40).toBuffer('image/png')
 const providers: Providers = {
-  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: {
-    async write(input) {
+  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: new FakeWriter(), formImport: fakeFormImport,
+  documentWrite: {
+    summarizer: { async summarize(input) {
+      summaryCalls++
+      const entries = input.records![0].scenes[0].entries
+      assert.equal(entries.length, 1, '判読不確実な原文は書込処理に渡さない')
+      const topic = input.topics.find((topic) => topic.by === 'ai')!.id
+      return { texts: { [topic]: entries[0].text }, sourceIds: { [topic]: [entries[0].id] }, usage: ZERO_USAGE }
+    } },
+    writer: { async write(input) {
       writeCalls++
       if (failWrite) { failWrite = false; throw new Error('Synthetic writer failure') }
-      assert.equal(input.visits.length, 1)
-      assert.equal(input.visits[0].scenes[0].kind, '書類')
-      assert.ok(input.allowedKeys?.includes('survey.2_2'))
-      const entries = input.visits[0].scenes[0].entries
-      assert.equal(entries.length, 1, '判読不確実な原文は書込処理に渡さない')
-      const cite = [entries[0].id]
+      assert.equal(input.sourceKind, '書類')
+      assert.ok(input.form.keys.includes('survey.2_2'))
+      const cite = { kind: 'summary' as const, ids: [input.summaries[0].id] }
       return { values: {
         'survey.2_2': { value: '一部介助', cite }, 'survey.2_4': { value: '見守り等', cite },
-        'survey.2_5': { value: '一部介助', cite: ['unknown-id'] },
+        'survey.2_5': { value: '一部介助', cite: { kind: 'summary' as const, ids: ['unknown-id'] } },
         'unknown.key': { value: '候補外', cite },
       }, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
-    },
-  }, formImport: fakeFormImport,
+    } },
+  },
   documentRead: () => ({ ask: async () => { readCalls++; return {
     entries: [
       { text: '移動は一部介助、食事は見守り。', recordedOn: '2026-11-01', region: null, uncertain: false },
@@ -180,18 +186,20 @@ test('writer失敗後は読取済みページから再開する。失効した�
   await call(`/api/document-inputs/${id}/complete`, 'POST', {})
   failWrite = true
   const n = readCalls
+  const summarized = summaryCalls
   await assert.rejects(runDocumentInput(deps, id), /document_input_retry/)
   assert.equal((await call(`/api/document-inputs/${id}`)).body.input.status, 'queued')
   await runDocumentInput(deps, id)
   assert.equal(readCalls, n + 1)
+  assert.equal(summaryCalls, summarized + 1, '再試行でも要約を作り直さない')
   assert.equal((await call(`/api/document-inputs/${id}`)).body.input.status, 'review')
   const other = await repo.createClient(db, staff, { name: '架空 リース' })
   const lost = await uploaded(other.documentId)
   await call(`/api/document-inputs/${lost}/complete`, 'POST', {})
-  const stale = { ...providers, writer: { write: async (input: Parameters<Providers['writer']['write']>[0]) => {
+  const stale = { ...providers, documentWrite: { ...providers.documentWrite!, writer: { write: async (input: Parameters<NonNullable<Providers['documentWrite']>['writer']['write']>[0]) => {
     await db.query("UPDATE document_inputs SET run_token='new-owner' WHERE id=$1", [lost])
-    return providers.writer.write(input)
-  } } }
+    return providers.documentWrite!.writer.write(input)
+  } } } }
   await runDocumentInput({ ...deps, providers: async () => stale }, lost)
   assert.equal((await call(`/api/document-inputs/${lost}`)).body.input.result, null)
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentInput } from '../document-input/DocumentInput.tsx'
+import { GLOBAL_DICT, type FieldDict } from '../../core/dictionary.ts'
 import { SurveyImport } from '../survey/SurveyImport.tsx'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
@@ -29,7 +30,7 @@ interface Props {
   onIdentity: (sha256: string, confirmed: boolean) => void
   verifiedSources: ReadonlySet<string>
   /** 書き方の相談（開いている書類。アセスメントでも入院時情報提供書でも使える） */
-  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void }
+  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, dict?: FieldDict }
 }
 
 export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, beforeDocumentAdopt, onDocumentApplied }: Props) {
@@ -83,7 +84,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
           </>
         )}
         {menu === 'documents' && <>
-          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
+          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} dict={chat.dict ?? GLOBAL_DICT} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
           {available && <details><summary>広島市版3項目の比較用読取</summary><SurveyImport active available={available} clientName={clientName} onPreview={onPreview} onIdentity={onIdentity} verifiedSources={verifiedSources} /></details>}
         </>}
         {menu === 'review' && (
@@ -129,7 +130,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
         )}
         {menu === 'revise' && (
           <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet}
-            onJump={available ? jump : undefined} />
+            onJump={available ? jump : undefined} dict={chat.dict} />
         )}
         {error && <p className="assistant-error" role="alert">{error}</p>}
       </div>

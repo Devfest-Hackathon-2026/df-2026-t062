@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { checkDocumentSignature, DocumentReadError, documentInputPath, DOCUMENT_MIMES, MAX_DOCUMENT_BYTES, type DocumentInputResult, type DocumentInputView, type DocumentSource } from '../core/document-input.ts'
 import { sameValue } from '../core/apply-batch.ts'
+import { fieldDict } from '../core/dictionary.ts'
+import { loadFormDef } from './forms.ts'
 import { validValue } from '../core/schema.ts'
 import type { Storage } from '../api/storage.ts'
 import { tx, type Db, type Tx } from './pool.ts'
@@ -86,12 +88,15 @@ export async function adoptInput(db: Db, staff: Staff, id: string, changes: { ke
     const r = (await c.query('SELECT * FROM document_inputs WHERE id=$1 AND office_id=$2 FOR UPDATE', [id, staff.officeId])).rows[0]
     if (!r) throw new NotFound()
     if (r.status !== 'review') throw new Conflict('読み取りは完了していません')
+    const doc = await getDocument(c, staff.officeId, r.document_id)
+    const form = await loadFormDef(c, doc.formVersionId)
+    const dict = fieldDict(form.localFields)
     const result = r.result as DocumentInputResult
     const adopted = new Set<string>(r.adopted)
     const pending = changes.filter((ch) => !adopted.has(ch.key))
     const fields = pending.map((ch) => {
       const candidate = result.candidates.find((v) => v.key === ch.key)
-      if (!candidate || !validValue(ch.key, ch.value) || ch.value == null) throw new BadRequest('候補と値を確認してください')
+      if (!candidate || !validValue(ch.key, ch.value, {}, dict) || ch.value == null) throw new BadRequest('候補と値を確認してください')
       if (!sameValue(candidate.base, ch.base)) throw new Conflict(ch.key)
       const evidence = result.evidence.filter((e) => candidate.cite.includes(e.id))
       if (!evidence.length) throw new BadRequest('原本の根拠がありません')
@@ -112,6 +117,6 @@ export async function adoptInput(db: Db, staff: Staff, id: string, changes: { ke
 export async function retryInput(db: Db, staff: Staff, id: string) {
   await getInput(db, staff.officeId, id)
   const r = await db.query(`UPDATE document_inputs SET status='queued',attempts=0,error_kind=NULL,run_token=NULL,lease_until=NULL,updated_at=now()
-    WHERE id=$1 AND office_id=$2 AND status='failed' AND error_kind IN ('location_not_approved','reader_not_configured','processing_failed','attempts_exhausted') RETURNING id`, [id, staff.officeId])
+    WHERE id=$1 AND office_id=$2 AND status='failed' AND error_kind IN ('location_not_approved','reader_not_configured','writer_not_configured','no_topics','processing_failed','attempts_exhausted') RETURNING id`, [id, staff.officeId])
   if (!r.rows.length) throw new Conflict('再実行できる状態ではありません')
 }

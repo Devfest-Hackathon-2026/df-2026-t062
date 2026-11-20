@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { documentInputPath, type DocumentInputResult, type DocumentMime } from '../../core/document-input.ts'
+import { fieldDict } from '../../core/dictionary.ts'
+import { summaryTopics, topicsFor, type Topic, type OfficeTopics } from '../../core/topics.ts'
 import { loadFormDef } from '../../db/forms.ts'
 import { prepareWriterValues } from '../job-values.ts'
 import type { WorkerDeps } from '../jobs.ts'
-import { ZERO_USAGE, type Usage } from '../types.ts'
+import { ZERO_USAGE, type Usage, type SummaryLine, type Summarizer } from '../types.ts'
 import { DocumentReadError, readDocument } from './read.ts'
 
 const MAX_ATTEMPTS = 3
@@ -49,15 +51,41 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     // 曖昧な文字は明示して残すが、候補の根拠には使わない。
     const safeIds = new Set(reading.evidence.filter((e) => !e.uncertain).map((e) => e.id))
     const visit = { ...reading.visit, scenes: reading.visit.scenes.map((s) => ({ ...s, entries: s.entries.filter((e) => safeIds.has(e.id)) })) }
-    const written = safeIds.size ? await providers.writer.write({ visits: [visit], newVisitId: visit.id, current, people: [], first: true, allowedKeys: form.keys })
-      : { values: {}, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
-    const { proposed, droppedFields } = prepareWriterValues(written.values)
+    const pipeline = providers.documentWrite
+    if (!pipeline) throw new DocumentReadError('writer_not_configured')
+    type Bundle = Awaited<ReturnType<Summarizer['summarize']>> & { topics: Topic[], kindName: string }
+    let bundle = row.summary_bundle as Bundle | null
+    if (safeIds.size && !bundle) {
+      const kind = (await db.query(`SELECT k.key,k.name,k.topics FROM documents d JOIN form_kinds k ON k.key=d.kind WHERE d.id=$1`, [row.document_id])).rows[0]
+      const office = (await db.query('SELECT added,notes FROM office_topics WHERE office_id=$1 AND kind=$2', [row.office_id, kind.key])).rows[0] as OfficeTopics | undefined
+      const topics = topicsFor(kind.topics as Topic[], office ?? null)
+      if (!summaryTopics(topics).length) throw new DocumentReadError('no_topics')
+      const summarized = await pipeline.summarizer.summarize({ kindName: kind.name, topics, utterances: [], people: [], records: [visit] })
+      bundle = { ...summarized, kindName: kind.name, topics }
+      await update('summary_bundle=$3', [JSON.stringify(bundle)])
+    }
+    const summaries: SummaryLine[] = []
+    if (bundle) {
+      for (const topic of summaryTopics(bundle.topics)) {
+        const text = bundle.texts[topic.id]
+        const ids = bundle.sourceIds?.[topic.id]
+        if (!text || !ids?.length || !ids.every((id) => safeIds.has(id))) continue
+        summaries.push({ id: `d${id}-summary-${topic.id}`, topic: topic.id, text, seq: 1, date: '不明', isNew: true })
+      }
+    }
+    const written = bundle && summaries.length ? await pipeline.writer.write({
+      kindName: bundle.kindName, topics: bundle.topics, summaries, current, form, showNew: false, sourceKind: '書類',
+    }) : { values: {}, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
+    const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
     const allowed = new Set(form.keys)
     const candidates = []
     const missingEvidence: string[] = []
     for (const [key, proposal] of Object.entries(proposed)) {
       if (!allowed.has(key) || proposal.value == null) continue
-      if (!proposal.cite?.length || !proposal.cite.every((cite) => safeIds.has(cite))) {
+      const references = proposal.cite && !Array.isArray(proposal.cite) ? proposal.cite.ids : []
+      const referenced = references.map((reference) => summaries.find((summary) => summary.id === reference))
+      const cite = [...new Set(referenced.flatMap((summary) => summary ? bundle?.sourceIds?.[summary.topic] ?? [] : []))]
+      if (!cite.length || referenced.some((summary) => !summary) || !cite.every((id) => safeIds.has(id))) {
         missingEvidence.push(key)
         continue
       }
@@ -65,11 +93,11 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
       const baseSource = source?.kind === 'document-input'
         ? { fileName: source.fileName as string, recordedOn: (source.evidence as { recordedOn: string | null }[]).map((e) => e.recordedOn), inputId: source.inputId as string }
         : source?.kind === 'survey-import' ? { fileName: source.fileName as string, recordedOn: [source.recordedOn as string | null] } : null
-      candidates.push({ key, value: proposal.value, base: current[key] ?? null, baseSource, cite: proposal.cite })
+      candidates.push({ key, value: proposal.value, base: current[key] ?? null, baseSource, cite })
     }
     const result: DocumentInputResult = { ...reading, candidates,
       incompleteFields: [...new Set([...written.incompleteFields, ...droppedFields, ...missingEvidence])],
-      usage: addUsage(addUsage(readUsage, llm.usage()), written.usage),
+      usage: addUsage(addUsage(addUsage(readUsage, llm.usage()), bundle?.usage ?? ZERO_USAGE), written.usage),
     }
     await update("status='review',result=$3,run_token=NULL,lease_until=NULL,error_kind=NULL", [JSON.stringify(result)])
   } catch (e) {

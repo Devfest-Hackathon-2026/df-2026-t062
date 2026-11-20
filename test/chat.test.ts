@@ -3,9 +3,14 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { REQUIRED_ASSESS } from '../core/fields.ts'
 import { checkProposal, fakeModel, MAX_CALLS, runChat, type ChatDocument, type ChatModel, type ChatRecording, type Content, type Part, chatSystem } from '../api/chat.ts'
+import { seedFormDef } from '../forms/admin/files.ts'
+
+/** 全体の様式の版で作った書類（道具は版から読む欄・印字欄の対応・種類の名前を読む） */
+const ASSESSMENT = { kind: 'assessment', name: 'アセスメント', form: seedFormDef('assessment') }
+const ADMISSION = { kind: 'admission', name: '入院時情報提供書', form: seedFormDef('admission') }
 
 const doc: ChatDocument = {
-  kind: 'assessment',
+  ...ASSESSMENT,
   required: REQUIRED_ASSESS,
   fields: {
     'complaint.person': { value: '家に帰りたい。', by: 'ai' },
@@ -147,11 +152,11 @@ test('read_form: 用紙に印字するときだけ付く印（家族の主たる
   const family = responseOf(seen, 1, 'read_form').filled.find((f: any) => f.key === 'family.members')
   assert.match(family.printed, /isMainCaregiver/)
   assert.match(family.printed, /※/)
-  assert.match(chatSystem('assessment'), /printed/)
+  assert.match(chatSystem(doc), /printed/)
 })
 
 test('read_form: document で、同じ利用者のほかの書類（アセスメント）も読める。案は開いている書類の欄だけ', async () => {
-  const admission: ChatDocument = { kind: 'admission', fields: { 'person.interests': { value: null, by: 'ai' } } }
+  const admission: ChatDocument = { ...ADMISSION, fields: { 'person.interests': { value: null, by: 'ai' } } }
   const { model, seen } = scripted([
     [call('read_form', { document: 'assessment', query: '相談' })],
     [call('read_form', { document: 'monitoring' }), call('read_form', { document: 'admission', query: '趣味' })],
@@ -178,11 +183,11 @@ test('read_form: document で、同じ利用者のほかの書類（アセスメ
   ])
   // 指示文に、読めるほかの書類を書く
   assert.match(seen[0].system, /ほかの書類[^\n]*アセスメント（document: "assessment"）/)
-  assert.doesNotMatch(chatSystem('admission', []), /ほかの書類:/)
+  assert.doesNotMatch(chatSystem(admission, []), /ほかの書類:/)
 })
 
 test('read_form: 開いている書類の空の欄は、形（中の項目・選択肢）つきで返す。長すぎる書類（アセスメント）は省き、語で絞らせる', async () => {
-  const admission: ChatDocument = { kind: 'admission', fields: {} }
+  const admission: ChatDocument = { ...ADMISSION, fields: {} }
   const { model, seen } = scripted([[call('read_form')], [{ text: '読みました' }]])
   await runChat({ model, document: admission, recordings, messages: [{ role: 'user', text: '埋めて' }] })
   const adm = responseOf(seen, 1, 'read_form')
@@ -215,7 +220,7 @@ test('書き換えの案の確かめ: 文章の欄は文、選択肢の欄は選
   assert.equal(checkProposal(doc, 'family.genogram', '{}'), '家族構成図（図の欄は案を出せません）')
   assert.equal(checkProposal(doc, 'no.such.key', 'x'), 'no.such.key（その欄はありません）')
   assert.equal(checkProposal(doc, 'complaint.family', ''), '相談内容（介護者・家族）（文が空です）')
-  assert.equal(checkProposal({ kind: 'admission', fields: {} }, 'complaint.person', '別の文'), '相談内容（本人）（この書類にない欄です）')
+  assert.equal(checkProposal({ ...ADMISSION, fields: {} }, 'complaint.person', '別の文'), '相談内容（本人）（この書類にない欄です）')
 })
 
 test('試しの中身（fake）: 「直して」なら用紙を読んで案を出し、それ以外は道具を使わずに答える', async () => {

@@ -2,6 +2,7 @@
 // 下書きの版（draft）は責任者・サイト管理者が直せるので覚えない（読むたびに DB から読む）。
 import { createHash } from 'node:crypto'
 import { checkBindings, formKeys, type Bindings } from '../core/binding.ts'
+import { fieldDict, type LocalField } from '../core/dictionary.ts'
 import { basePdfAssetPath, contentOf, toFormDef, type FormDef, type FormKind, type FormPage, type FormVersionView, type TemplateSlot } from '../core/form.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { Conflict, Forbidden } from './repo.ts'
@@ -25,7 +26,7 @@ export interface FormVersion {
   bindings: Bindings
   pages: FormPage[]
   /** その様式だけの欄の定義（fields.json の欄と同じ形。key は local. で始まる） */
-  localFields: unknown[]
+  localFields: LocalField[]
   contentSha: string
   basePdfSha256: string
 }
@@ -46,7 +47,7 @@ function rowToVersion(r: Record<string, unknown>): FormVersion {
     schemas: r.schemas as TemplateSlot[][],
     bindings: r.bindings as Bindings,
     pages: r.pages as FormPage[],
-    localFields: (r.local_fields as unknown[] | null) ?? [],
+    localFields: (r.local_fields as LocalField[] | null) ?? [],
     contentSha: r.content_sha as string,
     basePdfSha256: r.base_pdf_sha256 as string,
   }
@@ -86,7 +87,7 @@ export async function loadFormDef(db: Q, id: string): Promise<FormDef> {
 }
 
 export function viewOf(v: FormVersion): FormVersionView {
-  return { id: v.id, kind: v.kind, name: v.name, version: v.version, schemas: v.schemas, bindings: v.bindings, pages: v.pages, contentSha: v.contentSha }
+  return { id: v.id, kind: v.kind, name: v.name, version: v.version, schemas: v.schemas, bindings: v.bindings, pages: v.pages, contentSha: v.contentSha, localFields: v.localFields }
 }
 
 /**
@@ -129,7 +130,7 @@ export interface DraftPatch {
   schemas?: TemplateSlot[][]
   bindings?: Bindings
   pages?: FormPage[]
-  localFields?: unknown[]
+  localFields?: LocalField[]
 }
 
 /**
@@ -200,18 +201,20 @@ export interface VersionInput {
   schemas: TemplateSlot[][]
   bindings: Bindings
   pages: FormPage[]
+  /** その様式だけの欄の定義（なければ fields.json の欄だけを読む様式） */
+  localFields?: LocalField[]
   basePdfSha256: string
 }
 
-/** 出す前の確かめ。印字欄と対応が 1 対 1、対応の中身が正しい、ページが schemas を指す */
-export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 'pages'>): string[] {
+/** 出す前の確かめ。印字欄と対応が 1 対 1、対応の中身が正しい（key は版の欄の辞書にある）、ページが schemas を指す */
+export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 'pages' | 'localFields'>): string[] {
   const errors: string[] = []
   const names = input.schemas.flat().map((s) => s.name)
   const dup = names.filter((n, i) => names.indexOf(n) !== i)
   if (dup.length) errors.push(`印字欄の名前が重なっている: ${[...new Set(dup)].join(', ')}`)
   for (const n of names) if (!input.bindings[n]) errors.push(`対応のない印字欄: ${n}`)
   for (const n of Object.keys(input.bindings)) if (!names.includes(n)) errors.push(`印字欄のない対応: ${n}`)
-  errors.push(...checkBindings(input.bindings))
+  errors.push(...checkBindings(input.bindings, fieldDict(input.localFields)))
   for (const p of input.pages) if (!input.schemas[p.pdfIndex]) errors.push(`ページ ${p.no} の pdfIndex ${p.pdfIndex} に欄がない`)
   return errors
 }
@@ -241,10 +244,12 @@ export async function registerVersion(db: Db, input: VersionInput, opts: { publi
       return { versionId: latest.id, version: Number(latest.version), created: false, published }
     }
     const version = (latest ? Number(latest.version) : 0) + 1
+    // その様式だけの欄は、定義があるときだけ書く（ない版は列の既定値 []。local_fields の列がない移行の前の表にも登録できる）
+    const local = input.localFields?.length ? input.localFields : null
     const v = (await c.query(
-      `INSERT INTO form_template_versions (template_id, version, schemas, bindings, pages, content_sha, base_pdf_sha256)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [t.id, version, JSON.stringify(input.schemas), JSON.stringify(input.bindings), JSON.stringify(input.pages), contentSha, input.basePdfSha256],
+      `INSERT INTO form_template_versions (template_id, version, schemas, bindings, pages, ${local ? 'local_fields, ' : ''}content_sha, base_pdf_sha256)
+       VALUES ($1,$2,$3,$4,$5,${local ? '$8,' : ''}$6,$7) RETURNING id`,
+      [t.id, version, JSON.stringify(input.schemas), JSON.stringify(input.bindings), JSON.stringify(input.pages), contentSha, input.basePdfSha256, ...(local ? [JSON.stringify(local)] : [])],
     )).rows[0]
     if (opts.publish) await publish(c, t.id, v.id)
     return { versionId: v.id, version, created: true, published: !!opts.publish }

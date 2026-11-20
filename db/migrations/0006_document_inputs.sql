@@ -13,6 +13,7 @@ CREATE TABLE document_inputs (
   upload_url text,
   pages jsonb NOT NULL DEFAULT '{}',
   read_usage jsonb NOT NULL DEFAULT '{"calls":0,"promptTokens":0,"cachedTokens":0,"outputTokens":0,"thinkingTokens":0,"yen":0}',
+  summary_bundle jsonb,
   result jsonb,
   adopted jsonb NOT NULL DEFAULT '[]',
   adopted_values jsonb NOT NULL DEFAULT '{}',

@@ -337,6 +337,7 @@ PR と `main` で、型チェック、様式の確かめ、テスト（PostgreSQ
 | `QUEUE_MODE`・`TASKS_QUEUE`・`WORKER_URL`・`TASKS_INVOKER_SA` | api | `tasks` で Cloud Tasks。既定は同じプロセス |
 | `AI_PROVIDER`・`GOOGLE_CLOUD_PROJECT`・`GEMINI_MODEL`・`GEMINI_LOCATION`・`STT_LOCATION` | worker | `vertex` で本物の AI。既定は `fake`。Gemini の既定は `gemini-3.8-flash`（`global`）、文字起こしは `us`（Chirp 3 の日本語は東京では使えない） |
 | `GEMINI_THINKING_LEVEL` | worker | Gemini の思考の深さ。既定は `LOW`（`MEDIUM`・`HIGH` にもできる。`DEFAULT` でモデルの既定に任せる）。3.8 Flash は `MINIMAL` を受け付けない |
+| `RECORDING_WRITER` | worker | `summary` で、録音からの書き込みを作り替えた流れ（要約 → 欄を選ぶ → 書く → 全体のまとめ → 最後のチェック。[`docs/再設計/17_録音からの書き込み.md`](docs/再設計/17_録音からの書き込み.md)）にする。既定は今の 2 層改（演習シナリオで比べてから切り替える） |
 
 </details>
 
