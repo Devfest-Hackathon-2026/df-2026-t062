@@ -75,6 +75,27 @@ export class FakeTopicWriter implements TopicWriter {
 }
 
 /** 様式の取り込みの AI の代わり。欄を 1 つも見つけない（ページと要確認だけの下書きになる）。流れを試すため */
+/**
+ * 試しの点検（費用なし）。番号が 5 の倍数の項目は段階 1（足りない情報つき）、ほかは基準のいちばん上の段階。
+ * 画面の確かめ用で、書類の中身は見ない
+ */
+export const fakeInspect = (): Llm => {
+  let calls = 0
+  return {
+    ask: async (_prompt, schema) => {
+      calls++
+      const props = (schema as { properties: { results: { properties: Record<string, { properties: { level: { enum: string[] } } }> } } }).properties.results.properties
+      return {
+        results: Object.fromEntries(Object.entries(props).map(([id, p]) => {
+          const top = p.properties.level.enum.filter((l) => l !== '他').sort().at(-1) ?? '2'
+          return [id, Number(id) % 5 === 0 ? { level: '1', met: {}, missing: '（試しの点検）記載が足りない' } : { level: top, met: {}, missing: null }]
+        })),
+      }
+    },
+    usage: () => ({ ...ZERO_USAGE, calls }),
+  }
+}
+
 export const fakeFormImport = (): Llm => ({
   ask: async (_prompt, _schema, meta) => (meta.step === '様式の欄' ? { slots: [], localFields: [] } : { slots: [], fixes: [], removes: [], localFields: [] }),
   usage: () => ZERO_USAGE,

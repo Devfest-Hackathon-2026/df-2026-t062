@@ -131,6 +131,8 @@ export interface Providers {
   recording?: { summarizer: Summarizer, writer: TopicWriter }
   /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
   formImport: () => Llm
+  /** AI 点検の AI。点検 1 回ごとに新しく作る（使った量を数える） */
+  inspect?: () => Llm
 }
 
 export const ZERO_USAGE: Usage = { calls: 0, promptTokens: 0, cachedTokens: 0, outputTokens: 0, thinkingTokens: 0, yen: 0 }

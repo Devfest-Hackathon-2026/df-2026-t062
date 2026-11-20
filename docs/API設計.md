@@ -39,6 +39,9 @@
 | `POST /api/clients/:id/recordings` | 録音を始める（`{mime, documentId?}`）。録音は、録音を始めた書類（`documentId`）につなぐ。省いたときは主な書類。ほかの利用者の書類は 404。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
 | `POST /api/recordings/:id/complete` | 送り終わり（`{durationMs}`）。置き場にあるのを確かめてジョブを積む | `202 {jobId, status}` |
 | `GET /api/clients/:id/jobs` | 処理中・終わって15分以内・最後のジョブ。AI が処理できなかった欄と形式不一致で反映できなかった欄を `incompleteFields` の key 配列で返す。PDF プレビューは該当欄を赤枠にする | `{jobs:[{status, step, etaSeconds, batch:{changes, kept}, incompleteFields, errorKind}]}` |
+| `POST /api/clients/:id/inspections` | AI 点検を始める（`{checkSet?}`。省くと `mhlw-careplan@2026-03`。ない物差しは 400）。点検は裏の仕事（worker）。同じ利用者の点検が待っているか動いていれば、その点検を返す（2 つ走らない）。点検は書類の値を読むだけで、値は変えない（[16_書類と点検の基盤.md](再設計/16_書類と点検の基盤.md) の「AI 点検」） | `202 {inspectionId}` |
+| `GET /api/clients/:id/inspections` | これまでの点検（新しい順）。終わっていない点検は `verdict` が null。メニューの「点検する」の状態にも使う | `{inspections:[{id, status, createdAt, createdBy, verdict, missingCount, total}]}`（`verdict` は `要確認`／`適合`、`missingCount` は段階 1 の項目の数、`total` は段階の付いた項目の数） |
+| `GET /api/inspections/:id` | 点検 1 回の結果。点検した項目だけを物差しの順に（今はアセスメントの 32 項目。第1〜5表の項目は入れない）。段階が 1 の項目だけ `missing`（何が足りないか）。`fieldKey` は押したときに移る欄（null は用紙に欄なし）。分類ごとの「満たしている数 / 項目の数」（「他」は満たしている側）。`changed` は、利用者のいちばん新しい点検で、そのあとに読んだ書類の値が変わったか（ほかの点検と終わっていない点検は null） | `{inspection:{id, status, createdAt, createdBy, checkSet, verdict, missingCount, total, categories:[{category, satisfied, total}], items:[{id, name, category, level, missing, fieldKey, documentId}], latest, changed}}` |
 
 ### 責任者の入口（操作は `staff.manage`）
 
@@ -115,7 +118,8 @@
 |---|---|---|
 | `POST /tasks/jobs/:id/run` | Cloud Tasks（OIDC） | 録音 1 本の処理。応答の前に終える。失敗は 500（Cloud Tasks が間をあけてやり直す）。AI が書く欄は、録音がつながった書類の様式の版から決める（版が読む欄のうち、出どころに会話・書類・案がある欄。その様式だけの欄は説明書き `note` のあるもの） |
 | `POST /tasks/form-imports/:id/run` | Cloud Tasks（OIDC） | 上げた PDF から様式の下書きの版を作る（`worker/form-import/job.ts`）。期限つきの印で 1 回だけ動く。済んだら上げたままの PDF を消す。置き場か DB の誤りは 500（3 回で `failed`・`internal`）。変換の失敗（PDF でない など）は 200 で `failed` |
-| `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す（録音と様式の取り込み）。失敗して 7 日たった・送り終わらなかった上げたままの PDF を消す |
+| `POST /tasks/inspections/:id/run` | Cloud Tasks（OIDC） | AI 点検（`worker/inspect/job.ts`）。期限つきの印で 1 回だけ動く。利用者の書類（種類ごとにいちばん新しいもの）の今の値を読み（録音は読まない）、プログラムで決まる観点（BMI など）を先に判定し、残りを AI（Gemini。項目を 16 ずつ分けて聞く）が判定する。失敗は 500（3 回で `failed`） |
+| `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す（録音・様式の取り込み・AI 点検）。失敗して 7 日たった・送り終わらなかった上げたままの PDF を消す |
 | `GET /health` | — | worker が動いているか |
 
 ### 認定調査票の先行取り込み

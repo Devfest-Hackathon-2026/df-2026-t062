@@ -8,6 +8,8 @@ import { z } from 'zod'
 import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
 import * as importsDb from '../db/form-imports.ts'
+import * as inspections from '../db/inspections.ts'
+import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
@@ -62,6 +64,7 @@ const RecordingInput = z.object({
   expiredUploadUrl: z.string().max(4096).optional(),
 })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
+const InspectionInput = z.object({ checkSet: z.string().min(1).max(100).optional() })
 const ChatInput = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'pet']), text: z.string().trim().min(1).max(4000) })).min(1).max(40)
     .refine((m) => m.at(-1)?.role === 'user'),
@@ -339,6 +342,18 @@ export function createApp(deps: ApiDeps) {
     const job = await repo.dispatchRecordingJob(db, jobId, () => deps.queue().enqueue(jobId, { initial: true }))
     return json(c, job, 202)
   }))
+
+  // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
+  app.post('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
+    const { checkSet } = await body(c, InspectionInput)
+    const r = await inspections.createInspection(db, staff, c.req.param('id')!, checkSet ?? DEFAULT_CHECK_SET)
+    if (r.created) await deps.queue().enqueueInspection(r.id, { initial: true })
+    return json(c, { inspectionId: r.id }, 202)
+  }))
+  app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspections: await inspections.listInspections(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspection: await inspections.getInspection(db, staff.officeId, c.req.param('id')!) })))
 
   app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => json(c, { jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!) })))
 

@@ -12,7 +12,7 @@ export function defaultProviders(env: NodeJS.ProcessEnv = process.env): Promise<
     }
     const f = await import('./fake.ts')
     return {
-      stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport,
+      stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport, inspect: f.fakeInspect,
       ...(env.RECORDING_WRITER === 'summary' ? { recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } } : {}),
     }
   })()

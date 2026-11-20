@@ -20,5 +20,6 @@ export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
     writer: sheetWriter(newLlm, { concurrency: Number(env.GEMINI_CONCURRENCY) || 4 }),
     ...(env.RECORDING_WRITER === 'summary' ? { recording: { summarizer: summarizer(newLlm), writer: topicWriter(newLlm, { concurrency: Number(env.GEMINI_CONCURRENCY) || 4 }) } } : {}),
     formImport: newLlm,
+    inspect: newLlm,
   }
 }
