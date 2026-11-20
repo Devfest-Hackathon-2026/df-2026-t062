@@ -22,7 +22,7 @@ export interface Person {
   relation?: string | null
 }
 
-/** 2 層改に渡す記録の 1 回分（演習シナリオの原本.json の visits と同じ形） */
+/** 記録の 1 回分（演習シナリオの原本.json の visits と同じ形。eval/run-writer.ts が録音の代わりに使う） */
 export interface Visit {
   id: string
   date: string
@@ -59,29 +59,20 @@ export interface SpeakerAssigner {
 
 export interface ProposedValue {
   value: unknown
-  /** 根拠（2 層改は発言の id、要約から書くときは要約の行） */
+  /** 根拠（要約の行） */
   cite?: Cite
 }
 
 export interface WriterResult {
   values: Record<string, ProposedValue>
   usage: Usage
-  /** 書けなかった 23 項目の番号など（一部だけ書けたとき） */
+  /** 書けなかった項目など（一部だけ書けたとき） */
   failed: string[]
   /** AI が処理できなかった欄の key */
   incompleteFields: string[]
 }
 
-export interface SheetWriter {
-  /**
-   * 1 回目（その書類に AI が書いた値がない）: 記録の全部から書く。
-   * 2 回目から: 今の値と新しい記録だけで直す（2 層改の工夫 3）。
-   * 書く欄は form（録音がつながった書類の様式の版。その様式だけの欄の定義つき）から決める（core/dictionary.ts の writableFields）。
-   */
-  write(input: { visits: Visit[], newVisitId: string, current: Record<string, unknown>, people: Person[], first: boolean, form: FormDef }): Promise<WriterResult>
-}
-
-// ---------- 録音からの書き込み（作り替え。docs/再設計/17_録音からの書き込み.md） ----------
+// ---------- 録音からの書き込み（docs/再設計/17_録音からの書き込み.md） ----------
 
 /** 使う要約の 1 行（録音 1 本・項目 1 つ。recording_summaries の 1 行） */
 export interface SummaryLine {
@@ -128,9 +119,8 @@ export interface TopicWriter {
 export interface Providers {
   stt: Stt
   speakers: SpeakerAssigner
-  writer: SheetWriter
-  /** 録音からの書き込みの作り替え（要約から書く）。あれば 2 層改（writer）の代わりに使う（RECORDING_WRITER=summary） */
-  recording?: { summarizer: Summarizer, writer: TopicWriter }
+  /** 録音からの書き込み（要約 → 欄を選ぶ → 書く → 全体のまとめ → 最後のチェック） */
+  recording: { summarizer: Summarizer, writer: TopicWriter }
   /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
   formImport: () => Llm
   /** 記入済み原本の画像読取と、録音と共通の要約・欄書き込み */

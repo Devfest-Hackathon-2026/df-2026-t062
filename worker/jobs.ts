@@ -1,5 +1,4 @@
-// 録音 1 本の処理（決まった流れ）: 文字にする → 話した人 → 欄の値（要約から書く流れか 2 層改）→ 型の確かめ → applyBatch。
-// 要約から書く流れ（docs/再設計/17_録音からの書き込み.md）は、providers.recording があるときに使う（RECORDING_WRITER=summary）。
+// 録音 1 本の処理（決まった流れ）: 文字にする → 話した人 → 欄の値（要約から書く。docs/再設計/17_録音からの書き込み.md）→ 型の確かめ → applyBatch。
 // 段ごとに結果を jobs.steps に残し、やり直しでは済んだ段を飛ばす（STT と Gemini の費用を 2 回払わない）。
 // ログには中身（話・値）を出さない。出すのは、ジョブの id・段・時間・エラーの種類・使った量だけ。
 import { randomUUID } from 'node:crypto'
@@ -11,7 +10,7 @@ import type { Db } from '../db/pool.ts'
 import { applyBatch } from '../db/repo.ts'
 import { incompleteFieldKeys, prepareWriterValues } from './job-values.ts'
 import type { Storage } from '../api/storage.ts'
-import type { Person, ProposedValue, Providers, SummaryLine, Usage, Utterance, Visit } from './types.ts'
+import type { Person, ProposedValue, Providers, SummaryLine, Usage, Utterance } from './types.ts'
 
 export interface WorkerDeps {
   db: () => Promise<Db>
@@ -115,9 +114,9 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
     const first = !(await db.query("SELECT 1 FROM batches WHERE document_id = $1 AND kind IN ('recording', 'seed') AND (job_id IS NULL OR job_id <> $2) LIMIT 1", [job.document_id, jobId])).rows.length
     const recordedOn = ymd(new Date(rec.recorded_at))
 
-    // ③ 欄の値を作る。作り替えた流れ（要約から書く）があればそれ、なければ 2 層改
+    // ③ 欄の値を作る（要約から書く）
     const ctx: StepCtx = { db, jobId, token, steps, job, rec, utterances, people, form, current, first, recordedOn }
-    const made = providers.recording ? await fromSummaries(ctx, providers.recording) : await twoLayer(ctx, providers)
+    const made = await fromSummaries(ctx, providers.recording)
 
     // ⑤ 用紙に反映する（書類の行を止めるのは、ここの数秒だけ）
     await setStep(db, jobId, token, 'apply')
@@ -168,31 +167,6 @@ interface Made {
   incompleteFields: string[]
 }
 
-/** 2 層改（記録は、この利用者の録音の全部）。日付は、1 回目は実施日（初回。空のときだけ）、2 回目からは実施日（更新） */
-async function twoLayer(ctx: StepCtx, providers: Providers): Promise<Made> {
-  const { db, jobId, token, job, rec, form, current, first } = ctx
-  await setStep(db, jobId, token, 'write')
-  const all = (await db.query(
-    `SELECT r.id, r.recorded_at, t.utterances FROM recordings r JOIN transcripts t ON t.recording_id = r.id
-     WHERE r.client_id = $1 AND r.recorded_at <= (SELECT recorded_at FROM recordings WHERE id = $2) ORDER BY r.recorded_at`,
-    [job.client_id, rec.id],
-  )).rows
-  const visits: Visit[] = all.map((r, i) => ({
-    id: `r${i + 1}`,
-    date: new Date(r.recorded_at).toISOString().slice(0, 10),
-    scenes: [{ id: `r${i + 1}`, kind: '会話', entries: (r.utterances as Utterance[]).map((u) => ({ id: u.id, speaker: u.person ?? u.speaker, text: u.text })) }],
-  }))
-  const w0 = Date.now()
-  const written = await providers.writer.write({ visits, newVisitId: visits[visits.length - 1].id, current, people: ctx.people, first, form })
-
-  // ④ 型の確かめ（版の欄の辞書から作った zod）。通らない値は落として数える
-  const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
-  const incompleteFields = incompleteFieldKeys(written.incompleteFields, droppedFields)
-  await setStep(db, jobId, token, 'write', { write: { seconds: (Date.now() - w0) / 1000, values: Object.keys(proposed).length, dropped: droppedFields.length, droppedFields, failed: written.failed, incompleteFields, usage: written.usage satisfies Usage, first } })
-  const system = first ? (current['assessment.initialDate'] ? {} : { 'assessment.initialDate': ctx.recordedOn }) : { 'assessment.updateDate': ctx.recordedOn }
-  return { proposed, system, failed: written.failed, incompleteFields }
-}
-
 /**
  * 要約から書く（docs/再設計/17_録音からの書き込み.md）。
  *   3. 要約: 新しい録音を 1 回だけ全部読み、項目ごとに recording_summaries に足す（書き換えない。話に出なかった項目は行を作らない）。
@@ -201,7 +175,7 @@ async function twoLayer(ctx: StepCtx, providers: Providers): Promise<Made> {
  *   8. 型を確かめる。その日の日付は、機械の項目の欄に入れる（1 回目は first の欄が空のときだけ、2 回目からは later の欄）
  * 項目の一覧は、全体の一覧に事業所の書き足しと足した項目を合わせたもの。その指紋を残す。一覧が空の種類は、録音から書かない
  */
-async function fromSummaries(ctx: StepCtx, recording: NonNullable<Providers['recording']>): Promise<Made> {
+async function fromSummaries(ctx: StepCtx, recording: Providers['recording']): Promise<Made> {
   const { db, jobId, token, steps, job, rec, form, current, first } = ctx
   const none: Made = { proposed: {}, system: {}, failed: [], incompleteFields: [] }
   const kind = (await db.query(

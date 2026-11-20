@@ -80,7 +80,7 @@ test('不正ファイル・過大画像・ページ超過・壊れたモデル�
 test('処理地域の明示確認がないと書類読取を有効にしない。既存の録音writerは使える', async () => {
   const { vertexProviders } = await import('../worker/vertex/index.ts')
   const providers = vertexProviders({ GOOGLE_CLOUD_PROJECT: 'synthetic-project', GEMINI_LOCATION: 'global' })
-  assert.ok(providers.writer)
+  assert.ok(providers.recording.writer)
   assert.throws(() => providers.documentRead!(), /location_not_approved/)
   const approved = vertexProviders({ GOOGLE_CLOUD_PROJECT: 'synthetic-project', GEMINI_LOCATION: 'global', DOCUMENT_INPUT_APPROVED_LOCATION: 'global' })
   assert.equal(typeof approved.documentRead!().ask, 'function')

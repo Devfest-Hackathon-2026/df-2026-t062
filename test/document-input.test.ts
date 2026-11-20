@@ -15,7 +15,7 @@ import { seed } from '../db/seed.ts'
 import * as repo from '../db/repo.ts'
 import { runDocumentInput, reconcileDocumentInputs } from '../worker/document-input/job.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
-import { FakeStt, FakeSpeakers, FakeWriter, fakeFormImport } from '../worker/fake.ts'
+import { FakeStt, FakeSpeakers, FakeSummarizer, FakeTopicWriter, fakeFormImport } from '../worker/fake.ts'
 
 const skip = !process.env.DATABASE_URL && 'DATABASE_URL がないため省略'
 const schema = `t_document_inputs_${process.pid}`
@@ -34,7 +34,7 @@ let enqueueFails = false
 const queued: string[] = []
 const data = createCanvas(40, 40).toBuffer('image/png')
 const providers: Providers = {
-  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: new FakeWriter(), formImport: fakeFormImport,
+  stt: new FakeStt(), speakers: new FakeSpeakers(), formImport: fakeFormImport, recording: { summarizer: new FakeSummarizer(), writer: new FakeTopicWriter() },
   documentWrite: {
     summarizer: { async summarize(input) {
       summaryCalls++

@@ -2,7 +2,7 @@
 // 何本目の録音かで、演習シナリオ（eval/scenario、公開・架空）の 1 回目・2 回目の記録と正解を返す。
 import { readFileSync } from 'node:fs'
 import { summaryTopics } from '../core/topics.ts'
-import { ZERO_USAGE, type Person, type SheetWriter, type SpeakerAssigner, type Stt, type Summarizer, type TopicWriter, type TopicWriterInput, type Utterance } from './types.ts'
+import { ZERO_USAGE, type Person, type SpeakerAssigner, type Stt, type Summarizer, type TopicWriter, type TopicWriterInput, type Utterance } from './types.ts'
 import type { Llm } from './vertex/gemini.ts'
 
 const ROOT = new URL('../eval/scenario/', import.meta.url)
@@ -45,16 +45,7 @@ export class FakeSpeakers implements SpeakerAssigner {
   }
 }
 
-export class FakeWriter implements SheetWriter {
-  async write({ first }: { first: boolean }) {
-    const raw = load(`gold/用紙/アセスメント_${first ? 'v1' : 'v2'}.json`)
-    delete raw._comment
-    const values = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { value: v, cite: [] as string[] }]))
-    return { values, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
-  }
-}
-
-/** 要約の代わり（RECORDING_WRITER=summary）。最初の項目に、発言の数だけを書いた要約を返す（中身は作らない） */
+/** 要約の代わり。最初の項目に、発言の数だけを書いた要約を返す（中身は作らない） */
 export class FakeSummarizer implements Summarizer {
   async summarize({ topics, utterances }: Parameters<Summarizer['summarize']>[0]) {
     const first = summaryTopics(topics)[0]
@@ -62,7 +53,7 @@ export class FakeSummarizer implements Summarizer {
   }
 }
 
-/** 要約から書く流れの代わり（RECORDING_WRITER=summary）。2 層改の代わりと同じく、演習シナリオの正解（2 本目からは 2 回目の正解）を返す */
+/** 要約から書く流れの代わり。演習シナリオの正解（2 本目からは 2 回目の正解）を返す */
 export class FakeTopicWriter implements TopicWriter {
   async write({ summaries }: TopicWriterInput) {
     const later = summaries.some((s) => s.seq > 1)

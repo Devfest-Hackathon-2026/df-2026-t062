@@ -73,7 +73,7 @@ before(async () => {
     hasPdf = true
   }
   putFake = async (path, data) => { await storage.writeOnce('forms', path, data, 'image/png') }
-  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport }) }
+  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } }) }
   const queue = new LocalQueue((id) => runJob(workerDeps, id))
   const server = createApiServer({
     db: async () => db,
