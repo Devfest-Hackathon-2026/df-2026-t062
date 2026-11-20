@@ -339,6 +339,9 @@ export function createApp(deps: ApiDeps) {
     return json(c, { draft }, 201)
   }))
 
+  app.get('/api/care-plans/:planId/ai-drafts/:draftId', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { draft: await carePlans.getCarePlanAiDraft(db, staff.officeId, c.req.param('planId')!, c.req.param('draftId')!) })))
+
   app.post('/api/care-plans/:planId/ai-drafts/:draftId/apply', staffRoute('care.work', async (c, staff, db) => {
     const { baseVersion } = await body(c, PlanAiApplyInput)
     return json(c, await carePlans.applyCarePlanAiDraft(db, staff, c.req.param('planId')!, c.req.param('draftId')!, baseVersion))
@@ -376,6 +379,12 @@ export function createApp(deps: ApiDeps) {
     json(c, await assetsOf(await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)))))
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
+
+  app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
+    const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
+    const rows = await db.query('SELECT id, rev, saved_at FROM revisions WHERE document_id = $1 ORDER BY rev DESC', [document.id])
+    return json(c, { revisions: rows.rows.map((r) => ({ id: Number(r.id), rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString() })) })
+  }))
 
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)

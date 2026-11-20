@@ -1,6 +1,7 @@
 // ケアプラン（#90）の API の通し。計画版の作成・読み取り・第2表の stable ID・保存・AI 原案の根拠と適用。
 // PostgreSQL が要る（DATABASE_URL がなければ飛ばす）。ファイルごとに別のスキーマを使う。
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -52,6 +53,7 @@ interface PlanBody {
   effectiveTo: string | null
   previousPlanId: string | null
   lockVersion: number
+  hasUnsavedChanges: boolean
   documents: PlanDoc[]
   plan1?: Record<string, unknown>
   needs?: NeedBody[]
@@ -286,6 +288,7 @@ test('計画版の作成・読み取りは事業所で絞られ、401・404 を�
   assert.equal(plan.effectiveFrom, '2026-04-01')
   assert.equal(plan.effectiveTo, '2027-03-31')
   assert.equal(plan.lockVersion, 1)
+  assert.equal(plan.hasUnsavedChanges, true)
   assert.deepEqual(plan.documents.map((d) => d.formNo), [1, 2, 3])
   assert.deepEqual(plan.documents.map((d) => d.latestRevision), [0, 0, 0])
   assert.deepEqual(plan.needs, [])
@@ -296,6 +299,17 @@ test('計画版の作成・読み取りは事業所で絞られ、401・404 を�
   const listed = await call(`/api/clients/${clients.sato}/care-plans`)
   assert.equal(listed.status, 200)
   assert.equal((listed.body as { plans: PlanBody[] }).plans[0].id, plan.id)
+})
+
+test('AIの参照元選択に保存版の番号・日時だけを返し、事業所外には漏らさない', { skip }, async () => {
+  const path = `/api/documents/${assessmentRevision.documentId}/revisions`
+  assert.equal((await call(path, { token: '' })).status, 401)
+  assert.equal((await call(path, { token: OTHER })).status, 404)
+  const result = await call(path)
+  assert.equal(result.status, 200)
+  const revisions = (result.body as { revisions: { id: number, rev: number, savedAt: string }[] }).revisions
+  assert.ok(revisions.some((r) => r.id === assessmentRevision.id))
+  assert.ok(revisions.every((r) => Object.keys(r).sort().join(',') === 'id,rev,savedAt'))
 })
 
 test('計画版のPDFは未保存を409、元様式なしを503、事業所外を404にする', { skip }, async () => {
@@ -386,6 +400,7 @@ test('保存は3表の版を一度に作り、第2表の射影は汎用の欄の
   assert.deepEqual(body.revisions.map((r) => r.formNo), [1, 2, 3])
   assert.ok(body.revisions.every((r) => r.rev === 1))
   assert.equal(body.plan.lockVersion, 3)
+  assert.equal(body.plan.hasUnsavedChanges, false)
 
   // 古い baseVersion の保存は 409
   const staleSave = await post(`/api/care-plans/${plan.id}/save`, { baseVersion: withNeeds.plan.lockVersion })
@@ -458,6 +473,14 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
   assert.equal(draft.sourceRevisionId, assessmentRevision.id)
   assert.equal(draft.sourceRevisionRev, assessmentRevision.rev)
   assert.equal(aiCalls, 1)
+  const draftPath = `/api/care-plans/${plan.id}/ai-drafts/${draft.id}`
+  assert.equal((await call(draftPath, { token: '' })).status, 401)
+  assert.equal((await call(draftPath, { token: OTHER })).status, 404)
+  const resumed = await call(draftPath)
+  assert.equal(resumed.status, 200)
+  assert.deepEqual((resumed.body as DraftBody).draft, draft)
+  assert.equal(aiCalls, 1, '原案の再開では再生成しない')
+  assert.equal((await call(`/api/care-plans/${randomUUID()}/ai-drafts/${draft.id}`)).status, 404)
 
   const applied = await post(`/api/care-plans/${plan.id}/ai-drafts/${draft.id}/apply`, { baseVersion: plan.lockVersion })
   assert.equal(applied.status, 200, JSON.stringify(applied.body))
@@ -571,7 +594,12 @@ test('PDFは第1→2→3表の保存値だけを出し、確定後も再現し�
   assert.equal(renamed.status, 200)
   const independent = await call(`/api/documents/${planDoc(plan, 2).documentId}`)
   assert.notEqual((independent.body as { document: { fields: Record<string, { value: string }> } }).document.fields['person.name'].value, '見本 改定名')
+  assert.equal((await patch(`/api/documents/${planDoc(plan, 3).documentId}/fields`, {
+    changes: [{ key: 'plan.createdDate', base: null, value: '2026-04-01' }],
+  })).status, 200)
+  assert.equal((await getPlan(plan.id)).hasUnsavedChanges, true, '第3表の独立した入力欄も未保存として返す')
   plan = ((await savePlan(plan)).body as { plan: PlanBody }).plan
+  assert.equal(plan.hasUnsavedChanges, false)
   assert.equal((await post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: plan.lockVersion })).status, 200)
   assert.equal((await call(`/api/care-plans/${plan.id}/pdf?form=2`)).status, 200)
   const audit = await db.query("SELECT detail FROM audit_events WHERE action = 'care_plan.pdf' AND detail->>'planId' = $1", [plan.id])

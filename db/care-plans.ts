@@ -187,6 +187,7 @@ export interface CarePlanView {
   effectiveTo: string | null
   previousPlanId: string | null
   lockVersion: number
+  hasUnsavedChanges: boolean
   documents: CarePlanDocumentView[]
   /** 第1表の今の値（編集中の値。保存済みは revisions を見る） */
   plan1: Record<string, unknown>
@@ -338,7 +339,7 @@ async function lockClient(c: Tx, officeId: string, clientId: string) {
 export async function getCarePlan(db: Q, officeId: string, planId: string): Promise<CarePlanView> {
   let p: Record<string, unknown> | undefined
   try {
-    p = (await db.query(`SELECT ${PLAN_COLUMNS} FROM care_plans WHERE id = $1 AND office_id = $2`, [planId, officeId])).rows[0]
+    p = (await db.query(`SELECT ${PLAN_COLUMNS}, saved_structure FROM care_plans WHERE id = $1 AND office_id = $2`, [planId, officeId])).rows[0]
   } catch (e) {
     // uuid の形でない ID も「無い」として扱う（存在を漏らさない）
     if ((e as { code?: string }).code === '22P02') throw new NotFound(planId)
@@ -348,20 +349,20 @@ export async function getCarePlan(db: Q, officeId: string, planId: string): Prom
   const plan = planRow(p)
 
   const docs = await db.query(
-    `SELECT cpd.form_no, cpd.document_id, d.template_version_id, coalesce(r.rev, 0) AS latest_revision, r.saved_at
+    `SELECT cpd.form_no, cpd.document_id, d.template_version_id, coalesce(r.rev, 0) AS latest_revision, r.saved_at, r."values" AS saved_values
      FROM care_plan_documents cpd
      JOIN documents d ON d.id = cpd.document_id
      LEFT JOIN LATERAL (
-       SELECT rev, saved_at FROM revisions WHERE document_id = cpd.document_id ORDER BY rev DESC LIMIT 1
+       SELECT rev, saved_at, "values" FROM revisions WHERE document_id = cpd.document_id ORDER BY rev DESC LIMIT 1
      ) r ON true
      WHERE cpd.plan_id = $1
      ORDER BY cpd.form_no`,
     [plan.id],
   )
   const plan1Fields = await db.query(
-    `SELECT f.key, f.value FROM field_values f
+    `SELECT f.key, f.value, cpd.form_no FROM field_values f
      JOIN care_plan_documents cpd ON cpd.document_id = f.document_id
-     WHERE cpd.plan_id = $1 AND cpd.form_no = 1`,
+     WHERE cpd.plan_id = $1`,
     [plan.id],
   )
   const needs = await readNeeds(db, plan.id)
@@ -388,6 +389,8 @@ export async function getCarePlan(db: Q, officeId: string, planId: string): Prom
     effectiveTo: plan.effectiveTo,
     previousPlanId: plan.previousPlanId,
     lockVersion: plan.lockVersion,
+    hasUnsavedChanges: !p.saved_structure || canonical(p.saved_structure) !== canonical({ needs, slots }) ||
+      docs.rows.some((d) => canonical(d.saved_values ?? {}) !== canonical(Object.fromEntries(plan1Fields.rows.filter((f) => f.form_no === d.form_no).map((f) => [f.key as string, f.value])))),
     documents: docs.rows.map((d) => ({
       formNo: Number(d.form_no) as 1 | 2 | 3,
       documentId: d.document_id as string,
@@ -395,7 +398,7 @@ export async function getCarePlan(db: Q, officeId: string, planId: string): Prom
       latestRevision: Number(d.latest_revision),
       savedAt: d.saved_at ? iso(d.saved_at) : null,
     })),
-    plan1: Object.fromEntries(plan1Fields.rows.map((f) => [f.key as string, f.value])),
+    plan1: Object.fromEntries(plan1Fields.rows.filter((f) => Number(f.form_no) === 1).map((f) => [f.key as string, f.value])),
     needs,
     slots,
     aiDraft: draft ? {
@@ -1190,6 +1193,25 @@ export async function createCarePlanAiDraft(
       errorKind: (row.error_kind as string | null) ?? null,
     }
   })
+}
+
+/** 保存した原案を再生成せずに開く。計画・原案の両方を事業所で絞る。 */
+export async function getCarePlanAiDraft(db: Db, officeId: string, planId: string, draftId: string): Promise<AiDraftDetail> {
+  const row = (await db.query(
+    `SELECT d.* FROM care_plan_ai_drafts d
+     JOIN care_plans p ON p.id = d.plan_id AND p.office_id = d.office_id
+     WHERE d.id = $1 AND d.plan_id = $2 AND d.office_id = $3`,
+    [draftId, planId, officeId],
+  )).rows[0]
+  if (!row) throw new NotFound(draftId)
+  return {
+    id: row.id as string, planId: row.plan_id as string,
+    status: row.status as AiDraftDetail['status'],
+    sourceDocumentId: row.source_document_id as string,
+    sourceRevisionId: Number(row.source_revision_id), sourceRevisionRev: Number(row.source_revision_rev),
+    referencedAt: iso(row.referenced_at), proposal: row.proposal, conflicts: row.conflicts,
+    applied: row.applied, errorKind: (row.error_kind as string | null) ?? null,
+  }
 }
 
 export interface ApplyResult {

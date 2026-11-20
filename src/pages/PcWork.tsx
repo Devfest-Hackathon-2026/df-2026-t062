@@ -14,10 +14,12 @@ import { linkProps } from '../lib/router.tsx'
 import { COMING_SOON_LABEL, newDocMenu } from '../lib/docMenu.ts'
 import { PetHelper } from '../components/PetHelper.tsx'
 import { countText, downloadBlob } from '../components/Chrome.tsx'
+import { CarePlanWork, isPlanKind } from '../care-plan/CarePlanWork.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
+  const [carePlanOpen, setCarePlanOpen] = useState(false)
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient } = useClient(clientId, () => reloadDoc.current())
   const kinds = useFormKinds()
@@ -187,6 +189,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     )
   }
 
+  if (carePlanOpen) return <CarePlanWork clientId={clientId} clientName={client?.name ?? ''} touch={false} onBack={() => setCarePlanOpen(false)} />
+
   return (
     <div className="pc pc-work" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', fontSize: 14, lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>
 
@@ -199,14 +203,15 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           <span style={{ fontSize: 13, color: '#5A6270' }}>{kindName}</span>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
-          {(kinds ?? []).filter((k) => k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+          {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
             <button key={k.key} className={`dtab${k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={k.key === open.key} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
+          {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className="dtab" type="button" onClick={async () => { if (await state.flush()) setCarePlanOpen(true) }}>ケアプラン</button>}
           <button className="dtab dtab-add" type="button" aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>{client?.name}さんの今の情報から、AI が書き込みます</div>
-              {(kinds ?? []).filter((k) => k.available && k.perClient === 'many').map((k) => (
+              {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
                 <button key={k.key} className="mi" role="menuitem" type="button" onClick={() => void createKind(k.key)}><span>{k.name}</span></button>
               ))}
               {newDocMenu.map((d) => (

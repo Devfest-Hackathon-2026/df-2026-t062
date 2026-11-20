@@ -4,7 +4,7 @@ import { Fragment, memo, useRef, useState, type CSSProperties } from 'react'
 import { scaled, useFitScale } from './fit.ts'
 import { DiffField } from '../components/DiffField.tsx'
 import type { DocState } from './useDocument.ts'
-import { fsz, pc, pos, W, H, type PageLayout, type SlotView } from './layout.ts'
+import { pc, type PageLayout, type SlotView } from './layout.ts'
 
 const ORANGE: CSSProperties = {
   background: 'rgba(240,160,64,0.18)',
@@ -40,9 +40,14 @@ interface Props {
   adoptingKey?: string
   onAdopt?: (slot: string) => void
   onEditChoice?: (field: string) => void
+  /** 計画版をまとめて保存する画面では、文単位の保存を出さない */
+  combinedSave?: boolean
 }
 
-function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice }: Props) {
+function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, combinedSave }: Props) {
+  const W = page.width, H = page.height
+  const pos = (x: number, y: number, w: number, h: number): CSSProperties => ({ left: pc(x, W), top: pc(y, H), width: pc(w, W), height: pc(h, H) })
+  const fsz = (pt: number) => `${(pt * 0.3528 / W * 100).toFixed(3)}cqw`
   const [open, setOpen] = useState('')
   const [diffOpen, setDiffOpen] = useState('')
   // 様式の画像は非公開の置き場にある（期限つきの URL）。読めなければ 1 回だけ URL を取り直し、それでもだめなら白い紙に欄だけを出す
@@ -119,7 +124,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
             fontSize={fsz(s.pt)} lineHeight={multi ? s.lh : 1.15} padding={multi ? '0.4cqw 0.3cqw 0' : '0 0.3cqw'} fill touch={touch} disabled={disabled} singleLine={!multi} textAlign={s.align}
             onChange={(t) => state.setValue(d.key, t === '' ? null : t)}
             onRevert={(t) => state.setValue(d.key, t === '' ? null : t, 'revert')}
-            onSaveHunk={(i) => void state.saveHunk(d.key, i)}
+            onSaveHunk={(i) => void state.saveHunk(d.key, i)} allowHunkSave={!combinedSave}
             onOpenChange={(o) => setDiffOpen(o ? s.name : '')}
           />
         </div>
@@ -161,10 +166,10 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
   }
 
   return (
-    <div className="pg">
+    <div className="pg" style={{ aspectRatio: `${W} / ${H}` }}>
       {noImage || !image
-        ? <div className="pimg" role="img" aria-label={page.title} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
-        : <img className="pimg" src={image} alt={`${page.title}`} style={dim ? { opacity: 0.55 } : undefined} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
+        ? <div className="pimg" role="img" aria-label={page.title} style={{ aspectRatio: `${W} / ${H}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
+        : <img className="pimg" src={image} alt={`${page.title}`} style={{ aspectRatio: `${W} / ${H}`, ...(dim ? { opacity: 0.55 } : {}) }} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
       {page.slots.map((s) => (s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (

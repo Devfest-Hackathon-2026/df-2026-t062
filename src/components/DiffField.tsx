@@ -24,6 +24,7 @@ interface Props {
   onChange: (text: string) => void
   onRevert: (text: string) => void
   onSaveHunk: (index: number) => void
+  allowHunkSave?: boolean
   onOpenChange?: (open: boolean) => void
 }
 
@@ -186,13 +187,13 @@ export function DiffField(p: Props) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: t ? 10 : 6, flexWrap: 'wrap', padding: t ? '12px 14px' : '8px 10px' }}>
-                <button type="button" disabled={p.disabled} onClick={() => {
+                {p.allowHunkSave !== false && <button type="button" disabled={p.disabled} onClick={() => {
                   const h = pop!.h
                   setNote(`${h.n} を保存しました${edited(h) ? '（直した文で）' : ''}。`)
                   setUndo(null)
                   setOpen(hunks.length > 1 ? 0 : -1)
                   p.onSaveHunk(pop!.k)
-                }} style={{ ...btn, border: '1px solid #1C2229', background: '#1C2229', color: '#FFFFFF' }}>保存</button>
+                }} style={{ ...btn, border: '1px solid #1C2229', background: '#1C2229', color: '#FFFFFF' }}>保存</button>}
                 <button type="button" disabled={p.disabled} onClick={() => {
                   const h = pop!.h
                   const next = revertHunk(text, h)
