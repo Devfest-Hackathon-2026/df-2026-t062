@@ -1,3 +1,5 @@
+import { pendingLocationSchema } from '../core/diagram/evidence.ts'
+import { diagramSchema, diagramKinds } from '../core/diagram/fields.ts'
 import { formKeys } from '../core/binding.ts'
 // api の道（Hono）。入口はそれぞれ操作を 1 つ宣言し、宣言に合わせて確かめる（docs/再設計/14_認可.md）。
 //   職員の入口（/api/...。責任者の入口は /api/office/...）: staffRoute。誰か（401）→ どの事業所か（行の office_id。404）→ 操作を許すか（403）
@@ -66,6 +68,7 @@ const RecordingInput = z.object({
 })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
 const ChatInput = z.object({
+  draft: z.object({ key: z.enum(['family.genogram', 'health.bodyMap']), after: z.unknown(), pendingLocations: z.array(pendingLocationSchema).max(100).optional() }).optional(),
   messages: z.array(z.object({ role: z.enum(['user', 'pet']), text: z.string().trim().min(1).max(4000) })).min(1).max(40)
     .refine((m) => m.at(-1)?.role === 'user'),
 })
@@ -239,7 +242,8 @@ export function createApp(deps: ApiDeps) {
 
   // 書き方の相談。AI が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。同じ利用者のほかの書類も読める。用紙は変えない
   app.post('/api/documents/:id/chat', staffRoute('care.work', async (c, staff, db) => {
-    const { messages } = await body(c, ChatInput)
+    const { messages, draft } = await body(c, ChatInput)
+    if (draft) { const value = diagramSchema.safeParse(draft.after); if (!value.success || value.data.kind !== diagramKinds[draft.key]) throw new repo.BadRequest('図案の形が正しくありません') }
     const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys, editableKeys: [] as string[] }
     document.editableKeys = formKeys((await forms.versionForOffice(db, staff.officeId, document.formVersionId)).bindings)
     document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
@@ -253,7 +257,7 @@ export function createApp(deps: ApiDeps) {
       async start(ctl) {
         const send = (o: object) => ctl.enqueue(enc.encode(`${JSON.stringify(o)}\n`))
         try {
-          const r = await runChat({ model, document, others, recordings, messages, onStep: (text) => send({ type: 'step', text }) })
+          const r = await runChat({ model, document, others, recordings, messages, draft, onStep: (text) => send({ type: 'step', text }) })
           send({ type: 'done', ...r })
         } catch (e) {
           console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: (e as Error)?.name ?? 'Error' }))

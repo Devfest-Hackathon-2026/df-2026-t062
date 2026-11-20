@@ -125,7 +125,7 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
             <label>性別<select value={person.sex} onChange={(e) => commit(editObject({ sex: e.target.value as Person['sex'] }))}><option value="female">女性</option><option value="male">男性</option><option value="unknown">不明</option></select></label>
             <label>同居・別居<select value={person.household} onChange={(e) => commit(editObject({ household: e.target.value as Person['household'] }))}>{['同居', '別居', '不明'].map((s) => <option key={s}>{s}</option>)}</select></label>
             <label><input type="checkbox" checked={!!person.isSubject} onChange={(e) => commit({ ...doc, family: { ...doc.family, people: doc.family.people.map((p) => ({ ...p, isSubject: e.target.checked ? p.id === selected : p.id === selected ? false : p.isSubject })) } })} />本人</label>
-            <label><input type="checkbox" checked={person.deceased} onChange={(e) => commit(editObject({ deceased: e.target.checked }))} />死亡</label>
+            <label><input type="checkbox" checked={!!person.deceased} onChange={(e) => commit(editObject({ deceased: e.target.checked }))} />死亡</label>
           </>}
           {item && <>
             {(['width', 'height', 'rotation'] as const).map((key) => <label key={key}>{({ width: '幅', height: '高さ', rotation: '回転' })[key]}<input type="number" min={key === 'rotation' ? -360 : 20} max={key === 'width' ? 820 : key === 'height' ? 560 : 360} value={item[key]} onChange={(e) => commit(editObject({ [key]: Number(e.target.value) }))} /></label>)}

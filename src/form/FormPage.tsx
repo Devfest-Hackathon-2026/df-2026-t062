@@ -41,10 +41,11 @@ interface Props {
   provisional?: ReadonlyMap<string, unknown>
   adoptingKey?: string
   onAdopt?: (slot: string) => void
+  onDiagramChat?: (key: string) => void
   onEditChoice?: (field: string) => void
 }
 
-function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice }: Props) {
+function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, onDiagramChat }: Props) {
   const [open, setOpen] = useState('')
   const [diffOpen, setDiffOpen] = useState('')
   // 様式の画像は非公開の置き場にある（期限つきの URL）。読めなければ 1 回だけ URL を取り直し、それでもだめなら白い紙に欄だけを出す
@@ -167,7 +168,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
       {noImage || !image
         ? <div className="pimg" role="img" aria-label={page.title} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
         : <img className="pimg" src={image} alt={`${page.title}`} style={dim ? { opacity: 0.55 } : undefined} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
-      {page.slots.map((s) => (s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
+      {page.slots.map((s) => (s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} onChat={onDiagramChat} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (
         <div role="dialog" aria-label={cell.label} style={{

@@ -17,6 +17,7 @@ const menus = [
 type Menu = typeof menus[number]['id']
 
 interface Props {
+  diagramRequest?: { key: string, id: number }
   available: boolean
   clientName: string
   review: ReviewItem[]
@@ -26,10 +27,10 @@ interface Props {
   onIdentity: (sha256: string, confirmed: boolean) => void
   verifiedSources: ReadonlySet<string>
   /** 書き方の相談（開いている書類。アセスメントでも入院時情報提供書でも使える） */
-  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void> }
+  chat: { documentId: string | undefined, current: Record<string, unknown>, saved?: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void> }
 }
 
-export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
+export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
@@ -47,6 +48,8 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
     if (menu) back.current?.focus({ preventScroll: true })
     else if (previousMenu.current) menuButtons.current[previousMenu.current]?.focus({ preventScroll: true })
   }, [menu])
+
+  useEffect(() => { if (diagramRequest) setMenu('revise') }, [diagramRequest])
 
   const open = (next: Menu | null) => {
     if (menu) previousMenu.current = menu
@@ -122,7 +125,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
           </>
         )}
         {menu === 'revise' && (
-          <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
+          <PetChat key={chat.documentId} diagramRequest={diagramRequest} saved={chat.saved} documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
             onJump={available ? jump : undefined} />
         )}
         {error && <p className="assistant-error" role="alert">{error}</p>}

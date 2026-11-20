@@ -8,9 +8,19 @@ import { sameValue } from '../../core/apply-batch.ts'
 
 /** ready: まだ入れていない／applied: 用紙に入れた（「戻す」ができる） */
 export type CardState = 'ready' | 'applied'
-export interface ProposalCard extends ChatProposal { state: CardState }
+export interface ProposalCard extends ChatProposal { state: CardState, superseded?: boolean, undone?: boolean }
 /** steps: ペットが使った道具の作業ログ（1 行ずつ） */
 export interface ChatEntry { id: number, role: ChatMessage['role'], text: string, steps?: string[], proposals?: ProposalCard[] }
+
+export function diagramCardStatus(card: ProposalCard, current: unknown, saved: unknown): string {
+  if (card.superseded) return '新しい案を確認してください。'
+  if (card.state === 'ready') {
+    if (card.undone) return !sameValue(current, card.before) ? 'この案を戻したあとに、用紙が変更されています。' : sameValue(saved, current) ? '取り消した状態も保存版に確定済みです。' : '取り消しを用紙に反映済み・未保存です。保存すると確定します。'
+    return '未反映の案です。'
+  }
+  if (!sameValue(current, card.after)) return 'この案の反映後に、用紙が変更されています。'
+  return sameValue(saved, card.after) ? '用紙に反映し、保存版にも確定済みです。' : '用紙に反映済み・未保存です。書類またはページの「保存」で確定します。'
+}
 
 /** サーバーに送るやり取りの数（API の上限と同じ） */
 export const MAX_HISTORY = 40

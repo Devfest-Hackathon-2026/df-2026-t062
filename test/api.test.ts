@@ -26,6 +26,7 @@ const enqueues = new Map<string, number>()
 /** チャットのエージェントに返した道具の答え（search_records） */
 const searchResults: Record<string, unknown>[] = []
 const crossReads: Record<string, unknown>[] = []
+const diagramReads: Record<string, unknown>[] = []
 
 const call = async (path: string, init: RequestInit & { token?: string } = {}) => {
   const res = await fetch(`${origin}${path}`, {
@@ -93,6 +94,16 @@ before(async () => {
     // 台本: 録音を探してから、用紙を読んで案を出す
     chat: async () => async ({ contents }) => {
       const res = contents.at(-1)!.parts.find((p) => p.functionResponse)?.functionResponse
+      if (contents[0].parts[0].text?.includes('#133図検証')) {
+        if (!res) return [{ functionCall: { name: 'read_form', args: { query: 'health.bodyMap' } } }, { functionCall: { name: 'read_diagram_context', args: { field: 'health.bodyMap' } } }]
+        const context = contents.at(-1)!.parts.find((p) => p.functionResponse?.name === 'read_diagram_context')?.functionResponse?.response
+        if (context) {
+          diagramReads.push(context)
+          const id = (context.messages as { id: string }[]).at(-1)!.id
+          return [{ functionCall: { name: 'propose_edit', args: { key: 'health.bodyMap', baseRevision: 0, value: JSON.stringify({ version: 1, kind: 'body', revision: 1, data: { items: [{ id: 'api-right-knee', kind: 'pain', label: '本人の右膝の痛み', x: 0, y: 0, width: 32, height: 52, rotation: 0, view: 'front', anatomy: { region: 'knee', side: 'right', view: 'front' } }] } }), diagramChanges: { targetIds: ['api-right-knee'], evidence: [{ objectId: 'api-right-knee', sourceIds: [id] }] } } } }]
+        }
+        return [{ text: '右膝の痛みの案を作りました。まだ用紙は変わっていません。' }]
+      }
       // 台本 2: 「流用」なら、ほかの書類（アセスメント）を読むだけ
       if (/流用/.test(contents[0].parts[0].text ?? '')) {
         if (!res) return [{ functionCall: { name: 'read_form', args: { document: 'assessment' } } }]
@@ -481,4 +492,43 @@ test('図: 他欄を保持して更新・ページ保存でき、古いbaseや�
   assert.deepEqual((saved.body as Doc).document.saved['housing.floorPlan'].value, value)
   assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
   if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+})
+
+test('身体図チャット: 根拠取得→構造化案→明示反映→保存→PDF。未反映時・競合時は他欄を保持（#132・#133）', { skip }, async () => {
+  const { bodyAnchor } = await import('../core/diagram/body.ts')
+  const { diagramSchema } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const question = '#133図検証：本人の右膝が痛いです。この情報で身体図を作って'
+  const res = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', text: question }] }) })
+  assert.equal(res.status, 200)
+  const events = (await res.text()).trim().split('\n').map((line) => JSON.parse(line))
+  const done = events.at(-1)
+  assert.equal(done.type, 'done')
+  assert.equal(done.proposals.length, 1)
+  const proposal = done.proposals[0]
+  assert.equal(proposal.before, null)
+  const value = diagramSchema.parse(proposal.after)
+  assert.equal(value.kind, 'body')
+  if (value.kind !== 'body') return
+  assert.equal(value.data.items[0].sources![0].quote, question)
+  assert.equal(value.data.items[0].x + 16, bodyAnchor({ region: 'knee', side: 'right', view: 'front' })!.x)
+  assert.equal((diagramReads.at(-1)!.visitNotes as { available: boolean }).available, false)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields, before.fields)
+  const changes = [{ key: proposal.key, value: proposal.after, base: proposal.before }]
+  const applied = await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })
+  assert.equal(applied.status, 200)
+  const current = (applied.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) if (key !== proposal.key) assert.deepEqual(current.fields[key], field)
+  assert.equal(current.saved[proposal.key], undefined)
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })).status, 409)
+  const bad = structuredClone(value); bad.data.items[0].view = 'back'
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: proposal.key, value: { ...bad, revision: 2 }, base: value }] }) })).status, 400)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 4 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved[proposal.key].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+  const wrongDraft = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', text: '修正して' }], draft: { key: 'family.genogram', after: value } }) })
+  assert.equal(wrongDraft.status, 400)
 })

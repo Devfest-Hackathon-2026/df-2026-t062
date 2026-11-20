@@ -1,3 +1,5 @@
+import { anatomySchema } from './body.ts'
+import { sourceSchema } from './evidence.ts'
 import { z } from "zod";
 const number = z.number().finite();
 const id = z.string().min(1).max(100);
@@ -23,6 +25,8 @@ export const itemSchema = z
       "pressure",
     ]),
     label: text,
+    anatomy: anatomySchema.optional(),
+    sources: z.array(sourceSchema).max(20).optional(),
     ...position,
     width: number.min(20).max(820),
     height: number.min(20).max(560),
@@ -39,7 +43,8 @@ export const personSchema = z
     name: text,
     sex: z.enum(["male", "female", "unknown"]),
     household: z.enum(["同居", "別居", "不明"]),
-    deceased: z.boolean(),
+    deceased: z.boolean().nullable(),
+    sources: z.array(sourceSchema).max(20).optional(),
     age: z.number().int().min(0).max(130).nullable().optional(),
     isSubject: z.boolean().optional(),
     x: number.min(0).max(700),
@@ -52,6 +57,7 @@ export const relationSchema = z
     source: id,
     target: id,
     kind: z.enum(["婚姻", "離婚", "親子"]),
+    sources: z.array(sourceSchema).max(20).optional(),
   })
   .strict();
 export const schema = z

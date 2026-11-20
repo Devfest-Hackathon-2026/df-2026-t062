@@ -1,3 +1,4 @@
+import { bodyPlacement, tapPosition } from './body.ts'
 import { z } from 'zod'
 import { blank, schema, type Doc, type Tab } from './model.ts'
 
@@ -14,6 +15,12 @@ export const diagramSchema = z.discriminatedUnion('kind', [
 ]).superRefine((value, ctx) => {
   const result = schema.safeParse({ ...blank(), [value.kind]: value.data })
   if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: 'custom', message: issue.message })
+  if (value.kind === 'body') for (const item of value.data.items) if (item.anatomy) {
+    const placement = bodyPlacement(item.anatomy)
+    if (item.view !== item.anatomy.view || item.rotation !== 0) ctx.addIssue({ code: 'custom', message: '身体の部位と表示の向きが一致しません' })
+    const wrong = placement ? Math.abs(item.x - placement.x) > .01 || Math.abs(item.y - placement.y) > .01 || item.width !== placement.width || item.height !== placement.height || item.range !== placement.range : item.anatomy.region !== 'custom' || item.width !== 32 || item.height !== 52 || !tapPosition(item.anatomy.view, item.x + 16, item.y + 22)
+    if (wrong) ctx.addIssue({ code: 'custom', message: '身体の部位または指定位置が不正です' })
+  }
   if (value.kind === 'house' && value.data.items.some((item) => !['room', 'wall', 'bed', 'rail', 'step', 'wheelchair', 'furniture', 'note'].includes(item.kind))) {
     ctx.addIssue({ code: 'custom', message: '家屋に使えない図形があります' })
   }

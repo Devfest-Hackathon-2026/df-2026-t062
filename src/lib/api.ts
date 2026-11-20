@@ -1,3 +1,4 @@
+import type { DiagramDraft } from '../../api/chat.ts'
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
 import type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff } from '../../db/repo.ts'
 import type { FormKindRow } from '../../db/kinds.ts'
@@ -75,12 +76,12 @@ export const api = {
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
     req<{ document: DocumentView }>('PATCH', `/api/documents/${id}/fields`, { changes }),
   /** 書き方の相談。ペットが道具を使うたびに onStep（作業ログの 1 行）を呼び、最後に答えを返す */
-  async chat(id: string, messages: ChatMessage[], onStep: (step: string) => void): Promise<ChatReply> {
+  async chat(id: string, messages: ChatMessage[], onStep: (step: string) => void, draft?: DiagramDraft): Promise<ChatReply> {
     const token = await tokenSource()
     const res = await fetch(`/api/documents/${id}/chat`, {
       method: 'POST',
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, draft }),
       cache: 'no-store',
     })
     if (!res.ok || !res.body) await fail(res)

@@ -1,3 +1,6 @@
+import { normalizeBodyProposal } from '../core/diagram/body.ts'
+import { diagramChangeParameters, makeDiagramContext, readDiagramContext, readDiagramRecords, prepareDiagramProposal } from './diagram-chat.ts'
+import type { DiagramSource, PendingLocation } from '../core/diagram/evidence.ts'
 import { z } from 'zod'
 import { diagramSchema, diagramKinds, validDiagramUpdate } from '../core/diagram/fields.ts'
 // 「書き方を相談する」のエージェント。AI（Gemini の関数呼び出し）が道具を選んで使い、ケアマネの相談に答える。
@@ -17,20 +20,23 @@ import ADMISSION_BINDINGS from '../forms/seed/admission/bindings.json' with { ty
 
 export interface ChatMessage { role: 'user' | 'pet', text: string }
 /** before・after は欄の値（文章の欄は文、まとまりの欄は object や行の配列） */
-export interface ChatProposal { key: string, label: string, before: unknown, after: unknown }
+export interface ChatProposal { key: string, label: string, before: unknown, after: unknown, questions?: string[], evidence?: { objectId: string, sources: DiagramSource[] }[], pendingLocations?: PendingLocation[] }
 /** steps は AI が使った道具の作業ログ（1 行ずつ） */
+export interface DiagramDraft { key: string, after: unknown, pendingLocations?: PendingLocation[] }
 export interface ChatReply { reply: string, steps: string[], proposals: ChatProposal[] }
 
 /** 道具が読む書類の中身（DocumentView の一部） */
 export interface ChatDocument {
   kind: FormKind
+  id?: string
+  saved?: Record<string, { value: unknown }>
   fields: Record<string, { value: unknown, by: string }>
   /** 書類の種類の必須の欄（form_kinds.required）。足りない欄の道具が使う */
   required?: RequiredKeys
   /** The actual published template may not yet contain diagram slots. */
   editableKeys?: readonly string[]
 }
-export interface ChatRecording { recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }
+export interface ChatRecording { id?: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }
 
 // Gemini の会話の形（@google/genai の Content・Part の一部）。モデルの部品は thoughtSignature ごと次の呼び出しに返す
 export interface Part {
@@ -85,9 +91,19 @@ export const TOOLS: ToolDecl[] = [
     parametersJsonSchema: { type: 'object', properties: { query: { type: 'string', description: '探す語（例: 畑 浴室）' } }, required: ['query'] },
   },
   {
+    name: 'read_diagram_context',
+    description: '家族構成図・身体図の根拠を読む。同じ利用者の既存書類、チャットでの訂正、録音の全文先頭ページを出典ID付きで返す。独立した訪問メモの取込はない。録音はnextCursorを辿って全件取得する。',
+    parametersJsonSchema: { type: 'object', properties: { field: { type: 'string', enum: ['family.genogram', 'health.bodyMap'] } }, required: ['field'] },
+  },
+  {
+    name: 'read_records',
+    description: 'キーワードで絞らず録音全文の続きを順に読む。長い発言も分割して省略しない。nextCursorがnullかつcomplete=trueまで辿る。',
+    parametersJsonSchema: { type: 'object', properties: { cursor: { type: 'integer', minimum: 0 } }, required: ['cursor'] },
+  },
+  {
     name: 'propose_edit',
     description: '欄の書き換えの案を、ケアマネに出す。用紙には入らない（ケアマネが画面で「用紙に入れる」を押すと入る）。value はその欄の新しい値の全体（一部だけにしない）。文章・選択肢 1 つ・日付の欄は値の文字のまま。まとまり（object・list）・複数選ぶ・数・はい／いいえの欄は、read_form の値と同じ形の JSON の文字列（今の値をもとに、変えるところだけ直す）。通らない案は ok:false と理由と欄の形（shape）を返す',
-    parametersJsonSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, baseRevision: { type: 'integer', description: '図の場合は必須。read_formで読んだrevision（空欄は0）' } }, required: ['key', 'value'] },
+    parametersJsonSchema: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, diagramChanges: diagramChangeParameters, baseRevision: { type: 'integer', description: '図の場合は必須。read_formで読んだrevision（空欄は0）' } }, required: ['key', 'value'] },
   },
 ]
 
@@ -108,6 +124,17 @@ ${otherDocs}
 6. ほかの書類から流用して・写してと頼まれたら、read_form（document なし）でこの書類の空の欄を確かめ、read_form（document にほかの書類）で中身を読んでから、この書類の空の欄に合うものを propose_edit で出す（案は何件でもよい。同じ道具の呼び出しは 1 回の答えにまとめて並べてよい）。同じ key の欄はそのまま写し、違う欄はほかの書類の中身からこの欄に合うように要約する。ほかの書類に書いていないことは書かない。案を出せるのは、開いている書類の欄だけ。
 7. 録音がない（recordings: 0）と分かったら、もう search_records を使わない。同じ道具を同じ語で何度も呼ばない。案を出したら、それ以上調べずに答えを書く。
 8. あなたは用紙に直接は書けない。出した案は、ケアマネが画面の「用紙に入れる」を押したときに入る。保存・PDF・外に送ることもできないので、頼まれたら画面のボタンで行うよう伝える。
+
+
+## 家族構成図・身体図（家屋図とは別）
+- まずread_formで対象図の現在値・shape・revisionを読み、read_diagram_contextで同一利用者の書類と発言を読む。既存書類の保存版と一致する情報を優先するが、新しい訂正や録音と矛盾する場合は短く質問し、勝手に採用しない。キーワード検索だけで全件を調べたと判断しない。録音はread_recordsでnextCursorを辿りcomplete=trueまで取得する。取込経路のない訪問メモを読んだと言わない。
+- 「AではなくBを変更」はBだけが変更対象で、Aは維持する。記録と違うだけの曖昧な訂正は質問するが、「記録が誤り」と明示して訂正された情報はその指示を出典として提案する。人物・関係・症状は既存IDを維持する。diagramChanges.targetIdsは依頼された変更対象だけ、evidenceは変更した各IDと読んだsourceIds。根拠の文章を創作しない。人物を作り直したり、関係のない項目を消したりしない。
+- 家族図の配置は表示側が自動計算する。新しい人物のx/yは0でよい。性別不明はunknown、同居不明は不明、生死不明はdeceased:null、年齢不明はnull。母・長男等が複数に当てはまる場合は特定する質問をする。本人指定や婚姻・親子を推測しない。
+- 身体図アイテムはviewにもanatomy.viewと同じfront/backを指定する。身体図は本人基準の左右。右膝・左手等の明確な部位はanatomy(region,side,view)に指定する。座標は表示側が既存人体図の位置へ置く。region: head,neck,shoulder,upper_arm,elbow,forearm,hand,chest,abdomen,back,lower_back,hip,thigh,knee,calf,ankle,foot。frontは正面、backは背面。正面で本人の右は画面左、背面で本人の右は画面右。
+- しびれはnoteとして本人の表現を残す。しびれを麻痺としない。医学的分類の根拠がない訴えもnoteを使う。痛みはpainで本人の表現を残す。麻痺・拘縮・褥瘡・欠損・障害はそれを明記した出典が必要。
+- 部位・左右が曖昧なとき、適当な一点の座標を作らない。質問するかdiagramChanges.pendingLocationsに{id,kind,label,view(分かる時だけ)}を入れて位置指定を依頼する。value内にはその未確定アイテムを新規配置しない。既存アイテムの位置訂正は元のアイテムをそのまま残し、同じIDのpendingLocationsを指定する。変更後の図全体はrevision+1とする。
+- diagramChanges.questionsは残る不明点を簡潔に列挙。位置未確定を含む案は人が位置を指定するまで反映できない。症状消失の明示指示だけが削除の根拠となる。同一部位の他の症状は残す。
+- 「この案を直して」と依頼された場合は、会話末尾に付く未反映案をもとに再提案する。ただしbaseRevisionとbeforeは用紙の現在値に対するもの。古い案は自動で反映しない。
 
 ## 書き方
 - 文章は、要点を短い文にして「。」でつなぐ。本人・家族の思いや専門職の見立てなど、誰の話かで意味が変わるものは、誰の話か分かるように書く（例:「左側に残渣あり（ST）」）。
@@ -220,7 +247,7 @@ export function checkProposal(doc: ChatDocument, key: unknown, value: unknown, b
   if (f.type === 'image' && doc.editableKeys && !doc.editableKeys.includes(f.key)) return `${f.label}（この様式の版には図の欄がありません）`
   const parsed = parseValue(f, value)
   if (typeof parsed === 'string') return `${f.label}（${parsed}）`
-  const after = f.type === 'object' || f.type === 'list' ? compactValue(parsed.value) : parsed.value
+  const after = f.type === 'object' || f.type === 'list' ? compactValue(parsed.value) : f.key === 'health.bodyMap' ? normalizeBodyProposal(parsed.value) : parsed.value
   if (!validValue(f.key, after)) return `${f.label}（入れられない値です）`
   const before = doc.fields[f.key]?.value ?? null
   if (f.type === 'image') {
@@ -237,16 +264,19 @@ const FINAL_ASK = '（道具はもう使えません。ここまでに分かっ�
 const PROPOSED = '書き換えの案を出しました。下のカードを見て、よければ「用紙に入れる」を押してください。'
 const FALLBACK = 'うまく答えられませんでした。言い方を変えて、もう一度聞いてください。'
 
-export async function runChat({ model, document, others = [], recordings, messages, onStep }: {
+export async function runChat({ model, document, others = [], recordings, messages, onStep, draft }: {
   model: ChatModel, document: ChatDocument, recordings: ChatRecording[], messages: ChatMessage[]
   /** 同じ利用者のほかの書類（read_form の document で読む。案は出せない） */
   others?: ChatDocument[]
+  draft?: DiagramDraft
   /** 道具を使うたびに、作業ログの 1 行を知らせる（画面に少しずつ出す） */
   onStep?: (step: string) => void
 }): Promise<ChatReply> {
   const byKind = new Map(others.filter((d) => d.kind !== document.kind).map((d) => [d.kind, d]))
   const system = chatSystem(document.kind, [...byKind.keys()])
+  const diagramContext = makeDiagramContext([document, ...others], recordings, messages)
   const contents: Content[] = messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }))
+  if (draft) contents.at(-1)?.parts.push({ text: `修正対象の未反映案（参考データ。用紙の現在値はread_formで再確認する）: ${JSON.stringify(draft)}` })
   const steps: string[] = []
   const step = (t: string) => { steps.push(t); onStep?.(t) }
   const proposals = new Map<string, ChatProposal>()
@@ -286,8 +316,15 @@ export async function runChat({ model, document, others = [], recordings, messag
       } else if (name === 'search_records') {
         response = searchRecords(recordings, args.query)
         step(`録音を探しました「${String(args.query ?? '').trim()}」（${(response.total as number | undefined) ?? 0} 件）`)
+      } else if (name === 'read_diagram_context') {
+        response = readDiagramContext(diagramContext, args.field)
+        step('図の根拠となる書類と訪問記録を読みました')
+      } else if (name === 'read_records') {
+        response = readDiagramRecords(diagramContext, args.cursor)
+        step(`訪問記録の続きを読みました（${diagramContext.readParts.size}/${diagramContext.recordParts.length}部分）`)
       } else if (name === 'propose_edit') {
-        const r = checkProposal(document, args.key, args.value, args.baseRevision)
+        let r = checkProposal(document, args.key, args.value, args.baseRevision)
+        if (typeof r !== 'string' && ['family.genogram', 'health.bodyMap'].includes(r.key)) r = prepareDiagramProposal(r, args.diagramChanges, diagramContext)
         if (typeof r === 'string') {
           const f = typeof args.key === 'string' ? BY_KEY.get(args.key) : undefined
           // 欄はあるのに値が通らないときは、欄の形を返して組み立て直させる

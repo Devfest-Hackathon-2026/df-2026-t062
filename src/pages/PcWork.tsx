@@ -18,6 +18,7 @@ import { countText, downloadBlob } from '../components/Chrome.tsx'
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
+  const [diagramChatRequest, setDiagramChatRequest] = useState<{ key: string, id: number }>()
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient } = useClient(clientId, () => reloadDoc.current())
   const kinds = useFormKinds()
@@ -40,8 +41,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const adoption = useRef<Promise<boolean> | null>(null)
   const [candidateError, setCandidateError] = useState('')
 
-  useEffect(() => { setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
-  useEffect(() => { if (state.pendingCount) setDocSaved(false) }, [state.pendingCount])
+  useEffect(() => { setDiagramChatRequest(undefined); setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
+  useEffect(() => { if (state.pendingCount || state.total.ai || state.total.hand) setDocSaved(false) }, [state.pendingCount, state.total.ai, state.total.hand])
 
   // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
   const openKind = useCallback(async (key: string) => {
@@ -280,6 +281,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
               <div key={`${doc.id}-${p.no}`} ref={(el) => { pageRefs.current[i] = el }} style={{ margin: '0 auto 24px', width: `${zoom}%`, maxWidth: maxW }}>
                 {pageLabel(p.no, p.title, i)}
                 <FormPage page={p} state={state} touch={false} disabled={false} batchLabel={batchLabel}
+                  onDiagramChat={(key) => setDiagramChatRequest({ key, id: Date.now() })}
                   petFocus={assessmentReady ? highlight : undefined} provisional={assessmentReady ? overlays : undefined}
                   adoptingKey={assessmentReady ? adoptingKey : undefined} onAdopt={adoptCandidate} onEditChoice={assessmentReady ? blockDraft : undefined} />
               </div>
@@ -293,9 +295,9 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           )}
         </section>
 
-        <PetHelper available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
-          chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, onSet: state.setValue, onDiagramApply: state.applyDiagram }}
+          chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram }}
           onIdentity={(sha, confirmed) => {
             setCandidateError('')
             setVerifiedSources((previous) => {
