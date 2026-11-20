@@ -1,7 +1,6 @@
-// 2 層改の、AI を使わない部分。design/runner/common.py の写し（欄の候補・値の形・値の確かめ・読み直しの単位・2 回目の受け入れ）。
-import { isDeepStrictEqual } from 'node:util'
+// 録音からの書き込みの、AI を使わない部分（欄の候補・値の形・値の確かめ・最後のチェックの単位）。もとは 2 層改の design/runner/common.py の写し。
 import { writableFields } from '../../core/dictionary.ts'
-import { FIELDS, choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import { choicesOf, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
 import type { FormDef } from '../../core/form.ts'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -12,7 +11,6 @@ export interface Spec {
   key: string
   label: string
   type: string
-  item23: number | null
   choices: string[] | null
   subs: SubSpec[] | null
   note: string | null
@@ -41,34 +39,16 @@ function pagesOfKeys(form: Pick<FormDef, 'bindings' | 'schemas' | 'pages'>): Map
 
 /**
  * AI が書く欄。録音がつながった書類の様式の版から決める（core/dictionary.ts の writableFields。図は除く）。
- * 用紙の場所は、2 層改がアセスメントの 23 項目で組んだ書き方なので、fields.json の欄はアセスメント用紙での場所（forms.assess）を使い、
- * それがない欄（その様式だけの欄など）は、版のページにする（録音からの書き込みの作り替え #114 まで）
+ * 用紙の場所は、fields.json の欄はアセスメント用紙での場所（forms.assess）を使い、それがない欄（その様式だけの欄など）は版のページにする
  */
 export function candidateFields(form: FormDef): Spec[] {
   const pages = pagesOfKeys(form)
   return writableFields(form).map((f) => ({
-    key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
+    key: f.key, label: f.label, type: f.type,
     choices: f.choices ? choicesOf(f) : null,
     subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
     note: f.note ?? null, where: f.forms?.assess ?? pages.get(f.key) ?? '', source: f.source ?? [],
   }))
-}
-
-/** 23 項目の番号ごと。番号のない欄（全体のまとめなど）は 0 */
-export function groupByItem23(specs: Spec[]): Map<number, Spec[]> {
-  const groups = new Map<number, Spec[]>()
-  for (const s of specs) {
-    const n = s.item23 || 0
-    groups.set(n, [...(groups.get(n) ?? []), s])
-  }
-  return new Map([...groups].sort((a, b) => a[0] - b[0]))
-}
-
-/** 23 項目の番号 → 名前（0 は全体のまとめ） */
-export function item23Names(): Record<number, string> {
-  const out: Record<number, string> = { 0: '全体（まとめ）' }
-  for (const x of FIELDS.item23 as { no: number, name: string }[]) out[x.no] = x.name
-  return out
 }
 
 // ================================================================ 値の形（JSON Schema）
@@ -157,21 +137,7 @@ export function validateValue(spec: Spec, value: unknown): [unknown, string[]] {
   return [v, p ? [p] : []]
 }
 
-// ================================================================ 合わせ方
-
-export interface Rec { value: unknown, cite: string[] }
-
-/** 新しい値で書き換える。AI は欄を空にしない（新しい値が空なら前の値を残す） */
-export function mergeFields<T extends { value: unknown }>(prev: Record<string, T>, next: Record<string, T>): Record<string, T> {
-  const out = { ...prev }
-  for (const [k, v] of Object.entries(next)) {
-    if (v.value === null || v.value === undefined) continue
-    out[k] = v
-  }
-  return out
-}
-
-// ================================================================ 読み直し・2 回目の直し（2層改）
+// ================================================================ 最後のチェックの単位
 
 const OPEN = '「『（('
 const CLOSE = '」』）)'
@@ -199,7 +165,7 @@ const rowId = (spec: Spec) => ROW_ID[spec.key] ?? spec.subs![0].key
 export interface Atom { path: string, label: string, text: string }
 
 /**
- * 欄の値を、読み直しで確かめる単位に分ける。
+ * 欄の値を、最後のチェックで確かめる単位に分ける。
  * path: "" は値の全体、"#n" は文章の n 番目の文、"@選択肢" は選んだもの、"/項目" は中の項目、"[i]/項目" は表の i 行目の項目。
  */
 export function atoms(spec: Spec, value: unknown): Atom[] {
@@ -250,27 +216,10 @@ export function dropAtoms(spec: Spec, value: unknown, drop: Set<string>): unknow
   return drop.has('') ? null : value
 }
 
-/** 原本の場面の種類のうち、書類を写したもの */
-export const DOC_SCENE_KINDS = new Set(['書類'])
-
 /** 出どころが書類だけの欄（主治医意見書・被保険者証から写す欄など）。会話からは書かない */
 export const needsDocument = (spec: Spec) => spec.source.length > 0 && spec.source.every((x) => x.startsWith('doc'))
 
-/**
- * 2 回目の直しを受け入れるか。→ [値, 根拠, 入れなかった理由]。直しがなければ [null, [], null]。
- * 直した欄は、新しい記録を根拠に挙げていなければ入れない（前の記録だけで書き直すと、1 回目に書かなかったことを推測で足しやすい）。
- */
-export function acceptUpdate(spec: Spec, rec: { changed?: boolean, value?: unknown, from?: unknown }, current: unknown, newIds: Set<string>, known: Set<string>): [unknown, string[], string | null] {
-  if (!rec.changed || rec.value === null || rec.value === undefined) return [null, [], null]
-  const [v, problems] = validateValue(spec, rec.value)
-  if (v === null) return [null, [], `値の問題: ${problems.join(' / ')}`]
-  if (isDeepStrictEqual(v, current ?? null)) return [null, [], null]
-  const cite = (Array.isArray(rec.from) ? rec.from : []).filter((i): i is string => typeof i === 'string' && known.has(i))
-  if (!cite.some((i) => newIds.has(i))) return [null, [], '新しい記録を根拠に挙げていない']
-  return [v, cite, null]
-}
-
-// ================================================================ 指示文の書式・答えの形・呼び出しの並べ方（2 層改と要約から書く流れで共通）
+// ================================================================ 指示文の書式・答えの形・呼び出しの並べ方
 
 export const TYPE_JA: Record<string, string> = {
   enum: '1 つ選ぶ', multi: 'いくつか選ぶ', bool: 'はい・いいえ', number: '数', date: '日付（YYYY-MM-DD）',

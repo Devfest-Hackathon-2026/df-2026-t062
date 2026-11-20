@@ -70,7 +70,7 @@ before(async () => {
   const { LocalStorage } = await import('../api/storage.ts')
   const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-inspect-')))
   const f = await import('../worker/fake.ts')
-  workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport, inspect: fakeLlm }) }
+  workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, inspect: fakeLlm, recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } }) }
   const { LocalQueue } = await import('../api/queue.ts')
   const { runInspection } = await import('../worker/inspect/job.ts')
   const queue = new LocalQueue(async () => {}, async () => {}, (id) => runInspection(workerDeps, id))

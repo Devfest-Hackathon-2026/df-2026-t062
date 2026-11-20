@@ -14,7 +14,7 @@ import type { Llm } from './gemini.ts'
 import { fmtTopics } from './summarizer.ts'
 import * as P from './topic-prompts.ts'
 
-/** 答えの形（JSON Schema）の中の項目（properties）の数の上限。Gemini は 157 を超えると 400 で断る（bundles.ts の注）。超える分は呼び出しを分ける */
+/** 答えの形（JSON Schema）の中の項目（properties）の数の上限。Gemini は 157 を超えると 400 で断る（2026-11 に 2 層改で確かめた）。超える分は呼び出しを分ける */
 const MAX_PROPS = 150
 
 const isRecord = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x)

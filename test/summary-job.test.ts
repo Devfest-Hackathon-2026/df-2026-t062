@@ -114,7 +114,7 @@ function providers(seen: Seen, texts: () => Record<string, string>, values: (inp
       return { values: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, { value: x, cite: { kind: 'summary' as const, ids } }])), usage: ZERO_USAGE, failed: [], incompleteFields: [] }
     },
   }
-  return import('../worker/fake.ts').then((f) => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport, recording: { summarizer, writer } }))
+  return import('../worker/fake.ts').then((f) => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer, writer } }))
 }
 
 async function run(jobId: string, p: Awaited<ReturnType<typeof providers>>) {
@@ -278,7 +278,7 @@ test('本物の段（偽の Gemini）: 要約の行が DB に残り、欄の根�
     usage: () => ({ ...ZERO_USAGE }),
   })
   const f = await import('../worker/fake.ts')
-  const p = { stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport, recording: { summarizer: summarizer(newLlm as never), writer: topicWriter(newLlm as never) } }
+  const p = { stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer: summarizer(newLlm as never), writer: topicWriter(newLlm as never) } }
   const r = await upload(c.id, c.documentId, '2026-11-10T01:00:00Z')
   await run(r.jobId, p)
   const rows = await summariesOf(c.documentId)
