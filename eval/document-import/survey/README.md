@@ -46,7 +46,21 @@ node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
   --out .data/document-eval/live --cases clean --budget-yen 50 --live
 ```
 
-`--cases` は `clean,difficult,scan,png,jpeg` から選ぶ。`--live` の既定は無効。通常ジョブを隔離したDBスキーマと非公開のローカル原本保存で実行し、終わるとそのDBと原本を消す。録音ジョブは使わない。要約・候補生成・根拠の保持は通常のworkerと同じ経路で測る。モデルのJSON Schemaフォールバックも実運用と同じ条件にする。評価時のwriterの同時実行数は1とする。
+`--cases` は `clean,difficult,blank,scan,png,jpeg,osaka` から選び、指定順に実行する。`--live` の既定は無効。通常ジョブを隔離したDBスキーマと非公開のローカル原本保存で実行し、終わるとそのDBと原本を消す。録音ジョブは使わない。要約・候補生成・根拠の保持は通常のworkerと同じ経路で測る。モデルのJSON Schemaフォールバックも実運用と同じ条件にする。評価時のwriterの同時実行数は既定1。
+
+追加ケース `blank` は2-5のチェックだけを省いた資料。特記事項の「一部介助」から候補を補わず、未選択として保留できるか測る。最新の生成スクリプトで作り直す。
+
+`osaka` は[大阪市の公開様式](https://www.city.osaka.lg.jp/fukushi/cmsfiles/contents/0000674/674268/9.pdf)の基本調査ページに架空の3項目を記入するケース。原本自体が画像で、広島市版の文字や固定位置に依存しないことを測る。ページ全体に対する精度検証ではない。
+
+```sh
+.data/survey-venv/bin/python eval/document-import/survey/make_osaka_fixture.py \
+  --source /path/to/osaka-original.pdf --out .data/survey-import-fixtures
+node eval/document-import/run.ts --fixtures .data/survey-import-fixtures \
+  --out .data/document-eval/latest --cases clean,difficult,blank,scan,png,jpeg,osaka \
+  --concurrency 4 --budget-yen 180 --live
+```
+
+`--concurrency` はwriterの並列数（1〜4、既定1）。並列数4なら複数の実行中呼出が予算を超過しうる。比較時はモデル、並列数とコード版を記録する。原本の読取と補助画像での選択欄照合も通常ジョブに含めて測る。
 
 予算は集計した見込費用が指定額に達したら次の呼び出しを止める。既に実行中の呼び出しと、その中のリトライ分は超過しうる。まず通常版1件で実測してから対象を広げる。
 

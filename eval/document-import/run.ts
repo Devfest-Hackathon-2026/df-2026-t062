@@ -77,11 +77,11 @@ async function baseline(file: Uint8Array) {
   } finally { await pdf.close() }
 }
 
-async function prepare(fixtures: string) {
+async function prepare(fixtures: string, requested: Set<string>) {
   const manifest = JSON.parse(await readFile(join(fixtures, 'manifest.json'), 'utf8'))
   const goldBytes = await readFile(new URL('./survey/gold.tsv', import.meta.url))
   if (manifest.synthetic !== true || manifest.goldSha256 !== createHash('sha256').update(goldBytes).digest('hex')) throw new Error('make_fixtures.py で現在の正解表の架空資料を生成してください')
-  for (const name of ['survey-clean.pdf', 'survey-difficult.pdf']) {
+  for (const name of ['survey-clean.pdf', 'survey-difficult.pdf', ...(requested.has('blank') ? ['survey-blank.pdf'] : []), ...(requested.has('osaka') ? ['osaka.pdf'] : [])]) {
     const bytes = await readFile(join(fixtures, name))
     if (createHash('sha256').update(bytes).digest('hex') !== manifest.files[name]) throw new Error('生成後に検証資料が変更されています')
   }
@@ -117,24 +117,28 @@ async function prepare(fixtures: string) {
 export async function main() {
   const { values: args } = parseArgs({ options: {
     fixtures: { type: 'string' }, out: { type: 'string' }, live: { type: 'boolean', default: false },
-    cases: { type: 'string', default: 'clean' }, 'budget-yen': { type: 'string', default: '50' },
+    cases: { type: 'string', default: 'clean' }, 'budget-yen': { type: 'string', default: '50' }, concurrency: { type: 'string', default: '1' },
   } })
   if (!args.fixtures || !args.out) throw new Error('--fixtures と --out を指定してください')
   const fixtures = resolve(args.fixtures), output = resolve(args.out)
   const budget = Number(args['budget-yen'])
+  const concurrency = Number(args.concurrency)
   if (!Number.isFinite(budget) || budget <= 0 || budget > 200) throw new Error('budget-yen は0より大きく200以下にしてください')
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error('concurrency は1〜4にしてください')
+  const requested = new Set(args.cases!.split(','))
+  if ([...requested].some((id) => !['clean', 'difficult', 'blank', 'scan', 'png', 'jpeg', 'osaka'].includes(id))) throw new Error('cases は clean,difficult,blank,scan,png,jpeg,osaka から選んでください')
   await mkdir(output, { recursive: true })
-  await prepare(fixtures)
+  await prepare(fixtures, requested)
   const all = [
     { id: 'clean', file: 'survey-clean.pdf', mime: 'application/pdf' },
     { id: 'difficult', file: 'survey-difficult.pdf', mime: 'application/pdf' },
+    { id: 'blank', file: 'survey-blank.pdf', mime: 'application/pdf' },
     { id: 'scan', file: 'survey-scan.pdf', mime: 'application/pdf' },
     { id: 'png', file: 'discharge.png', mime: 'image/png' },
     { id: 'jpeg', file: 'opinion.jpg', mime: 'image/jpeg' },
+    { id: 'osaka', file: 'osaka.pdf', mime: 'application/pdf' },
   ] as const
-  const requested = new Set(args.cases!.split(','))
-  if ([...requested].some((id) => !all.some((c) => c.id === id))) throw new Error('cases は clean,difficult,scan,png,jpeg から選んでください')
-  const cases = all.filter((c) => requested.has(c.id))
+  const cases = [...requested].map((id) => all.find((item) => item.id === id)!)
   const gold = (await readFile(new URL('./survey/gold.tsv', import.meta.url), 'utf8')).trim().split('\n').slice(1).map((line) => {
     const columns = line.split('\t')
     return { key: columns[5], expected: JSON.parse(columns[6]), review: false }
@@ -147,7 +151,7 @@ export async function main() {
   }
   const report: Record<string, unknown> = { generatedAt: new Date().toISOString(), syntheticOnly: true, live: args.live,
     model: process.env.GEMINI_MODEL ?? 'gemini-3.8-flash', location: process.env.GEMINI_LOCATION ?? 'global',
-    concurrency: 1, cases: cases.map((c) => c.id), budgetYen: budget, baseline: baselineResults, results: {}, humanConfirmationTimeMs: null }
+    concurrency, cases: cases.map((c) => c.id), budgetYen: budget, baseline: baselineResults, results: {}, humanConfirmationTimeMs: null }
   if (!args.live) {
     report.estimate = { perCaseYen: '20〜50程度（入力と出力に依存する見積もり）', note: 'liveでは予算に達したら次の呼出を止める。実行中1呼出分は超過しうる。' }
     await writeFile(join(output, 'report.json'), JSON.stringify(report, null, 2))
@@ -180,7 +184,7 @@ export async function main() {
   }
   const providers = vertexProviders(process.env)
   providers.documentRead = newLlm
-  providers.documentWrite = { summarizer: summarizer(newLlm), writer: topicWriter(newLlm, { concurrency: 1 }) }
+  providers.documentWrite = { summarizer: summarizer(newLlm), writer: topicWriter(newLlm, { concurrency }) }
   const schema = `eval_document_${process.pid}_${Date.now()}`
   const admin = await createPool()
   await admin.query(`CREATE SCHEMA ${schema}`); await admin.end()
@@ -201,8 +205,8 @@ export async function main() {
       try { await runDocumentInput({ db: async () => db, storage: () => storage, providers: async () => providers }, started.input.id) }
       catch { failed = true }
       const view = await inputView(db, staff, started.input.id)
-      const expected = item.id === 'png' || item.id === 'jpeg' ? gold.filter((g) => SURVEY_IMPORT_KEYS.includes(g.key as never))
-        : gold.map((g) => ({ ...g, review: item.id === 'difficult' && ['survey.2_2', 'survey.2_4'].includes(g.key) }))
+      const expected = item.id === 'png' || item.id === 'jpeg' || item.id === 'osaka' ? gold.filter((g) => SURVEY_IMPORT_KEYS.includes(g.key as never))
+        : gold.map((g) => ({ ...g, review: item.id === 'difficult' && ['survey.2_2', 'survey.2_4'].includes(g.key) || item.id === 'blank' && g.key === 'survey.2_5' }))
       const result = { sha256: createHash('sha256').update(file).digest('hex'), status: view.status, errorKind: view.errorKind, failed, elapsedMs: Date.now() - t0,
         metrics: view.result ? score(view.result, expected) : null, usage: view.result?.usage ?? null }
       const results = report.results as Record<string, unknown>
