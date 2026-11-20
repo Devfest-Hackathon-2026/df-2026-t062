@@ -295,3 +295,12 @@ test('本物の段（偽の Gemini）: 要約の行が DB に残り、欄の根�
   assert.equal(job.status, 'succeeded')
   assert.equal(job.steps.write.values, 2)
 })
+
+test('アセスメントのまとめる項目: AI の項目には、何をまとめるかの説明がある（id・名前・順は最初の一覧のまま）', { skip }, async () => {
+  const topics = (await db.query("SELECT topics FROM form_kinds WHERE key = 'assessment'")).rows[0].topics as Topic[]
+  assert.deepEqual(topics.map((t) => t.id), ['basic', 'history', 'socialSecurity', 'support', 'independencePhysical', 'independenceDementia', 'wishes', 'certification', 'reason', 'health', 'adl', 'iadl', 'cognition', 'communication', 'rhythm', 'excretion', 'hygiene', 'oral', 'eating', 'social', 'family', 'housing', 'other', 'overall', 'date'])
+  assert.equal(topics.find((t) => t.id === 'basic')!.name, '基本情報（受付、利用者等基本情報）')
+  for (const t of topics.filter((x) => x.by === 'ai')) assert.ok(t.guide.length >= 20, `${t.name} の説明`)
+  assert.deepEqual(topics.find((t) => t.id === 'date'), { id: 'date', name: 'その日の日付', guide: '', by: 'machine', last: false, keys: { first: 'assessment.initialDate', later: 'assessment.updateDate' } })
+  assert.deepEqual(topics.filter((t) => t.last).map((t) => t.id), ['overall'])
+})
