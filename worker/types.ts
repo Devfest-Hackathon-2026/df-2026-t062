@@ -136,6 +136,8 @@ export interface Providers {
   /** 記入済み原本の画像読取と、録音と共通の要約・欄書き込み */
   documentRead?: () => Llm
   documentWrite?: NonNullable<Providers['recording']>
+  /** AI 点検の AI。点検 1 回ごとに新しく作る（使った量を数える） */
+  inspect?: () => Llm
 }
 
 export const ZERO_USAGE: Usage = { calls: 0, promptTokens: 0, cachedTokens: 0, outputTokens: 0, thinkingTokens: 0, yen: 0 }

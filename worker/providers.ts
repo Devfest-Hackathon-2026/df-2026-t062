@@ -15,6 +15,7 @@ export function defaultProviders(env: NodeJS.ProcessEnv = process.env): Promise<
       stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport,
       documentRead: f.fakeDocumentRead,
       documentWrite: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() },
+      inspect: f.fakeInspect,
       ...(env.RECORDING_WRITER === 'summary' ? { recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } } : {}),
     }
   })()

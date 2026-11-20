@@ -97,7 +97,7 @@ before(async () => {
   root = await mkdtemp(join(tmpdir(), 'document-input-test-'))
   storage = new LocalStorage(root)
   app = createApp({ db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({
-    enqueue: async () => {}, enqueueFormImport: async () => {}, enqueueDocumentInput: async (id) => {
+    enqueue: async () => {}, enqueueFormImport: async () => {}, enqueueInspection: async () => {}, enqueueDocumentInput: async (id) => {
       if (enqueueFails) { enqueueFails = false; throw new Error('Synthetic queue failure') }
       queued.push(id)
     },

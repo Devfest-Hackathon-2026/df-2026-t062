@@ -26,5 +26,6 @@ export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
       if (env.DOCUMENT_INPUT_APPROVED_LOCATION !== (env.GEMINI_LOCATION ?? 'global')) throw new DocumentReadError('location_not_approved')
       return newLlm()
     },
+    inspect: newLlm,
   }
 }

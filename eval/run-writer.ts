@@ -5,7 +5,7 @@
 // summary では、1 回の面談（visit）を録音 1 本として扱い、場面の全部の記録を文字起こしの発言にする（worker/fake.ts の FakeStt と同じ）。
 // 要約は <out>/<時点>/summaries.json にも書き出す（bench が要約の漏れを数える）。
 // 本物の Gemini を呼ぶときは GOOGLE_CLOUD_PROJECT が要る（費用がかかる）。
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { seedFormDef } from '../forms/admin/files.ts'
@@ -25,12 +25,17 @@ if (!args.out || !['two-layer', 'summary'].includes(args.pipeline!)) {
 const out = args.out
 const pipeline = args.pipeline as 'two-layer' | 'summary'
 
-/** アセスメントのまとめる項目（form_kinds.topics の最初の一覧）。DB を立てずに使うため、移行の SQL から読む */
+/** アセスメントのまとめる項目（form_kinds.topics）。DB を立てずに使うため、移行の SQL のうち、いちばん新しく一覧を入れたものから読む */
 function assessmentTopics(): Topic[] {
-  const sql = readFileSync(new URL('../db/migrations/0003_redesign.sql', import.meta.url), 'utf8')
-  const row = sql.slice(sql.indexOf("('assessment', 'アセスメント'"))
-  const blocks = row.split('$json$')
-  return JSON.parse(blocks[3]) as Topic[]
+  const dir = new URL('../db/migrations/', import.meta.url)
+  for (const name of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort().reverse()) {
+    const sql = readFileSync(new URL(name, dir), 'utf8')
+    const at = sql.indexOf('UPDATE form_kinds SET topics = $json$')
+    if (at >= 0 && sql.slice(at).includes("WHERE key = 'assessment'")) return JSON.parse(sql.slice(at).split('$json$')[1]) as Topic[]
+    const row = sql.indexOf("('assessment', 'アセスメント'")
+    if (row >= 0) return JSON.parse(sql.slice(row).split('$json$')[3]) as Topic[]
+  }
+  throw new Error('アセスメントのまとめる項目が移行にありません')
 }
 
 const genpon = JSON.parse(readFileSync(new URL('./scenario/原本.json', import.meta.url), 'utf8')) as {

@@ -294,7 +294,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           )}
         </section>
 
-        <PetHelper beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, onSet: state.setValue, dict: fieldDict(state.form?.localFields) }}
           onIdentity={(sha, confirmed) => {

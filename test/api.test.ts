@@ -89,6 +89,7 @@ before(async () => {
         await queue.enqueue(id)
       },
       async enqueueFormImport() {},
+      async enqueueInspection() {},
     }),
     // 台本: 録音を探してから、用紙を読んで案を出す
     chat: async () => async ({ contents }) => {
