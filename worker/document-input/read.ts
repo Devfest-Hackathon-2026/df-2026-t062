@@ -2,7 +2,7 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { z } from 'zod'
 import { DocumentReadError, checkDocumentSignature, MAX_DOCUMENT_PAGES, type DocumentEvidence, type DocumentMime, type DocumentReadResult } from '../../core/document-input.ts'
-import type { Ask } from '../vertex/gemini.ts'
+import type { Ask, Part } from '../vertex/gemini.ts'
 export { DocumentReadError } from '../../core/document-input.ts'
 import { openPdf } from '../form-import/pdf.ts'
 
@@ -35,7 +35,19 @@ export async function readDocument(data: Uint8Array, input: { id: string, mime: 
   const issues: DocumentReadResult['issues'] = []
   const consume = async (page: number, png: Uint8Array, text: string) => {
     const saved = input.pages?.[page]
-    const r = PageRead.parse(saved ?? await input.ask([{ text: INSTRUCTION }, { text: `ページ ${page}\n抽出できた補助文字（画像と照合）\n${text.slice(0, 100000)}` }, { png }], schema, { step: '書類の読取', group: page }))
+    const prompt: Part[] = [{ text: INSTRUCTION }, { text: `ページ ${page}\n抽出できた補助文字（画像と照合）\n${text.slice(0, 100000)}` }, { png }]
+    if (!saved) {
+      const image = await loadImage(Buffer.from(png))
+      if (Math.max(image.width, image.height) >= 1200) {
+        prompt.push({ text: '以降は同じページの四分割拡大画像です。隣接部分は重なっています。行の見出しと薄い印・複数の印を見比べ、同じ項目は一度だけ読み取ってください。領域は全体画像で特定できなければnullにしてください。' })
+        for (const y of [0, .45]) for (const x of [0, .45]) {
+          const canvas = createCanvas(Math.ceil(image.width * .55), Math.ceil(image.height * .55))
+          canvas.getContext('2d').drawImage(image, x * image.width, y * image.height, image.width * .55, image.height * .55, 0, 0, canvas.width, canvas.height)
+          prompt.push({ text: `拡大画像（左上位置 ${x}, ${y}）` }, { png: canvas.toBuffer('image/png') })
+        }
+      }
+    }
+    const r = PageRead.parse(saved ?? await input.ask(prompt, schema, { step: '書類の読取', group: page }))
     if (!saved) await input.onPage?.(page, r)
     evidence.push(...r.entries.map((entry, i): DocumentEvidence => {
       const box = entry.region

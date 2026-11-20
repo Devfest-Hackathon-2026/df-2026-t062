@@ -36,6 +36,17 @@ test('文字付きPDFも同じ経路で画像と文字を渡す', async () => {
     return read
   } })
 })
+test('大きなページは全体と重なりのある拡大図を一度の読取に渡す', async () => {
+  const canvas = createCanvas(1600, 1200)
+  let calls = 0
+  await readDocument(canvas.toBuffer('image/png'), { id: 'zoom', mime: 'image/png', ask: async (prompt) => {
+    calls++
+    assert.ok(Array.isArray(prompt))
+    assert.equal(prompt.filter((part) => 'png' in part).length, 5)
+    return read
+  } })
+  assert.equal(calls, 1)
+})
 test('PNGとJPEGは同じ経路で読み、曖昧な文字と矛盾は原文に残す', async () => {
   const c = createCanvas(120, 120)
   for (const mime of ['image/png', 'image/jpeg'] as const) {

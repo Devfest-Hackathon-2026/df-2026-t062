@@ -6,6 +6,7 @@ import { loadFormDef } from '../../db/forms.ts'
 import { prepareWriterValues } from '../job-values.ts'
 import type { WorkerDeps } from '../jobs.ts'
 import { ZERO_USAGE, type Usage, type SummaryLine, type Summarizer } from '../types.ts'
+import { unresolvedFieldKeys } from './review.ts'
 import { DocumentReadError, readDocument } from './read.ts'
 
 const MAX_ATTEMPTS = 3
@@ -51,6 +52,8 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     // 曖昧な文字は明示して残すが、候補の根拠には使わない。
     const safeIds = new Set(reading.evidence.filter((e) => !e.uncertain).map((e) => e.id))
     const visit = { ...reading.visit, scenes: reading.visit.scenes.map((s) => ({ ...s, entries: s.entries.filter((e) => safeIds.has(e.id)) })) }
+    const unresolved = unresolvedFieldKeys(form, reading)
+    const writableForm = { ...form, keys: form.keys.filter((key) => !unresolved.has(key)) }
     const pipeline = providers.documentWrite
     if (!pipeline) throw new DocumentReadError('writer_not_configured')
     type Bundle = Awaited<ReturnType<Summarizer['summarize']>> & { topics: Topic[], kindName: string }
@@ -74,10 +77,10 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
       }
     }
     const written = bundle && summaries.length ? await pipeline.writer.write({
-      kindName: bundle.kindName, topics: bundle.topics, summaries, current, form, showNew: false, sourceKind: '書類',
+      kindName: bundle.kindName, topics: bundle.topics, summaries, current, form: writableForm, showNew: false, sourceKind: '書類',
     }) : { values: {}, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
     const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
-    const allowed = new Set(form.keys)
+    const allowed = new Set(writableForm.keys)
     const candidates = []
     const missingEvidence: string[] = []
     for (const [key, proposal] of Object.entries(proposed)) {
@@ -96,7 +99,7 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
       candidates.push({ key, value: proposal.value, base: current[key] ?? null, baseSource, cite })
     }
     const result: DocumentInputResult = { ...reading, candidates,
-      incompleteFields: [...new Set([...written.incompleteFields, ...droppedFields, ...missingEvidence])],
+      incompleteFields: [...new Set([...written.incompleteFields, ...droppedFields, ...missingEvidence, ...unresolved])],
       usage: addUsage(addUsage(addUsage(readUsage, llm.usage()), bundle?.usage ?? ZERO_USAGE), written.usage),
     }
     await update("status='review',result=$3,run_token=NULL,lease_until=NULL,error_kind=NULL", [JSON.stringify(result)])

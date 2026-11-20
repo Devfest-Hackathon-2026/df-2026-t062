@@ -180,6 +180,24 @@ test('読取後の人の編集と競合したら、全候補と採用状態を�
   assert.equal(fields['survey.2_4'], undefined)
   assert.deepEqual((await call(`/api/document-inputs/${id}`)).body.input.adopted, [])
 })
+test('複数印の項目は、別の明瞭な記載やwriterの返答で補わず保留する', { skip }, async () => {
+  const client = await repo.createClient(db, staff, { name: '架空 複数印' })
+  const before = await repo.getDocument(db, staff.officeId, client.documentId)
+  const id = await uploaded(client.documentId)
+  await call(`/api/document-inputs/${id}/complete`, 'POST', {})
+  const guarded: Providers = { ...providers, documentRead: () => ({
+    ask: async () => ({ entries: [
+      { text: '移動は一部介助。特記事項には食事は見守りと記載。', recordedOn: null, region: null, uncertain: false },
+      { text: '食事摂取は見守りと一部介助の複数印。', recordedOn: null, region: null, uncertain: true },
+    ], issues: ['食事摂取で複数印があるため要確認'] }), usage: () => ZERO_USAGE,
+  }) }
+  await runDocumentInput({ ...deps, providers: async () => guarded }, id)
+  const result = (await call(`/api/document-inputs/${id}`)).body.input.result
+  assert.ok(result.candidates.some((candidate: { key: string }) => candidate.key === 'survey.2_2'))
+  assert.ok(!result.candidates.some((candidate: { key: string }) => candidate.key === 'survey.2_4'))
+  assert.ok(result.incompleteFields.includes('survey.2_4'))
+  assert.deepEqual((await repo.getDocument(db, staff.officeId, client.documentId)).fields, before.fields)
+})
 test('writer失敗後は読取済みページから再開する。失効した実行は結果を保存しない', { skip }, async () => {
   const client = await repo.createClient(db, staff, { name: '架空 再試行' })
   const id = await uploaded(client.documentId)
