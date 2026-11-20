@@ -17,7 +17,6 @@ const menus = [
 type Menu = typeof menus[number]['id']
 
 interface Props {
-  contextLabel?: string
   available: boolean
   clientName: string
   review: ReviewItem[]
@@ -30,7 +29,7 @@ interface Props {
   chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void }
 }
 
-export function PetHelper({ contextLabel, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
+export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
@@ -60,7 +59,6 @@ export function PetHelper({ contextLabel, available, clientName, review, topics,
   return (
     <aside className="assistant-panel" aria-labelledby="assistant-title">
       <div ref={body} className={`assistant-body${menu ? '' : ' assistant-home'}`}>
-        {contextLabel && <p className="assistant-empty" role="status">{contextLabel}</p>}
         {menu && (
           <header className="assistant-header">
             <button ref={back} type="button" aria-label="メニューに戻る" onClick={() => open(null)}><PetIcon name="arrow-left" /></button>

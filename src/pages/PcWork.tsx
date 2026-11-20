@@ -299,7 +299,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </section>
         </>}
 
-        <PetHelper key="work-assistant" contextLabel={carePlanOpen ? `参照元「${kindName}」を参照しています。確認・取り込み・相談の入力先も参照元の書類です。` : undefined} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper key="work-assistant" available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, onSet: state.setValue }}
           onIdentity={(sha, confirmed) => {
