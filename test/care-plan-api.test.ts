@@ -615,3 +615,35 @@ test('PDFは第1→2→3表の保存値だけを出し、確定後も再現し�
   assert.equal(overflow.status, 422, JSON.stringify(overflow.body))
   assert.equal((overflow.body as { error: string }).error, 'overflow')
 })
+
+test('第2・3表の印字欄から氏名は独立して直せるが、構造の射影と確定後の編集は拒否する', { skip }, async () => {
+  const forms = await import('../db/forms.ts')
+  await forms.registerVersion(db, planForm('care_plan_2', ['plan.needs', 'person.name']), { publish: true })
+  await forms.registerVersion(db, planForm('care_plan_3', ['plan.weekly', 'plan.nonWeeklyServices', 'person.name']), { publish: true })
+  const plan = await createPlan(clients.sato)
+  for (const [formNo, slot] of [[2, 'care_plan_2_1'], [3, 'care_plan_3_2']] as const) {
+    const document = planDoc(plan, formNo)
+    const edited = await post(`/api/documents/${document.documentId}/edits`, {
+      formVersionId: document.formVersionId, edits: [{ slot, text: `第${formNo}表の氏名` }],
+    })
+    assert.equal(edited.status, 200, JSON.stringify(edited.body))
+    const result = edited.body as { document: { fields: Record<string, { value: unknown }> } }
+    assert.equal(result.document.fields['person.name'].value, `第${formNo}表の氏名`)
+    const projection = await post(`/api/documents/${document.documentId}/edits`, {
+      formVersionId: document.formVersionId, edits: [{ slot: `care_plan_${formNo}_0`, text: '構造を変更' }],
+    })
+    assert.equal(projection.status, 409)
+    assert.equal((projection.body as { error: string }).error, 'use_plan_api')
+  }
+  assert.equal((await getPlan(plan.id)).plan1?.['person.name'], plan.plan1?.['person.name'])
+  const current = ((await savePlan(await getPlan(plan.id))).body as { plan: PlanBody }).plan
+  assert.equal((await post(`/api/care-plans/${plan.id}/confirm`, { baseVersion: current.lockVersion })).status, 200)
+  for (const formNo of [2, 3] as const) {
+    const document = planDoc(plan, formNo)
+    const result = await post(`/api/documents/${document.documentId}/edits`, {
+      formVersionId: document.formVersionId, edits: [{ slot: `care_plan_${formNo}_${formNo === 2 ? 1 : 2}`, text: '確定後' }],
+    })
+    assert.equal(result.status, 409)
+    assert.equal((result.body as { error: string }).error, 'not_draft')
+  }
+})

@@ -1380,7 +1380,7 @@ export async function assertGenericDocumentEdits(db: Q, officeId: string, docume
   if (formNo && keys.some((k) => PROJECTION_KEYS[formNo].has(k))) throw new UsePlanApi()
 }
 
-/** 第2/3表を汎用の保存・印字欄の直しで変えようとしていないか */
+/** 第2/3表を汎用の個別保存で変えようとしていないか */
 export async function assertGenericDocumentSave(db: Q, officeId: string, documentId: string) {
   await assertPlanDocumentDraft(db, officeId, documentId)
   if (await planFormNoOfDocument(db, officeId, documentId)) throw new UsePlanApi()

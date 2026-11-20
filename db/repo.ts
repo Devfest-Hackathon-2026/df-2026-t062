@@ -323,11 +323,14 @@ export interface SlotEditResult { slot: string, reason?: string }
  * 用紙の印字欄の直し。書類の行を止め、その時点の値に、様式の版の対応（共通の仕組み）で 1 つずつ当てる。
  * 当てられない直しは理由を返す（ほかの直しは当てる）。画面の様式の版が書類の版と違えば Conflict。
  */
-export async function applySlotEdits(db: Db, staff: Staff, documentId: string, formVersionId: string, edits: SlotEdit[]) {
+export async function applySlotEdits(db: Db, staff: Staff, documentId: string, formVersionId: string, edits: SlotEdit[],
+  checkEdits?: (db: Tx, keys: string[]) => Promise<void>) {
   return tx(db, async (c) => {
     const d = await lockDocument(c, staff.officeId, documentId)
     if (d.versionId !== formVersionId) throw new Conflict('form_version')
     const form = await loadFormDef(c, d.versionId)
+    // 実際の様式の版が一致することを確認し、書類をロックしたまま編集先を検証する。
+    await checkEdits?.(c, edits.flatMap((edit) => form.bindings[edit.slot] ? [form.bindings[edit.slot].ref.key] : []))
     const fields = await readFields(c, d.id)
     const before = plainValues(fields)
     let values = before

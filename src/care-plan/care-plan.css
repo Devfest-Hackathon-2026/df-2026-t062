@@ -5,7 +5,7 @@
 .cp-header label {margin-left:auto}
 .cp-header small {font-size:14px; font-weight:400; color:#5a6270}
 .cp-work label,.cp-dialog label {display:flex; flex-direction:column; gap:5px; font-weight:500}
-.cp-work input:not(.fx),.cp-work select,.cp-work textarea:not(.fx),.cp-dialog input,.cp-dialog select,.cp-dialog textarea {font:inherit; color:inherit; border:1px solid #aab4c3; border-radius:7px; padding:8px 10px; background:#fff; min-width:0; box-sizing:border-box}
+.cp-work input:not(.fx):not(.diff-input),.cp-work select,.cp-work textarea:not(.fx):not(.diff-input),.cp-dialog input,.cp-dialog select,.cp-dialog textarea {font:inherit; color:inherit; border:1px solid #aab4c3; border-radius:7px; padding:8px 10px; background:#fff; min-width:0; box-sizing:border-box}
 .cp-dialog textarea {min-height:76px; resize:vertical}
 .cp-work button,.cp-dialog button {cursor:pointer}
 .cp-work button:disabled,.cp-dialog button:disabled {cursor:default; opacity:.5}
@@ -45,7 +45,7 @@
 .cp-danger {color:#a3261c!important; margin:6px}
 .cp-check {flex-direction:row!important; align-items:center}
 .cp-loading {padding:40px}
-.cp-touch .btn,.cp-touch select,.cp-touch input:not(.fx) {min-height:46px}
+.cp-touch .btn,.cp-touch select,.cp-touch input:not(.fx):not(.diff-input) {min-height:46px}
 .cp-touch .btn {font-size:16px}
 .cp-touch {font-size:16px}
 .cp-first {background:#fff; margin:0 auto 24px}
@@ -94,4 +94,12 @@
 @media(max-width:620px) {
   .cp-embedded .cp-nav {max-height:240px}
   .cp-embedded .cp-controls {width:100%}
+}
+/* iPad縦向きでは計画操作を折り返し、用紙が最初の画面から見える高さに収める。 */
+@media(max-width:1100px) {
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header,
+  .cp-work:not(.cp-embedded) .cp-controls .cp-planbar {flex-direction:row; flex-wrap:wrap; align-items:center}
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header h1 {flex:1 1 auto; margin:0; font-size:18px}
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header label {flex:1 1 240px}
+  .cp-work:not(.cp-embedded) .cp-controls .btn {width:auto}
 }

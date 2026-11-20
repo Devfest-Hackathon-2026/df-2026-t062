@@ -26,3 +26,7 @@ __pycache__/
 forms/tools/templates/*/layout.json
 forms/tools/out/
 public/forms/
+
+# Playwright reports and screenshots
+/playwright-report/
+/test-results/

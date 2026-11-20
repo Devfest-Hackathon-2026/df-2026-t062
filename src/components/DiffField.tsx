@@ -127,7 +127,7 @@ export function DiffField(p: Props) {
           </div>
           {p.singleLine ? (
             <input
-              type="text"
+              className="diff-input" type="text"
               aria-label={`${p.label}${hunks.length ? '（変更あり。変更箇所を選択すると比較できます）' : ''}`}
               value={text}
               disabled={p.disabled}
@@ -140,7 +140,7 @@ export function DiffField(p: Props) {
             />
           ) : (
             <textarea
-              ref={ta}
+              className="diff-input" ref={ta}
               aria-label={`${p.label}${hunks.length ? '（変更あり。変更箇所を選択すると比較できます）' : ''}`}
               value={text}
               disabled={p.disabled}

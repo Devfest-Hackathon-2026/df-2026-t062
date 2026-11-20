@@ -435,9 +435,10 @@ export function createApp(deps: ApiDeps) {
 
   // 用紙の印字欄の直し。サーバーがその時点の値に当てる（当てられない直しは理由を返す）
   app.post('/api/documents/:id/edits', staffRoute('care.work', async (c, staff, db) => {
-    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const { formVersionId, edits } = await body(c, EditsInput)
-    const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits)
+    // 氏名・作成日などは各表で独立して編集できる。構造の射影だけは計画APIに限定する。
+    const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits,
+      (locked, keys) => carePlans.assertGenericDocumentEdits(locked, staff.officeId, c.req.param('id')!, keys))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
 
