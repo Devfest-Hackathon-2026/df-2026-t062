@@ -1,6 +1,6 @@
 // 用紙の 1 ページ。ページの画像の上に、欄（文字・丸・✓・表のマス・差分の欄）を重ねる（キャンバスの Main・PadWork と同じ作り）。
 //   橙: 今回 AI が書いて未保存　黄: 直して未保存　青: 入力できる欄
-import { Fragment, memo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, memo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { scaled, useFitScale } from './fit.ts'
 import { DiffField } from '../components/DiffField.tsx'
 import type { DocState } from './useDocument.ts'
@@ -42,9 +42,10 @@ interface Props {
   onEditChoice?: (field: string) => void
   /** 計画版をまとめて保存する画面では、文単位の保存を出さない */
   combinedSave?: boolean
+  children?: ReactNode
 }
 
-function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, combinedSave }: Props) {
+function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, combinedSave, children }: Props) {
   const W = page.width, H = page.height
   const pos = (x: number, y: number, w: number, h: number): CSSProperties => ({ left: pc(x, W), top: pc(y, H), width: pc(w, W), height: pc(h, H) })
   const fsz = (pt: number) => `${(pt * 0.3528 / W * 100).toFixed(3)}cqw`
@@ -171,6 +172,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
         ? <div className="pimg" role="img" aria-label={page.title} style={{ aspectRatio: `${W} / ${H}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
         : <img className="pimg" src={image} alt={`${page.title}`} style={{ aspectRatio: `${W} / ${H}`, ...(dim ? { opacity: 0.55 } : {}) }} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
       {page.slots.map((s) => (s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
+      {children}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (
         <div role="dialog" aria-label={cell.label} style={{

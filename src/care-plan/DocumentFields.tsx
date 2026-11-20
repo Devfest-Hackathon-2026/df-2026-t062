@@ -1,14 +1,4 @@
 import type { DocState } from '../form/useDocument.ts'
-import { sameValue } from '../../core/apply-batch.ts'
-
-export function DocumentHeader({ state, disabled }: { state: DocState, disabled: boolean }) {
-  const mark = (key: string) => sameValue(state.current[key], state.saved[key]) ? '' : state.doc?.fields[key]?.by === 'ai' && !state.hasLocalEdits ? 'cp-ai' : 'cp-hand'
-  return <fieldset className="cp-meta" disabled={disabled || !state.doc}>
-    <label>この表の利用者名<input className={mark('person.name')} value={typeof state.current['person.name'] === 'string' ? state.current['person.name'] : ''} onChange={(e) => state.setValue('person.name', e.target.value)} /></label>
-    <label>この表の作成年月日<input className={mark('plan.createdDate')} type="date" value={typeof state.current['plan.createdDate'] === 'string' ? state.current['plan.createdDate'] : ''} onChange={(e) => state.setValue('plan.createdDate', e.target.value || null)} /></label>
-    <small>各表の値は独立しています。他の表の氏名・作成日は自動では変わりません。</small>
-  </fieldset>
-}
 
 export function DailyActivities({ state, disabled }: { state: DocState, disabled: boolean }) {
   const value = state.current.dailySchedule

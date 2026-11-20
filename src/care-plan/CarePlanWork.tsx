@@ -6,7 +6,8 @@ import { FormPage } from '../form/FormPage.tsx'
 import { SheetToolbar } from '../form/SheetToolbar.tsx'
 import { FieldConflicts } from '../form/FieldConflicts.tsx'
 import { useDocument } from '../form/useDocument.ts'
-import { DocumentHeader, DailyActivities } from './DocumentFields.tsx'
+import { DailyActivities } from './DocumentFields.tsx'
+import { OfficialPlanSheet } from './OfficialPlanSheet.tsx'
 import { savePlanEdits, documentDirty } from './save.ts'
 import './care-plan.css'
 
@@ -134,6 +135,9 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const [confirming, setConfirming] = useState(false)
   const [needIndex, setNeedIndex] = useState<number | null>(null)
   const [slotIndex, setSlotIndex] = useState<number | null>(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [activitiesOpen, setActivitiesOpen] = useState(false)
+  const [needsOpen, setNeedsOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiDraft, setAiDraft] = useState<AiDraftDetail>()
   const [aiNeeds, setAiNeeds] = useState<Set<string>>(new Set())
@@ -245,64 +249,47 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
             {first.pages.map((page) => <FormPage key={page.no} page={page} state={first} touch={touch} disabled={busy || readOnly} batchLabel="ケアプランのAI原案" combinedSave />)}
           </div></div>
         </>}
-        {active === 1 && <section className="cp-paper" aria-label="第2表">
-          <header><h2>居宅サービス計画書（2）</h2><button className="btn" disabled={busy || readOnly} onClick={() => {
-            setNeeds([...needs, { need: '', longGoal: { goal: '' }, shortGoals: [] }]); setNeedIndex(needs.length)
-          }}>＋ ニーズを追加</button></header>
-          <DocumentHeader state={second} disabled={busy || readOnly} />
-          <p>行を押すと、ニーズ・目標・サービスをまとめて編集できます。</p>
-          <div className="cp-table-scroll"><table className="cp-table"><thead><tr><th>ニーズ</th><th>長期目標・期間</th><th>短期目標・期間</th><th>サービス・事業所・頻度</th><th>操作</th></tr></thead>
-            <tbody>{needs.map((n, i) => <tr key={n.id ?? `new-${i}`} onClick={() => { if (!busy) setNeedIndex(i) }} className={!same(n, plan.needs[i]) ? 'cp-hand' : n.id && aiNeeds.has(n.id) ? 'cp-ai' : ''}>
-              <td>{n.need || '未入力'}</td><td>{n.longGoal.goal || '未入力'}<small>{n.longGoal.periodText}</small></td>
-              <td>{n.shortGoals?.map((g, j) => <p key={g.id ?? j}>{g.goal || '未入力'}<small>{g.periodText}</small></p>)}</td>
-              <td>{n.shortGoals?.flatMap((g) => g.services ?? []).map((s, j) => <p key={s.id ?? j}>{s.content}<small>{s.provider} {s.frequency}</small></p>)}</td>
-              <td><button type="button" className="btn" disabled={busy} onClick={() => setNeedIndex(i)}>{readOnly ? '詳細' : '編集'}</button>
-                {!readOnly && <div className="cp-order">{[-1, 1].map((direction) => <button key={direction} type="button" className="btn" aria-label={`ニーズ${i + 1}を${direction < 0 ? '上' : '下'}へ`} disabled={busy || i + direction < 0 || i + direction >= needs.length} onClick={(e) => {
-                  e.stopPropagation()
-                  const next = [...needs]; [next[i], next[i + direction]] = [next[i + direction], next[i]]; setNeeds(next)
-                }}>{direction < 0 ? '↑' : '↓'}</button>)}</div>}
-              </td>
-            </tr>)}</tbody></table></div>
-          {!needs.length && <p>まだニーズがありません。「ニーズを追加」から手入力できます。</p>}
-        </section>}
-        {active === 2 && <section className="cp-paper" aria-label="第3表">
-          <header><h2>週間サービス計画表</h2><button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
-            setSlots([...slots, { serviceId: '', scheduleType: 'weekly', weekday: 1, start: '', end: '', endsNextDay: false }]); setSlotIndex(slots.length)
-          }}>＋ 予定を追加</button></header>
-          <DocumentHeader state={third} disabled={busy || readOnly} />
-          <p>第2表でサービスを追加したら、一度保存してから予定を作れます。時間枠を押して編集します。</p>
-          <div className="cp-week-scroll"><div className="cp-week">
-            <div className="cp-hours">{Array.from({ length: 13 }, (_, i) => <span key={i} style={{ top: `${i / 12 * 100}%` }}>{i * 2}:00</span>)}</div>
-            {days.map((day, dayIndex) => <div className="cp-day" key={day}><strong>{day}</strong><div className="cp-day-body">
-              {slots.flatMap((s, index) => {
-                if (s.scheduleType !== 'weekly' || !s.start || !s.end) return []
-                const [h, m] = s.start.split(':').map(Number)
-                const [eh, em] = s.end.split(':').map(Number)
-                const start = h * 60 + m, end = eh * 60 + em
-                const nextDay = s.endsNextDay
-                const own = s.weekday === dayIndex + 1
-                const carry = nextDay && end > 0 && (s.weekday! % 7) === dayIndex
-                if (!own && !carry) return []
-                const begin = carry ? 0 : start, finish = carry ? end : nextDay ? 1440 : end
-                return <button key={`${s.id ?? index}-${carry ? 'carry' : 'own'}`} type="button" className={`cp-slot ${!same(s, plan.slots[index]) ? 'cp-hand' : ''}`} disabled={busy} style={{ top: `${begin / 1440 * 100}%`, minHeight: 42, height: `${Math.max(0, finish - begin) / 1440 * 100}%` }} onClick={() => setSlotIndex(index)}>
-                  {carry ? '前日から ' : ''}{s.start}–{nextDay ? '翌' : ''}{s.end}<br />{services.find((v) => v.id === s.serviceId)?.content ?? 'サービス未選択'}
-                </button>
-              })}
-            </div></div>)}
-          </div></div>
-          <h3>予定の一覧</h3>
-          {slots.map((s, i) => s.scheduleType === 'weekly' && <button type="button" className="btn cp-other" key={s.id ?? i} disabled={busy} onClick={() => setSlotIndex(i)}>
-            {days[(s.weekday ?? 1) - 1]} {s.start || '開始未入力'}–{s.endsNextDay ? '翌' : ''}{s.end || '終了未入力'} {services.find((v) => v.id === s.serviceId)?.content ?? 'サービス未選択'}
-          </button>)}
-          <h3>週単位以外のサービス</h3>
-          {slots.map((s, i) => s.scheduleType === 'other' && <button className="btn cp-other" key={s.id ?? i} disabled={busy} onClick={() => setSlotIndex(i)}>{services.find((v) => v.id === s.serviceId)?.content}：{s.note || '未入力'}</button>)}
-          <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => { setSlots([...slots, { serviceId: '', scheduleType: 'other', note: '' }]); setSlotIndex(slots.length) }}>＋ 週単位以外を追加</button>
-          <DailyActivities state={third} disabled={busy || readOnly} />
-        </section>}
+        {active > 0 && <>
+          <div className="cp-paper-actions">
+            <button className="btn" disabled={busy} onClick={() => active === 1 ? setNeedsOpen(true) : setScheduleOpen(true)}>{active === 1 ? 'ニーズを追加・編集' : '予定を追加・編集'}</button>
+            {active === 2 && <button className="btn" disabled={busy} onClick={() => setActivitiesOpen(true)}>主な日常生活上の活動を編集</button>}
+            <small>厚生労働省の公式様式。欄を押して入力します。</small>
+          </div>
+          <OfficialPlanSheet state={active === 1 ? second : third} needs={needs} slots={slots} touch={touch}
+            busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={active === 1 && aiNeeds.size > 0}
+            onNeed={(i) => needs[i] ? setNeedIndex(i) : setNeedsOpen(true)}
+            onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
+        </>}
         {saveButton}
         </div>
       </main>
     </div>
+    {needsOpen && <Modal title="第2表・ニーズの追加と選択" onClose={() => setNeedsOpen(false)}>
+      {needs.map((n, i) => <div className="cp-paper-actions" key={n.id ?? i}>
+        <button className="btn" disabled={busy} onClick={() => { setNeedsOpen(false); setNeedIndex(i) }}>{i + 1} {n.need || '未入力'}</button>
+        {!readOnly && [-1, 1].map((d) => <button type="button" className="btn" key={d} disabled={busy || i + d < 0 || i + d >= needs.length} aria-label={`ニーズ${i + 1}を${d < 0 ? '上' : '下'}へ`} onClick={() => {
+          const next = [...needs]; [next[i], next[i + d]] = [next[i + d], next[i]]; setNeeds(next)
+        }}>{d < 0 ? '↑' : '↓'}</button>)}
+      </div>)}
+      <button className="btn" disabled={busy || readOnly} onClick={() => {
+        setNeeds([...needs, { need: '', longGoal: { goal: '' }, shortGoals: [] }]); setNeedsOpen(false); setNeedIndex(needs.length)
+      }}>＋ ニーズを追加</button>
+    </Modal>}
+    {scheduleOpen && <Modal title="第3表・予定の追加と選択" onClose={() => setScheduleOpen(false)}>
+      <p>第2表でサービスを追加したら、一度保存してから予定を作れます。入力途中の予定もここから再開できます。</p>
+      {slots.map((s, i) => <p key={s.id ?? i}><button className="btn" disabled={busy} onClick={() => { setScheduleOpen(false); setSlotIndex(i) }}>
+        {s.scheduleType === 'weekly' ? `${days[(s.weekday ?? 1) - 1]} ${s.start || '開始未入力'}–${s.endsNextDay ? '翌' : ''}${s.end || '終了未入力'}` : `週単位以外：${s.note || '未入力'}`} {services.find((v) => v.id === s.serviceId)?.content}
+      </button></p>)}
+      <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
+        setSlots([...slots, { serviceId: '', scheduleType: 'weekly', weekday: 1, start: '', end: '', endsNextDay: false }]); setScheduleOpen(false); setSlotIndex(slots.length)
+      }}>＋ 予定を追加</button>
+      <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
+        setSlots([...slots, { serviceId: '', scheduleType: 'other', note: '' }]); setScheduleOpen(false); setSlotIndex(slots.length)
+      }}>＋ 週単位以外を追加</button>
+    </Modal>}
+    {activitiesOpen && <Modal title="第3表・主な日常生活上の活動" onClose={() => setActivitiesOpen(false)}>
+      <DailyActivities state={third} disabled={busy || readOnly} />
+    </Modal>}
     {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
       <p>入力はこの画面に保持します。各表の「保存」で第1〜3表をまとめて保存してください。</p>
       <fieldset disabled={readOnly || busy}>
