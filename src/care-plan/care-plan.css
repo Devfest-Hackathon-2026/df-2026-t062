@@ -1,6 +1,8 @@
 .cp-work {height:100dvh; overflow:auto; background:#f4f5f7; color:#1f2430; font:14px/1.6 'Noto Sans JP',system-ui,sans-serif}
 .cp-header,.cp-planbar {display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 24px; background:#fff; border-bottom:1px solid #e1e4ea}
 .cp-header h1 {font-size:20px; margin:0 auto 0 0}
+.cp-header {font-size:13px}
+.cp-header label {margin-left:auto}
 .cp-header small {font-size:14px; font-weight:400; color:#5a6270}
 .cp-work label,.cp-dialog label {display:flex; flex-direction:column; gap:5px; font-weight:500}
 .cp-work input:not(.fx),.cp-work select,.cp-work textarea:not(.fx),.cp-dialog input,.cp-dialog select,.cp-dialog textarea {font:inherit; color:inherit; border:1px solid #aab4c3; border-radius:7px; padding:8px 10px; background:#fff; min-width:0; box-sizing:border-box}
@@ -14,10 +16,11 @@
 .cp-notice {background:#dcf2e4; color:#145b34}
 .cp-error {background:#fde8e7; color:#a3261c}
 .cp-layout {display:grid; grid-template-columns:220px minmax(0,1fr); gap:20px; padding:20px 24px}
-.cp-nav {align-self:start; background:#fff; border:1px solid #e1e4ea; border-radius:12px; padding:12px 8px; position:sticky; top:12px}
+.cp-nav {align-self:stretch; min-height:0; overflow:auto; background:#fff; border:1px solid #e1e4ea; border-radius:12px; padding:12px 8px; display:flex; flex-direction:column; gap:2px; box-sizing:border-box}
 .cp-nav .nav-i {width:100%; text-align:left}
 .cp-legend {color:#5a6270; font-size:12px; padding:16px 10px}
-.cp-canvas {min-width:0; max-width:1250px}
+.cp-canvas {min-width:0; min-height:0; background:#fff; border:1px solid #E1E4EA; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; position:relative}
+.cp-sheet-scroll {flex:1 1 auto; min-height:0; overflow:auto; background:#E9EBEF; padding:10px 21px 20px}
 .cp-save {display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; padding:10px 0}
 .cp-save span {font-size:12px; color:#5a6270}
 .cp-paper {background:#fff; padding:24px; border:1px solid #e1e4ea; box-shadow:0 3px 12px #1420300d}
@@ -57,7 +60,7 @@
 .cp-touch .btn,.cp-touch select,.cp-touch input:not(.fx) {min-height:46px}
 .cp-touch .btn {font-size:16px}
 .cp-touch {font-size:16px}
-.cp-first {background:#fff}
+.cp-first {background:#fff; margin:0 auto 24px}
 .cp-first-scroll {overflow:auto; max-width:100%; padding:4px 0 12px}
 .cp-zoom {display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:8px 0}
 .cp-zoom small {color:#5a6270}
@@ -67,9 +70,22 @@
 .cp-meta small {width:100%; color:#5a6270}
 @media(max-width:1100px) {
   .cp-layout {grid-template-columns:minmax(0,1fr); padding:12px}
-  .cp-nav {position:static; display:flex; flex-wrap:wrap; gap:4px}
+  .cp-nav {position:static; display:flex; flex-direction:row; flex-wrap:wrap; gap:4px}
   .cp-nav .nav-i {width:auto; flex:1 1 180px}
   .cp-legend {width:100%; padding:6px 10px}
   .cp-header,.cp-planbar {padding:12px}
   .cp-paper {padding:14px}
+}
+.cp-embedded {grid-column:1 / 3; height:auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; font:inherit}
+.cp-embedded .cp-header {padding:8px 0; background:transparent; border:0}
+.cp-embedded .cp-planbar {padding:8px 12px; border:1px solid #E1E4EA; border-radius:12px; gap:8px; font-size:12px}
+.cp-embedded .cp-info,.cp-embedded .cp-error,.cp-embedded .cp-notice {margin:8px 0; font-size:13px}
+.cp-embedded .cp-layout {grid-template-columns:clamp(160px,14.7vw,233px) minmax(0,1fr); gap:17px; padding:12px 0 0; flex:1 1 auto; min-height:0}
+.cp-embedded .cp-nav {flex-direction:column; flex-wrap:nowrap}
+.cp-embedded .cp-nav .nav-i {width:100%; flex:0 0 auto}
+@media(max-width:620px) {
+  .cp-embedded {grid-column:1}
+  .cp-embedded .cp-layout {grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr)}
+  .cp-embedded .cp-nav {flex-direction:row; flex-wrap:wrap}
+  .cp-embedded .cp-nav .nav-i {width:auto}
 }

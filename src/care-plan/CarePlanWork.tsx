@@ -3,6 +3,7 @@ import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail
 import { api, ApiError } from '../lib/api.ts'
 import { downloadBlob } from '../components/Chrome.tsx'
 import { FormPage } from '../form/FormPage.tsx'
+import { SheetToolbar } from '../form/SheetToolbar.tsx'
 import { FieldConflicts } from '../form/FieldConflicts.tsx'
 import { useDocument } from '../form/useDocument.ts'
 import { DocumentHeader, DailyActivities } from './DocumentFields.tsx'
@@ -42,11 +43,14 @@ function Modal({ title, onClose, children }: { title: string, onClose: () => voi
 function SaveButton({ busy, disabled, save }: { busy: boolean, disabled: boolean, save: () => void }) {
   return <div className="cp-save">
     <span>第1〜3表の変更をまとめて保存します</span>
-    <button type="button" className="btn btn-p" disabled={disabled || busy} onClick={save}>{busy ? '処理中…' : '保存'}</button>
+    <button type="button" className="savebtn pc-work-save" disabled={disabled || busy} onClick={save}>{busy ? '処理中…' : '保存'}</button>
   </div>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack }: { clientId: string, clientName: string, touch: boolean, onBack: () => void }) {
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange }: {
+  clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void,
+}) {
   const [plans, setPlans] = useState<CarePlanSummary[]>([])
   const [selected, setSelected] = useState<CarePlanView | null>(null)
   const [busy, setBusy] = useState(false)
@@ -58,6 +62,8 @@ export function CarePlanWork({ clientId, clientName, touch, onBack }: { clientId
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const request = useRef(0)
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => { onBusyChange?.(busy || childBusy) }, [busy, childBusy, onBusyChange])
   const loadList = () => api.carePlans(clientId).then((r) => { setPlans(r.plans); return r.plans })
   useEffect(() => {
     let alive = true
@@ -79,10 +85,10 @@ export function CarePlanWork({ clientId, clientName, touch, onBack }: { clientId
     try { const r = await api.carePlan(id); if (request.current === token) { setSelected(r.plan); setDirty(false) } }
     catch (e) { setError(message(e)) } finally { if (request.current === token) setBusy(false) }
   }
-  return <div className={`pc cp-work ${touch ? 'cp-touch' : ''}`}>
+  return <div className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
     <header className="cp-header">
-      <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { if (mayLeave()) onBack() }}>← 書類に戻る</button>
-      <h1>{clientName} さん <small>ケアプラン</small></h1>
+      {!embedded && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { if (mayLeave()) onBack() }}>← 書類に戻る</button>}
+      {!embedded && <h1>{clientName} さん <small>ケアプラン</small></h1>}
       <label>計画の版<select aria-label="計画の版" value={selected?.id ?? ''} disabled={busy || childBusy} onChange={(e) => void choose(e.target.value)}>
         <option value="" disabled>計画を選ぶ</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.effectiveFrom}〜・第{p.version}版・{statusText(p.status)}</option>)}
       </select></label>
@@ -228,19 +234,14 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
     {documents.map((d, i) => <FieldConflicts key={i} state={d} />)}
     <div className="cp-layout">
       <nav className="cp-nav" aria-label="ケアプランの表">{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
-        <div className="cp-legend">青：入力できる欄<br />橙：AIの未保存の変更<br />黄：手入力の未保存の変更</div>
       </nav>
       <main className="cp-canvas">
-        <div className="plabel"><strong>{names[active]}</strong></div>
-        {saveButton}
+        <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
+          aiLabel="AI原案から" status={dirty ? '保存していない変更があります' : 'すべて保存済み'}
+          saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save} />
+        <div className="cp-sheet-scroll">
         {active === 0 && <>
-          <div className="cp-zoom" role="group" aria-label="用紙の拡大">
-            <button type="button" className="btn" disabled={zoom <= 75} onClick={() => setZoom((n) => n - 25)}>縮小</button>
-            <span>{zoom}%</span>
-            <button type="button" className="btn" disabled={zoom >= 200} onClick={() => setZoom((n) => n + 25)}>拡大</button>
-            <small>100%で幅に合わせます。拡大すると用紙は横にもスクロールできます。</small>
-          </div>
-          <div className="cp-first-scroll"><div className="cp-first" style={{ width: `${zoom}%` }}>
+          <div className="cp-first-scroll"><div className="cp-first" style={{ width: `${zoom}%`, maxWidth: Math.round(1120 * zoom / 100) }}>
             {first.pages.map((page) => <FormPage key={page.no} page={page} state={first} touch={touch} disabled={busy || readOnly} batchLabel="ケアプランのAI原案" combinedSave />)}
           </div></div>
         </>}
@@ -299,6 +300,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
           <DailyActivities state={third} disabled={busy || readOnly} />
         </section>}
         {saveButton}
+        </div>
       </main>
     </div>
     {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
