@@ -1,3 +1,4 @@
+import { diagramChatName, diagramChatQuestion } from '../diagram/chatEntry.ts'
 import { sameValue } from '../../core/apply-batch.ts'
 import { diagramSchema, diagramDocument, diagramKinds } from '../../core/diagram/fields.ts'
 // 「書き方を相談する」: ペット（道具を使うエージェント）に書き方を相談する。したこと（作業ログ）を 1 行ずつ出す。書き換えの案は差分のカードで出し、押したときだけ用紙に入れる。
@@ -10,6 +11,7 @@ const DiagramProposalDetails = lazy(() => import('../diagram/DiagramProposalDeta
 const Preview = lazy(() => import('../diagram/Preview.tsx'))
 
 interface Props {
+  onTopicChange?: (key: string | undefined) => void
   diagramRequest?: { key: string, id: number }
   saved?: Record<string, unknown>
   documentId: string | undefined
@@ -39,18 +41,27 @@ function DiffLines({ field, before, after }: { field: string, before: unknown, a
   )
 }
 
-export function PetChat({ documentId, entries, setEntries, current, onSet, onDiagramApply, onJump, saved = {}, diagramRequest }: Props) {
+export function PetChat({ documentId, entries, setEntries, current, onSet, onDiagramApply, onJump, saved = {}, diagramRequest, onTopicChange }: Props) {
   const applyingRef = useRef(false)
   const [applying, setApplying] = useState(false)
   const [text, setText] = useState('')
+  const [topic, setTopic] = useState(diagramRequest?.key)
+  const entryDrafts = useRef(new Map<string, { text: string, draft?: ProposalCard }>())
   const [revisionDraft, setRevisionDraft] = useState<ProposalCard>()
   const input = useRef<HTMLTextAreaElement>(null)
   const requestSeen = useRef<number | undefined>(undefined)
+  useEffect(() => { onTopicChange?.(topic) }, [topic, onTopicChange])
   useEffect(() => {
     if (!diagramRequest || requestSeen.current === diagramRequest.id) return
+    const first = requestSeen.current === undefined
     requestSeen.current = diagramRequest.id
-    setText(current[diagramRequest.key] ? `${diagramRequest.key === 'family.genogram' ? '家族構成図' : '身体図'}を修正したい：` : diagramRequest.key === 'family.genogram' ? '訪問記録と既存書類から家族構成図を作成して' : '訪問記録と既存書類から身体図を作成して')
-    setRevisionDraft(undefined)
+    if (!first && topic === diagramRequest.key) { input.current?.focus({ preventScroll: true }); return }
+    if (!first || topic !== diagramRequest.key) entryDrafts.current.set(topic ?? 'general', { text, draft: revisionDraft })
+    const previous = entryDrafts.current.get(diagramRequest.key)
+    const name = diagramChatName(diagramRequest.key) ?? '図'
+    setTopic(diagramRequest.key)
+    setText(previous?.text ?? (current[diagramRequest.key] ? `${name}を修正したい：` : `訪問記録と既存書類から${name}を作成して`))
+    setRevisionDraft(previous?.draft)
     input.current?.focus({ preventScroll: true })
   }, [diagramRequest])
   const [busy, setBusy] = useState(false)
@@ -71,8 +82,8 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
 
   const send = async (e?: FormEvent) => {
     e?.preventDefault()
-    const question = text.trim()
-    if (!question || busy || !documentId) return
+    const question = diagramChatQuestion(text.trim(), revisionDraft?.key ?? topic)
+    if (!text.trim() || busy || !documentId) return
     const asked: ChatEntry = { id: nextId++, role: 'user', text: question }
     const history = historyFor([...entries, asked])
     setEntries((prev) => [...prev, asked])
@@ -155,7 +166,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
                         <span className="assistant-chat-done"><PetIcon name="check2" />反映しました</span>
                         <button type="button" className="assistant-chat-undo" disabled={applying} onClick={() => void press(m.id, card)}>{diagramKinds[card.key] ? 'この案を一括で戻す' : '戻す'}</button>
                       </>}
-                    {['family.genogram', 'health.bodyMap'].includes(card.key) && !card.superseded && <button type="button" disabled={applying || busy} onClick={() => { setRevisionDraft(card); setText('この図案を修正して：'); input.current?.focus({ preventScroll: true }) }}>この案を修正</button>}
+                    {['family.genogram', 'health.bodyMap'].includes(card.key) && !card.superseded && <button type="button" disabled={applying || busy} onClick={() => { entryDrafts.current.set(topic ?? 'general', { text, draft: revisionDraft }); setTopic(card.key); setRevisionDraft(card); setText('この図案を修正して：'); input.current?.focus({ preventScroll: true }) }}>この案を修正</button>}
                   </div>
                   {stale.has(id) && <p className="assistant-error" role="alert">{card.state === 'ready' ? '案を出したあとに、この欄が直されています。もう一度相談してください。' : '入れたあとに、この欄が直されているので戻せません。用紙で直してください。'}</p>}
                 </div>

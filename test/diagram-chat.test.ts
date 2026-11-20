@@ -190,3 +190,13 @@ test('broad back pain is displayed as an area; anatomy and view mismatches are r
   const { diagramImage } = await import('../api/diagram-image.ts')
   assert.ok((await diagramImage(value, 85, 77)).startsWith('data:image/png;base64,'))
 })
+
+test('diagram entry names the selected figure and preserves its context when the opening text is replaced', async () => {
+  const { diagramChatTitle, diagramChatQuestion } = await import('../src/diagram/chatEntry.ts')
+  assert.equal(diagramChatTitle('family.genogram'), '家族構成図の書き方を相談する')
+  assert.equal(diagramChatTitle('health.bodyMap'), '身体図の書き方を相談する')
+  assert.equal(diagramChatTitle(), '書き方を相談する')
+  assert.equal(diagramChatQuestion('長男は別居です', 'family.genogram'), '家族構成図について：長男は別居です')
+  assert.equal(diagramChatQuestion('身体図の右膝を直して', 'health.bodyMap'), '身体図の右膝を直して')
+  assert.equal(diagramChatQuestion('相談内容を短くして'), '相談内容を短くして')
+})

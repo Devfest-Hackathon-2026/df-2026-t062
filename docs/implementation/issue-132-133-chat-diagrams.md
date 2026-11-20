@@ -67,6 +67,7 @@ PR #127の構造化図・版番号・保存・PDF出力を継承する追加変�
 # 架空データによるUIのみ。DB・実AIは使わない
 npm run dev
 # /test/fixtures/diagram-chat.html
+# ?entry=1 を付けると実際の右パネルで図タップ→相談画面の入口を確認できる
 
 # 実際のGeminiを使用する。費用が発生する。実在の利用者情報は含めない
 GOOGLE_CLOUD_PROJECT=<検証用プロジェクト> node eval/diagram-chat/run.ts

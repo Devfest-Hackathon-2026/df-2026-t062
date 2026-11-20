@@ -1,3 +1,4 @@
+import { diagramChatTitle } from '../diagram/chatEntry.ts'
 import { useEffect, useRef, useState } from 'react'
 import { SurveyImport } from '../survey/SurveyImport.tsx'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
@@ -32,9 +33,12 @@ interface Props {
 
 export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
+  const [chatTopic, setChatTopic] = useState<string>()
+  const scopedDiagramRequest = activeDiagramRequest?.documentId === chat.documentId ? activeDiagramRequest : undefined
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
-  useEffect(() => { setChatEntries([]) }, [chat.documentId])
+  useEffect(() => { setChatEntries([]); setActiveDiagramRequest(undefined); setChatTopic(undefined) }, [chat.documentId])
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
   const body = useRef<HTMLDivElement>(null)
@@ -45,15 +49,19 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
 
   useEffect(() => {
     body.current?.scrollTo(0, 0)
-    if (menu) back.current?.focus({ preventScroll: true })
+    if (menu && !(menu === 'revise' && scopedDiagramRequest)) back.current?.focus({ preventScroll: true })
     else if (previousMenu.current) menuButtons.current[previousMenu.current]?.focus({ preventScroll: true })
   }, [menu])
 
-  useEffect(() => { if (diagramRequest) setMenu('revise') }, [diagramRequest])
+  useEffect(() => {
+    if (diagramRequest) { setActiveDiagramRequest({ ...diagramRequest, documentId: chat.documentId }); setChatTopic(diagramRequest.key); setMenu('revise'); setError('') }
+  }, [diagramRequest])
 
   const open = (next: Menu | null) => {
     if (menu) previousMenu.current = menu
     setMenu(next)
+    setActiveDiagramRequest(undefined)
+    setChatTopic(undefined)
     setError('')
     setConfirmed(false)
   }
@@ -65,7 +73,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
         {menu && (
           <header className="assistant-header">
             <button ref={back} type="button" aria-label="メニューに戻る" onClick={() => open(null)}><PetIcon name="arrow-left" /></button>
-            <h2 id="assistant-title">{menus.find(({ id }) => id === menu)?.title}</h2>
+            <h2 id="assistant-title">{menu === 'revise' ? diagramChatTitle(chatTopic) : menus.find(({ id }) => id === menu)?.title}</h2>
           </header>
         )}
         {!menu && (
@@ -125,7 +133,7 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
           </>
         )}
         {menu === 'revise' && (
-          <PetChat key={chat.documentId} diagramRequest={diagramRequest} saved={chat.saved} documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
+          <PetChat key={chat.documentId} diagramRequest={scopedDiagramRequest} onTopicChange={setChatTopic} saved={chat.saved} documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
             onJump={available ? jump : undefined} />
         )}
         {error && <p className="assistant-error" role="alert">{error}</p>}

@@ -18,6 +18,7 @@ import { countText, downloadBlob } from '../components/Chrome.tsx'
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
+  const diagramRequestId = useRef(0)
   const [diagramChatRequest, setDiagramChatRequest] = useState<{ key: string, id: number }>()
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient } = useClient(clientId, () => reloadDoc.current())
@@ -281,7 +282,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
               <div key={`${doc.id}-${p.no}`} ref={(el) => { pageRefs.current[i] = el }} style={{ margin: '0 auto 24px', width: `${zoom}%`, maxWidth: maxW }}>
                 {pageLabel(p.no, p.title, i)}
                 <FormPage page={p} state={state} touch={false} disabled={false} batchLabel={batchLabel}
-                  onDiagramChat={(key) => setDiagramChatRequest({ key, id: Date.now() })}
+                  onDiagramChat={(key) => setDiagramChatRequest({ key, id: ++diagramRequestId.current })}
                   petFocus={assessmentReady ? highlight : undefined} provisional={assessmentReady ? overlays : undefined}
                   adoptingKey={assessmentReady ? adoptingKey : undefined} onAdopt={adoptCandidate} onEditChoice={assessmentReady ? blockDraft : undefined} />
               </div>
