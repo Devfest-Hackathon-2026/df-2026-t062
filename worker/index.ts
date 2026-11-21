@@ -11,5 +11,5 @@ const port = Number(process.env.PORT ?? 8788)
 let storage: ReturnType<typeof defaultStorage> | undefined
 const deps = { db: getDb, storage: () => (storage ??= defaultStorage()), providers: () => defaultProviders() }
 const queue = new CloudTasksQueue()
-const server = createAdaptorServer({ fetch: createWorkerApp(deps, (id) => queue.enqueue(id)).fetch })
+const server = createAdaptorServer({ fetch: createWorkerApp(deps, queue).fetch })
 server.listen(port, host, () => console.log(`Worker listening on http://${host}:${port}`))

@@ -1,7 +1,9 @@
 // AI_PROVIDER=fake: 費用をかけずに流れを試すための中身。
 // 何本目の録音かで、演習シナリオ（eval/scenario、公開・架空）の 1 回目・2 回目の記録と正解を返す。
 import { readFileSync } from 'node:fs'
-import { ZERO_USAGE, type Person, type SheetWriter, type SpeakerAssigner, type Stt, type Utterance } from './types.ts'
+import { summaryTopics } from '../core/topics.ts'
+import { ZERO_USAGE, type Person, type SpeakerAssigner, type Stt, type Summarizer, type TopicWriter, type TopicWriterInput, type Utterance } from './types.ts'
+import type { Llm } from './vertex/gemini.ts'
 
 const ROOT = new URL('../eval/scenario/', import.meta.url)
 const load = (p: string) => JSON.parse(readFileSync(new URL(p, ROOT), 'utf8'))
@@ -43,11 +45,49 @@ export class FakeSpeakers implements SpeakerAssigner {
   }
 }
 
-export class FakeWriter implements SheetWriter {
-  async write({ first }: { first: boolean }) {
-    const raw = load(`gold/用紙/アセスメント_${first ? 'v1' : 'v2'}.json`)
+/** 要約の代わり。最初の項目に、発言の数だけを書いた要約を返す（中身は作らない） */
+export class FakeSummarizer implements Summarizer {
+  async summarize({ topics, utterances }: Parameters<Summarizer['summarize']>[0]) {
+    const first = summaryTopics(topics)[0]
+    return { texts: first ? { [first.id]: `（偽の要約）発言 ${utterances.length} 件` } : {}, usage: ZERO_USAGE }
+  }
+}
+
+/** 要約から書く流れの代わり。演習シナリオの正解（2 本目からは 2 回目の正解）を返す */
+export class FakeTopicWriter implements TopicWriter {
+  async write({ summaries }: TopicWriterInput) {
+    const later = summaries.some((s) => s.seq > 1)
+    const raw = load(`gold/用紙/アセスメント_${later ? 'v2' : 'v1'}.json`)
     delete raw._comment
-    const values = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { value: v, cite: [] as string[] }]))
+    const ids = summaries.map((s) => s.id)
+    const values = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { value: v, cite: { kind: 'summary' as const, ids } }]))
     return { values, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
   }
 }
+
+/** 様式の取り込みの AI の代わり。欄を 1 つも見つけない（ページと要確認だけの下書きになる）。流れを試すため */
+/**
+ * 試しの点検（費用なし）。番号が 5 の倍数の項目は段階 1（足りない情報つき）、ほかは基準のいちばん上の段階。
+ * 画面の確かめ用で、書類の中身は見ない
+ */
+export const fakeInspect = (): Llm => {
+  let calls = 0
+  return {
+    ask: async (_prompt, schema) => {
+      calls++
+      const props = (schema as { properties: { results: { properties: Record<string, { properties: { level: { enum: string[] } } }> } } }).properties.results.properties
+      return {
+        results: Object.fromEntries(Object.entries(props).map(([id, p]) => {
+          const top = p.properties.level.enum.filter((l) => l !== '他').sort().at(-1) ?? '2'
+          return [id, Number(id) % 5 === 0 ? { level: '1', met: {}, missing: '（試しの点検）記載が足りない' } : { level: top, met: {}, missing: null }]
+        })),
+      }
+    },
+    usage: () => ({ ...ZERO_USAGE, calls }),
+  }
+}
+
+export const fakeFormImport = (): Llm => ({
+  ask: async (_prompt, _schema, meta) => (meta.step === '様式の欄' ? { slots: [], localFields: [] } : { slots: [], fixes: [], removes: [], localFields: [] }),
+  usage: () => ZERO_USAGE,
+})

@@ -3,8 +3,8 @@ import type { PendingRecording } from './recordingStore.ts'
 
 const CHUNK = 8 * 1024 * 1024 // 256 KiB の倍数
 
-/** 保存済みの範囲を照会し、最後に確定したバイトの次から送る。 */
-async function upload(url: string, blob: Blob, onPct: (n: number) => void): Promise<'uploaded' | 'expired'> {
+/** 保存済みの範囲を照会し、最後に確定したバイトの次から送る（録音と、責任者が上げる書式の PDF で使う）。 */
+export async function upload(url: string, blob: Blob, onPct: (n: number) => void): Promise<'uploaded' | 'expired'> {
   const total = blob.size
   const put = (start: number, end: number) => new Promise<{ status: number, range: string | null }>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -34,7 +34,7 @@ async function upload(url: string, blob: Blob, onPct: (n: number) => void): Prom
       offset = next
       probe = false
     } catch {
-      if (++failures > 5) throw new Error('録音を送れませんでした')
+      if (++failures > 5) throw new Error('送れませんでした')
       await new Promise((resolve) => setTimeout(resolve, 1500 * failures))
       probe = true
     }

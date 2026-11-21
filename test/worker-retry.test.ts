@@ -6,7 +6,7 @@ import { createPool, tx, type Db } from '../db/pool.ts'
 import { migrate } from '../db/migrate.ts'
 import { seed } from '../db/seed.ts'
 import { applyBatch, completeRecording, createClient, createRecording, activeJobs, type Staff } from '../db/repo.ts'
-import { FakeSpeakers, FakeStt } from '../worker/fake.ts'
+import { FakeSpeakers, FakeStt, FakeSummarizer, fakeFormImport } from '../worker/fake.ts'
 import { reconcile, runJob, type WorkerDeps } from '../worker/jobs.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
 import { LocalStorage } from '../api/storage.ts'
@@ -42,11 +42,11 @@ async function job() {
   await storage.write('source', rec.objectPath, bytes)
   const jobId = await completeRecording(db, staff, rec.id, 60_000, bytes.byteLength, (path) => storage.size('source', path))
   assert.ok(jobId)
-  return { jobId, clientId: client.id, documentId: client.assessmentId }
+  return { jobId, clientId: client.id, documentId: client.documentId }
 }
 
-const providers = (write: Providers['writer']['write']): Providers => ({
-  stt: new FakeStt(), speakers: new FakeSpeakers(), writer: { write },
+const providers = (write: Providers['recording']['writer']['write']): Providers => ({
+  stt: new FakeStt(), speakers: new FakeSpeakers(), formImport: fakeFormImport, recording: { summarizer: new FakeSummarizer(), writer: { write } },
 })
 const deps = (p: Providers): WorkerDeps => ({ db: async () => db, storage: () => storage, providers: async () => p })
 const value = { 'intake.method': { value: '電話', cite: [] } }

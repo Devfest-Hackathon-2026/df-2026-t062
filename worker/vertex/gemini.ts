@@ -10,8 +10,13 @@ export interface AskMeta {
   group?: string | number
 }
 
+/** 指示に入れるもの。文字か、画像（PNG）。様式の取り込みは、ページの画像と文字を一緒に渡す */
+export type Part = { text: string } | { png: Uint8Array }
+/** 指示。文字だけなら文字列 */
+export type Prompt = string | Part[]
+
 /** JSON で答えを返す 1 回の呼び出し（テストでは差し替える） */
-export type Ask = (prompt: string, schema: unknown, meta: AskMeta) => Promise<unknown>
+export type Ask = (prompt: Prompt, schema: unknown, meta: AskMeta) => Promise<unknown>
 
 /** 1 回の処理（ジョブ）で使った量を数えながら呼ぶ入れ物 */
 export interface Llm {
@@ -34,7 +39,7 @@ const THINKING_LEVEL = 'LOW'
 const log = (rec: Record<string, unknown>) => console.log(JSON.stringify({ severity: 'INFO', ...rec }))
 
 interface Client {
-  generate(args: { model: string, prompt: string, schema: unknown | null, thinkingLevel?: string }): Promise<{ text: string | undefined, prompt: number, output: number, thinking: number, cached: number }>
+  generate(args: { model: string, prompt: Prompt, schema: unknown | null, thinkingLevel?: string }): Promise<{ text: string | undefined, prompt: number, output: number, thinking: number, cached: number }>
 }
 
 function realClient(env: NodeJS.ProcessEnv): Client {
@@ -45,7 +50,7 @@ function realClient(env: NodeJS.ProcessEnv): Client {
       ai ??= new GoogleGenAI({ vertexai: true, project: env.GOOGLE_CLOUD_PROJECT, location: env.GEMINI_LOCATION ?? 'global' })
       const r = await ai.models.generateContent({
         model,
-        contents: prompt,
+        contents: toContents(prompt),
         config: {
           responseMimeType: 'application/json',
           maxOutputTokens: 65536,
@@ -58,6 +63,15 @@ function realClient(env: NodeJS.ProcessEnv): Client {
       return { text: r.text, prompt: u?.promptTokenCount ?? 0, output: u?.candidatesTokenCount ?? 0, thinking: u?.thoughtsTokenCount ?? 0, cached: u?.cachedContentTokenCount ?? 0 }
     },
   }
+}
+
+/** 指示 → API の contents。画像は base64 の inlineData にする */
+export function toContents(prompt: Prompt) {
+  if (typeof prompt === 'string') return prompt
+  return [{
+    role: 'user',
+    parts: prompt.map((p) => ('text' in p ? { text: p.text } : { inlineData: { mimeType: 'image/png', data: Buffer.from(p.png).toString('base64') } })),
+  }]
 }
 
 /** GEMINI_THINKING_LEVEL → API に渡す値（DEFAULT・空なら渡さない） */

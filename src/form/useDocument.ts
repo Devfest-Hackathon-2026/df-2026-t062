@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getRef, parseYear, specOf, type Binding, type EraShort } from '../../core/binding.ts'
 import { sameValue } from '../../core/apply-batch.ts'
+import { fieldDict, type FieldDict } from '../../core/dictionary.ts'
 import { sentenceDiff } from '../../core/diff.ts'
 import { slotPages, toFormDef, type FormAssetsView, type FormDef } from '../../core/form.ts'
 import { applyChanges, editSlot, renderSlots, slotMarks, type Values, type Who } from '../../core/slots.ts'
@@ -33,13 +34,13 @@ export interface PageCount { ai: number, hand: number }
 const ERA_CHANGE_YEARS = new Set([1868, 1912, 1926, 1989, 2019])
 
 /** 打っている途中の文字が値にならない欄（確定するまで下書きで持つ） */
-function needsDraft(b: Binding | undefined): boolean {
+function needsDraft(b: Binding | undefined, dict: FieldDict): boolean {
   if (!b) return false
   switch (b.op) {
     case 'date@1': case 'ageAt@1': case 'join@1': return true
     case 'symbol@1': return b.ui !== 'cell'
     case 'text@1': {
-      const s = specOf(b.ref)
+      const s = specOf(b.ref, dict)
       return !!s && !s.detail && (s.type === 'number' || s.type === 'enum')
     }
     default: return false
@@ -69,7 +70,6 @@ export function useDocument(docId: string | undefined) {
   const [drafts, setDrafts] = useState<Map<string, string>>(new Map())
   const [eraDrafts, setEraDrafts] = useState<Map<string, EraShort>>(new Map())
   const [reasons, setReasons] = useState<Map<string, string>>(new Map())
-  const [sync, setSync] = useState('')
   /** 直せなかった理由（数秒だけ出す） */
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -161,14 +161,12 @@ export function useDocument(docId: string | undefined) {
     if (pending.timer) { clearTimeout(pending.timer); pending.timer = undefined }
     while (pending.inflight) await pending.inflight
     const run = (async () => {
-      const synced: string[] = []
       try {
         let fields = [...pending.fields]
         while (fields.length) {
           try {
             const r = await api.patch(docId, fields.map(([key, p]) => ({ key, value: p.value ?? null, base: p.base ?? null, mode: p.mode })))
             publish(r.document)
-            synced.push(...r.syncedTo)
             const next = new Map(pending.fields)
             for (const [key, sent] of fields) {
               const queued = next.get(key)
@@ -230,17 +228,12 @@ export function useDocument(docId: string | undefined) {
             result = await send()
           }
           publish(result.document)
-          synced.push(...result.syncedTo)
           pending.slots = pending.slots.filter((edit) => !edits.includes(edit))
           redraw((n) => n + 1)
           const refused = result.results.find((x) => x.reason)
           if (refused?.reason && active.current === docId) showNotice(refused.reason)
         }
         if (active.current === docId) {
-          if (synced.length) {
-            setSync([...new Set(synced)].join('・'))
-            setTimeout(() => setSync(''), 3000)
-          }
           setError('')
         }
         return true
@@ -363,7 +356,7 @@ export function useDocument(docId: string | undefined) {
   /** 打った文字。下書きの欄は確定するまで持つ */
   const type = useCallback((slot: string, text: string) => {
     if (!form) return
-    if (!needsDraft(form.bindings[slot])) { edit(slot, text); return }
+    if (!needsDraft(form.bindings[slot], fieldDict(form.localFields))) { edit(slot, text); return }
     setDrafts((prev) => new Map(prev).set(slot, text))
     setReason(slot, null)
   }, [form, edit, setReason])
@@ -490,7 +483,7 @@ export function useDocument(docId: string | undefined) {
   }, [pages, diffOf])
 
   return {
-    doc, form, pages, slotPage, current, saved, rendered, renderedSaved, marks, counts, total, updates, updatedFields, sync, notice, error,
+    doc, form, pages, slotPage, current, saved, rendered, renderedSaved, marks, counts, total, updates, updatedFields, notice, error,
     pendingCount: slotQueue.length + fieldQueue.size + conflicts.size,
     conflicts, resolveConflict,
     hasLocalEdits: slotQueue.length + fieldQueue.size + conflicts.size + drafts.size + eraDrafts.size > 0,

@@ -2,8 +2,10 @@
 # source: ブラウザから直接送る録音（api が再開できる送信を開始する）
 # output: 保存した版から作った PDF
 # work:   worker の作業用（30 日で消す）
-# forms:  様式の元の PDF とページの画像（pdf/<元の PDF の sha256>/…）。api は読むだけで、画面には期限つきの URL で渡す。
-#         入れるのは管理者（npm run forms:assets）。場所が中身のハッシュなので上書きは起きない
+# forms:  様式の元の PDF とページの画像（pdf/<元の PDF の sha256>/…、事業所の様式は offices/<office_id>/pdf/<sha256>/…）。
+#         画面には期限つきの URL で渡す。場所が中身のハッシュなので上書きは起きない。全体の様式は管理者が入れる（npm run forms:assets）。
+#         責任者・サイト管理者が上げた PDF は、いったん imports/<id>.pdf（事業所は offices/<office_id>/imports/<id>.pdf）に
+#         ブラウザから直接送り、worker が変換して pdf/<sha256>/ に写し、imports/ のほうは消す（docs/再設計/13_DB設計.md）
 
 locals {
   buckets = {
@@ -87,6 +89,18 @@ resource "google_storage_bucket" "forms" {
 
   versioning {
     enabled = false
+  }
+
+  # 様式の PDF の直接送信（resumable upload）のための CORS。画面の Origin だけを許す
+  dynamic "cors" {
+    for_each = length(var.app_origins) > 0 ? [1] : []
+
+    content {
+      origin          = var.app_origins
+      method          = ["PUT", "POST", "OPTIONS"]
+      response_header = ["Content-Type", "Content-Range", "x-goog-resumable", "Range"]
+      max_age_seconds = 3600
+    }
   }
 
   depends_on = [google_project_service.required]

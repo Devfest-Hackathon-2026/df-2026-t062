@@ -101,11 +101,14 @@ export function slots(P) {
   });
 
   // ---------- 具体的内容: 現状・計画の □ ----------
-  const boxes = P.boxes({ in: { x0: 141, x1: 150, y0: 28, y1: 150 } }).sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+  // 上から 2 つずつが 1 行。行の中は左が現状・右が計画（左の □ がわずかに下にある行もあるので、y と x を一緒に比べない。#119）
+  const boxes = P.boxes({ in: { x0: 141, x1: 150, y0: 28, y1: 150 } }).sort((a, b) => a.y0 - b.y0);
   if (boxes.length !== CARE_ITEMS.length * 2) throw new Error(`p9: 具体的内容の □ の数が ${boxes.length} 個（42 個のはず）`);
   CARE_ITEMS.forEach((item, i) => {
-    add(C(`p9_具体的内容_${item}_現状`, boxes[i * 2]));
-    add(C(`p9_具体的内容_${item}_計画`, boxes[i * 2 + 1]));
+    const [current, plan] = [boxes[i * 2], boxes[i * 2 + 1]].sort((a, b) => a.x0 - b.x0);
+    if (Math.abs(current.y0 - plan.y0) > 1) throw new Error(`p9: 具体的内容の「${item}」の □ が同じ行にない`);
+    add(C(`p9_具体的内容_${item}_現状`, current));
+    add(C(`p9_具体的内容_${item}_計画`, plan));
   });
 
   // ---------- 特記 ----------

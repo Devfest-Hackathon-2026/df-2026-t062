@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { missingRequiredKeys } from '../core/required.ts'
+import { REQUIRED_ASSESS } from '../core/fields.ts'
 import { toFormDef } from '../core/form.ts'
 import { readSeed } from '../forms/admin/files.ts'
 import { availableTopics, fieldTargets, mergeSurveyDrafts, reviewItems, stageSurvey, surveyOverlays } from '../src/components/petAssessment.ts'
@@ -20,15 +21,15 @@ const preview: SurveyPreview = {
 
 test('面談の話題は、実際の用紙にあり必須の空欄をフィールドIDで案内する', () => {
   const values = { 'complaint.person': '入力済み', 'cert.careLevel': '要介護2', 'survey.2_2': '見守り等' }
-  const missing = missingRequiredKeys(values)
+  const missing = missingRequiredKeys(values, REQUIRED_ASSESS)
   assert.equal(missing.has('cert.expectedCareLevel'), false)
   assert.equal(missing.has('complaint.family'), false)
-  const hints = availableTopics(values, targets)
+  const hints = availableTopics(values, targets, REQUIRED_ASSESS)
   assert.ok(hints.every(({ keys }) => keys.every((key) => missing.has(key) && targets.has(key))))
   assert.ok(!hints.some(({ title }) => title === 'ご本人の感じ方'))
   assert.equal(targets.get('complaint.person')?.pageIndex, 0)
   assert.equal(targets.get('survey.2_5')?.pageIndex, 5)
-  assert.deepEqual(availableTopics({}, fieldTargets([])), [])
+  assert.deepEqual(availableTopics({}, fieldTargets([]), REQUIRED_ASSESS), [])
 })
 
 test('明確な認定調査票の候補だけを空欄に仮入力し、保存までは確認済みにならない', () => {

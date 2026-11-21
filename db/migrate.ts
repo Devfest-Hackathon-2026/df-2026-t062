@@ -1,14 +1,15 @@
 // db/migrations/*.sql を名前の順に流す（流したものは schema_migrations に残す）。
 //   npm run db:migrate
 //   node db/migrate.ts --forms  … あわせて forms/seed の様式を登録する（リリースの移行の段。中身が同じなら何もしない）
-// 同時に 2 つ走らないように advisory lock を取る。移行は足すだけにする（戻せるように）。
+// 同時に 2 つ走らないように advisory lock を取る。移行は足すだけにする（戻せるように。例外は 0004 の field_values）。
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { closePool, createPool, type Db } from './pool.ts'
 
 const DIR = new URL('./migrations/', import.meta.url)
 
-export async function migrate(db: Db, log: (m: string) => void = () => {}): Promise<string[]> {
+/** stopBefore: その名前の移行の手前で止める（移行の前と後を比べるテストで使う） */
+export async function migrate(db: Db, log: (m: string) => void = () => {}, opts: { stopBefore?: string } = {}): Promise<string[]> {
   const c = await db.connect()
   const applied: string[] = []
   try {
@@ -16,6 +17,7 @@ export async function migrate(db: Db, log: (m: string) => void = () => {}): Prom
     await c.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
     const done = new Set((await c.query<{ name: string }>('SELECT name FROM schema_migrations')).rows.map((r) => r.name))
     for (const name of readdirSync(DIR).filter((f) => f.endsWith('.sql')).sort()) {
+      if (opts.stopBefore && name >= opts.stopBefore) break
       if (done.has(name)) continue
       const sql = readFileSync(new URL(name, DIR), 'utf8')
       await c.query('BEGIN')

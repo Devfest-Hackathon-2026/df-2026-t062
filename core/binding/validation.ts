@@ -1,4 +1,4 @@
-import { BY_KEY } from '../fields.ts'
+import { GLOBAL_DICT, type FieldDict } from '../dictionary.ts'
 import type { Cond, Ref, Binding, Bindings } from './types.ts'
 import { specsAlong } from './conditions.ts'
 import { canToggle } from './edit.ts'
@@ -23,7 +23,8 @@ export function keysOf(b: Binding): string[] {
   if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) out.add(r.key)
   if (b.op === 'date@1') for (const r of b.yearFrom ?? []) out.add(r.key)
   if (b.op === 'ageAt@1') { out.add(b.birth.key); b.at.forEach((r) => out.add(r.key)) }
-  for (const k of Object.keys(BY_KEY.get(b.ref.key)?.requires ?? {})) out.add(k)
+  // 前提（requires）は fields.json の欄だけが持つ（その様式だけの欄は持たない）
+  for (const k of Object.keys(GLOBAL_DICT.get(b.ref.key)?.requires ?? {})) out.add(k)
   return [...out]
 }
 
@@ -35,13 +36,13 @@ export function formKeys(bindings: Bindings): string[] {
 }
 
 /** 対応の確かめ（読み込むときと CI）。key・項目が fields.json にあるか、丸・✓ の直しが決まっているか */
-export function checkBindings(bindings: Bindings): string[] {
+export function checkBindings(bindings: Bindings, dict: FieldDict = GLOBAL_DICT): string[] {
   const errors: string[] = []
   const refOk = (slot: string, r: Ref) => {
-    if (!BY_KEY.has(r.key)) errors.push(`${slot}: fields.json にない key ${r.key}`)
+    if (!dict.get(r.key)) errors.push(`${slot}: ${dict === GLOBAL_DICT ? 'fields.json にない' : 'fields.json にも local_fields にもない'} key ${r.key}`)
     else {
       const names = (r.path ?? []).filter((s): s is string => typeof s === 'string')
-      if (specsAlong(r).length !== names.length + 1) errors.push(`${slot}: ${r.key} に項目 ${names.join('.')} がない`)
+      if (specsAlong(r, dict).length !== names.length + 1) errors.push(`${slot}: ${r.key} に項目 ${names.join('.')} がない`)
     }
   }
   for (const [slot, b] of Object.entries(bindings)) {

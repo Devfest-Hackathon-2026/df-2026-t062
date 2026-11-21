@@ -1,5 +1,6 @@
 
-import { BY_KEY, subFieldsOf, type FieldSpec } from '../fields.ts'
+import { GLOBAL_DICT, type FieldDict } from '../dictionary.ts'
+import { subFieldsOf, type FieldSpec } from '../fields.ts'
 import type { Values, Scalar, Step, Ref, Test, Cond } from './types.ts'
 import { isEmpty, str, same, getRef, Draft } from './values.ts'
 
@@ -9,9 +10,9 @@ import { isEmpty, str, same, getRef, Draft } from './values.ts'
 
 /** ref の場所の欄・項目の定義と、その項目が入っているまとまり（前提を見る相手）の場所 */
 
-export function specsAlong(ref: Ref): { spec: FieldSpec, parent: Step[] | null }[] {
+export function specsAlong(ref: Ref, dict: FieldDict = GLOBAL_DICT): { spec: FieldSpec, parent: Step[] | null }[] {
 
-  const top = BY_KEY.get(ref.key)
+  const top = dict.get(ref.key)
   if (!top) return []
   const out: { spec: FieldSpec, parent: Step[] | null }[] = [{ spec: top, parent: null }]
   let cur = top
@@ -27,19 +28,19 @@ export function specsAlong(ref: Ref): { spec: FieldSpec, parent: Step[] | null }
   return out
 }
 
-export const specOf = (ref: Ref): FieldSpec | undefined => specsAlong(ref).at(-1)?.spec
+export const specOf = (ref: Ref, dict: FieldDict = GLOBAL_DICT): FieldSpec | undefined => specsAlong(ref, dict).at(-1)?.spec
 
 const holds = (v: unknown, allowed: unknown[]) => (Array.isArray(v) ? v.some((x) => allowed.includes(x)) : allowed.includes(v))
 
 interface Need { ref: Ref, allowed: unknown[], multi: boolean, label: string }
 
 /** ref の欄に意味があるための前提（fields.json の requires）で、満たされていないもの */
-function unmetRequires(values: Values, ref: Ref): Need[] {
+function unmetRequires(values: Values, ref: Ref, dict: FieldDict = GLOBAL_DICT): Need[] {
   const out: Need[] = []
-  for (const { spec, parent } of specsAlong(ref)) {
+  for (const { spec, parent } of specsAlong(ref, dict)) {
     for (const [k, allowed] of Object.entries(spec.requires ?? {})) {
       const target: Ref = parent === null ? { key: k } : { key: ref.key, path: [...parent, k] }
-      const tspec = specOf(target)
+      const tspec = specOf(target, dict)
       if (!holds(getRef(values, target), allowed)) out.push({ ref: target, allowed, multi: tspec?.type === 'multi', label: tspec?.label ?? k })
     }
   }
@@ -90,17 +91,17 @@ function satisfy(d: Draft, needs: Need[], strict = false): string | null {
 
 /** when（strict）と前提（requires）の両方を満たす直しを下書きに入れる。だめなら理由 */
 export function prepare(d: Draft, values: Values, when: Cond | undefined, ref: Ref): string | null {
-  const w = whenNeeds(values, when, ref)
+  const w = whenNeeds(values, when, ref, d.dict)
   if (typeof w === 'string') return w
-  return satisfy(d, w, true) ?? satisfy(d, unmetRequires(values, ref))
+  return satisfy(d, w, true) ?? satisfy(d, unmetRequires(values, ref, d.dict))
 }
 
 /** 対応の when を、前提と同じ形（ref が 1 つ、値の一覧）にできれば直す。できなければ理由 */
-function whenNeeds(values: Values, c: Cond | undefined, own: Ref): Need[] | string {
+function whenNeeds(values: Values, c: Cond | undefined, own: Ref, dict: FieldDict): Need[] | string {
   if (!c || holdsCond(values, c, own)) return []
   if ('is' in c && c.ref && !same(c.ref, own)) {
     const allowed = 'eq' in c.is ? [c.is.eq] : 'in' in c.is ? c.is.in : 'has' in c.is ? [c.is.has] : null
-    const s = specOf(c.ref)
+    const s = specOf(c.ref, dict)
     if (allowed) return [{ ref: c.ref, allowed, multi: s?.type === 'multi', label: s?.label ?? c.ref.key }]
   }
   return 'この欄は、いまの値では書けません'

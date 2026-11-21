@@ -125,6 +125,19 @@ resource "google_storage_bucket_iam_member" "api_forms" {
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# 上げる PDF の送信 URL を作る（imports/ の下に新しく置くだけ。上書き・削除はできない）
+resource "google_storage_bucket_iam_member" "api_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
+}
+
 # 録音の送信 URL・様式の画像の期限つきの URL の署名（自分自身の鍵で署名する）
 resource "google_service_account_iam_member" "api_signs_as_itself" {
   service_account_id = google_service_account.runtime.name
@@ -186,10 +199,44 @@ resource "google_storage_bucket_iam_member" "worker_work" {
   member = "serviceAccount:${google_service_account.worker.email}"
 }
 
+# 様式の取り込み: 上げたままの PDF を読み、元の PDF とページの画像を pdf/<sha256>/ に新しく置く（上書きはしない）
+resource "google_storage_bucket_iam_member" "worker_forms_read" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_storage_bucket_iam_member" "worker_forms_create" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# 変換が済んだ・失敗して 7 日たった上げたままの PDF を消す（imports/ の下だけ）
+resource "google_storage_bucket_iam_member" "worker_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.worker.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
+}
+
 # 書き方の相談で、api が Gemini を呼ぶ
 resource "google_project_iam_member" "api_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# 責任者が職員を登録する・サイト管理者が最初の責任者を登録するときに、api が Identity Platform のアカウントを作る（#109）。
+# 画面からのアカウント作成は禁止のまま（identity.tf）。プロジェクト単位のロールで、アカウントごとには絞れない
+resource "google_project_iam_member" "api_firebaseauth_admin" {
+  project = var.project_id
+  role    = "roles/firebaseauth.admin"
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 

@@ -14,7 +14,7 @@
 | 誰が書いたか | 欄ごとに `by`（`ai`／`cm`）を持つ。AI はケアマネの欄を書き換えない |
 | 保存は書類ごと | 今の値（`field_values`）と、その書類で保存した値（`document_saved`）を分けて持つ。画面の印（橙・黄・緑の下線）は、この 2 つの違いで出す |
 | 版は書き換えない | 保存のたびに、保存した値の全部を `revisions` に残す。PDF は最新の版から作る（保存していない AI の値は出ない） |
-| 基本情報は 1 つ | fields.json で `shared` の欄（氏名・性別・生年月日・年齢・郵便番号・住所・電話）は、`document_id` を NULL にして利用者に 1 つだけ持つ。どの書類で直しても、全部の書類に入る |
+| 値は書類ごと | どの値も、どれか 1 つの書類に属する（`field_values.document_id` は必須）。基本情報（氏名・住所など 7 欄）も書類ごと。書類を作るときに、元にする種類（`form_kinds.create_from`）の書類から同じ key の値を写し、写したあとはつながない。利用者一覧の氏名（`clients.name`）は、主な書類（`form_kinds.is_primary`）の氏名を直したときだけ変わる（2026-11-18） |
 | 用紙を変える AI の入口は 1 つ | `applyBatch`。書類の行を `FOR UPDATE` で止め、今の用紙を読み直し、書き換えの決まりで書く（1 回のトランザクション）。ケアマネの直し（`patchFields`）も同じ行を止めるので、同時に来ても順に入る |
 
 ## 表
@@ -25,13 +25,13 @@
 | `staff` | ケアマネ | `auth_uid`（Identity Platform の uid）、`name`、`email`、`role` |
 | `clients` | 利用者 | `name`、`status`（在宅／入院中／入所中）、`next_visit_at`（iPad の一覧の「次の訪問」） |
 | `people` | 話した人 | `label`（春子など）、`role`（本人・家族・専門職・ケアマネ・不明）、`relation`。次の録音でも同じ人にする |
-| `form_templates` | 様式 | `kind`（`assessment`／`admission`）、`name`、`title`、`publisher`、`source_url`、`office_id`（NULL なら全事業所）。種類と使う範囲ごとに 1 つ。事業所の様式があれば、その事業所ではそれを使う |
-| `form_template_versions` | 様式の版 | `version`、`status`（draft → published → retired）、`schemas`（欄の位置）、`bindings`（対応）、`pages`、`content_sha`、`base_pdf_sha256`。使う版（published）は様式に 1 つ。中身は書き換えない・消さない |
-| `documents` | 書類 | `kind`（`assessment`／`admission`）、`template_version_id`（使う様式の版）。1 利用者 1 種類 1 つ |
-| `field_values` | 今の値（シート） | `key`、`value`、`ai_value`（最後に AI が書いた値）、`by`、`batch_id`、`cite`（根拠の発言の id）。一意: `(client_id, document_id, key)`（NULLS NOT DISTINCT） |
+| `form_templates` | 様式 | `kind`（`form_kinds` の key）、`name`、`title`、`publisher`、`source_url`、`office_id`（NULL なら全事業所）。種類と使う範囲ごとに 1 つ。事業所の様式があれば、その事業所ではそれを使う |
+| `form_template_versions` | 様式の版 | `version`、`status`（draft → published → retired）、`schemas`（欄の位置）、`bindings`（対応）、`pages`、`local_fields`（その様式だけの欄）、`content_sha`、`base_pdf_sha256`。使う版（published）は様式に 1 つ。公開した版と退いた版の中身は書き換えない・消さない。下書きの間は直せて、消せる |
+| `documents` | 書類 | `kind`（`form_kinds` の key）、`seq`（同じ利用者・同じ種類の何通目か）、`template_version_id`（使う様式の版。下書きの版は指せない）。一意: `(client_id, kind, seq)` |
+| `field_values` | 今の値（シート） | `key`、`value`、`ai_value`（最後に AI が書いた値）、`by`、`batch_id`、`cite`（根拠の発言の id）。`document_id` は必須。一意: `(client_id, document_id, key)` |
 | `field_history` | 前の値 | 書き換えるたびに追記 |
 | `document_saved` | 保存した値 | `(document_id, key)` ごとに `value`・`by` |
-| `document_sync_reviews` | 書類間の差異を最後に確認した元書類の値 | 元書類・対象書類・`key` ごとに `source_value`、確認者・確認日時。欄の値そのものと別に保持し、次の元書類変更を判定する |
+| `document_sync_reviews` | 使わない（2026-11-18 に書類どうしの食い違いを知らせる機能をやめた。行を足さない。表は消さない） | |
 | `revisions` | 版 | `rev`、`scope`（`hunk`／`page`／`document`）、`values`（保存した値の全部）、`template_version_id`（PDF はこの様式の版から作る） |
 | `batches` | 書き込み | `kind`（`recording`／`copy`／`seed`）、`label`（「AI 書き込み 2・1/25 の録音」など）、`changes`（key・op・before・after）、`kept`（書き換えなかったケアマネの欄） |
 | `recordings` | 録音（原本の音声） | `object_path`（Cloud Storage の場所）、`mime`、`bytes`、`duration_ms`、`status` |
@@ -40,9 +40,9 @@
 | `exports` | 出した PDF | `revision_rev`、`template_version_id`、`object_path` |
 | `audit_events` | 操作の記録（追記だけ） | `action`（client.create／document.edit／document.save／document.pdf／recording.start／form.rebase など）、`detail`（数だけ。欄の値や話の中身は入れない。form.rebase は移した版の番号と中身の指紋） |
 
-### 書類間の差異
+### 再設計で足した表
 
-入院時情報提供書を作るときにアセスメントの値を写す。`shared` 以外の欄はその後独立する。両方の様式の版が読む `key` の共通部分を比較し、`shared` は除く。最初の確認済み値は作成時の `copy` バッチの `after`（写していない空欄は NULL）を使う。判断後は `document_sync_reviews` の元書類の値を更新する。元書類の現在値が保存済み値と違う間は差異を表示するが反映・維持を受け付けない。反映は対象書類の今の値だけを変え、保存済み版と PDF は「書類を保存」するまで変わらない。監査記録には判断と欄の `key` だけを残し、値は入れない。
+`form_kinds`（書類の種類と種類ごとの動き）・`form_imports`・`site_admins`・`inspections`・`inspection_findings`・`recording_summaries`・`office_topics` と、`staff.disabled_at`。列と決まりは [再設計/13_DB設計.md](再設計/13_DB設計.md)（移行は `db/migrations/0003_redesign.sql`・`0004_field_values_per_document.sql`）。
 
 ## 録音ジョブの失敗と再配信
 

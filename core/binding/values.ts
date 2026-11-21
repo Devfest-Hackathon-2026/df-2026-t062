@@ -1,4 +1,5 @@
 
+import type { FieldDict } from '../dictionary.ts'
 import type { Values, Change, Scalar, Step, Ref } from './types.ts'
 
 // ---------- 値 ----------
@@ -91,7 +92,9 @@ export class Misplaced extends Error {}
 export class Draft {
   readonly base: Values
   readonly next: Values
-  constructor(base: Values) { this.base = base; this.next = { ...base } }
+  /** 書類の様式の版の欄の辞書（型と前提を見る） */
+  readonly dict: FieldDict
+  constructor(base: Values, dict: FieldDict) { this.base = base; this.next = { ...base }; this.dict = dict }
   get(ref: Ref) { return getRef(this.next, ref) }
   set(ref: Ref, leaf: unknown) {
     this.next[ref.key] = setIn(this.next[ref.key], ref.path ?? [], leaf)

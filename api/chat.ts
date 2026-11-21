@@ -2,16 +2,14 @@
 // 道具: 用紙を読む（read_form）、足りない欄（missing_fields）、録音を探す（search_records）、書き換えの案（propose_edit）。
 // 案は返すだけで、用紙は変えない（ケアマネが画面で「用紙に入れる」を押したときに PATCH /fields で入る）。
 // 保存・PDF・外に送る道具は持たせない。指示文・答え・用紙の値はログに出さない。
-import type { Binding } from '../core/binding.ts'
-import { BY_KEY, choicesOf, FIELD_LIST, subFieldsOf, type FieldSpec } from '../core/fields.ts'
-import type { FormKind } from '../core/form.ts'
+import { fieldDict, type FieldDict } from '../core/dictionary.ts'
+import { choicesOf, subFieldsOf, type FieldSpec } from '../core/fields.ts'
+import type { FormDef, FormKind } from '../core/form.ts'
 import { sameValue } from '../core/apply-batch.ts'
 import { compactValue } from '../core/normalize.ts'
-import { missingRequiredKeys } from '../core/required.ts'
+import { missingRequiredKeys, type RequiredKeys } from '../core/required.ts'
 import { validValue } from '../core/schema.ts'
 import { PLACEMENT_RULES } from '../worker/vertex/prompts.ts'
-import ASSESSMENT_BINDINGS from '../forms/seed/assessment/bindings.json' with { type: 'json' }
-import ADMISSION_BINDINGS from '../forms/seed/admission/bindings.json' with { type: 'json' }
 
 export interface ChatMessage { role: 'user' | 'pet', text: string }
 /** before・after は欄の値（文章の欄は文、まとまりの欄は object や行の配列） */
@@ -19,8 +17,17 @@ export interface ChatProposal { key: string, label: string, before: unknown, aft
 /** steps は AI が使った道具の作業ログ（1 行ずつ） */
 export interface ChatReply { reply: string, steps: string[], proposals: ChatProposal[] }
 
-/** 道具が読む書類の中身（DocumentView の一部） */
-export interface ChatDocument { kind: FormKind, fields: Record<string, { value: unknown, by: string }> }
+/** 道具が読む書類の中身（DocumentView の一部）と、書類の種類の名前・様式の版 */
+export interface ChatDocument {
+  kind: FormKind
+  /** 書類の種類の名前（form_kinds.name） */
+  name: string
+  /** 書類の様式の版。読む欄・印字欄の対応・その様式だけの欄の定義は、ここから読む（docs/再設計/16 の「書き方の相談」） */
+  form: Pick<FormDef, 'bindings' | 'keys' | 'localFields'>
+  fields: Record<string, { value: unknown, by: string }>
+  /** 書類の種類の必須の欄（form_kinds.required）。足りない欄の道具が使う */
+  required?: RequiredKeys
+}
 export interface ChatRecording { recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }
 
 // Gemini の会話の形（@google/genai の Content・Part の一部）。モデルの部品は thoughtSignature ごと次の呼び出しに返す
@@ -39,8 +46,6 @@ export type ChatModel = (req: { system: string, contents: Content[], tools: Tool
 /** 1 回の相談で Gemini を呼ぶ上限。最後の 1 回は道具なしで、そこまでのことを文で答えさせる */
 export const MAX_CALLS = 8
 
-const FORM_KEY: Record<FormKind, string> = { assessment: 'assess', admission: 'adm' }
-const FORM_NAME: Record<FormKind, string> = { assessment: 'アセスメント', admission: '入院時情報提供書' }
 const TEXT_TYPES = new Set(['text', 'longtext'])
 /** 値を文字のまま受ける欄。ほかの欄（まとまり・数・はい／いいえ・複数選ぶ）は JSON で受ける */
 const PLAIN_TYPES = new Set(['text', 'longtext', 'enum', 'date'])
@@ -48,7 +53,20 @@ const MAX_HITS = 40
 /** 空の欄の形を返す長さの上限（字）。入院時情報提供書は収まり、アセスメントは収まらないので語で絞らせる */
 const SHAPE_BUDGET = 8000
 
-const formFields = (kind: FormKind) => FIELD_LIST.filter((f) => f.forms?.[FORM_KEY[kind]])
+const dictOf = (doc: ChatDocument): FieldDict => fieldDict(doc.form.localFields)
+const fieldsCache = new WeakMap<object, FieldSpec[]>()
+/** 書類の版が読む欄（fields.json の順、そのあとにその様式だけの欄） */
+function formFields(doc: ChatDocument): FieldSpec[] {
+  const hit = fieldsCache.get(doc.form)
+  if (hit) return hit
+  const keys = new Set(doc.form.keys)
+  const out = dictOf(doc).list.filter((f) => keys.has(f.key))
+  fieldsCache.set(doc.form, out)
+  return out
+}
+/** 書類の版が読む欄の定義。読まない欄・ない欄は undefined */
+const fieldOf = (doc: ChatDocument, key: unknown): FieldSpec | undefined =>
+  typeof key === 'string' && doc.form.keys.includes(key) ? dictOf(doc).get(key) : undefined
 const isEmpty = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
 const terms = (q: unknown) => String(q ?? '').split(/[\s、,，]+/).map((t) => t.trim()).filter(Boolean)
 const matches = (text: string, ts: string[]) => ts.some((t) => text.includes(t))
@@ -82,10 +100,10 @@ export const TOOLS: ToolDecl[] = [
   },
 ]
 
-export function chatSystem(kind: FormKind, others: FormKind[] = []): string {
-  const form = FORM_NAME[kind]
+export function chatSystem(doc: Pick<ChatDocument, 'name'>, others: Pick<ChatDocument, 'kind' | 'name'>[] = []): string {
+  const form = doc.name
   const otherDocs = others.length
-    ? `\nこの利用者のほかの書類: ${others.map((k) => `${FORM_NAME[k]}（document: "${k}"）`).join('、')}。read_form の document で読める。\n`
+    ? `\nこの利用者のほかの書類: ${others.map((d) => `${d.name}（document: "${d.kind}"）`).join('、')}。read_form の document で読める。\n`
     : ''
   return `あなたは、ケアマネジャーが${form}の用紙を書くのを手伝う係（画面の「ペット」）です。道具を使って調べてから、短く、やさしい言葉で答えてください。
 ${otherDocs}
@@ -121,17 +139,17 @@ function shapeOf(f: FieldSpec): Shape {
   return { type: f.type, ...(c.length ? { choices: c } : {}) }
 }
 
-const BINDINGS: Record<FormKind, Record<string, Binding>> = {
-  assessment: ASSESSMENT_BINDINGS as unknown as Record<string, Binding>,
-  admission: ADMISSION_BINDINGS as unknown as Record<string, Binding>,
-}
+const printedCache = new WeakMap<object, Map<string, string>>()
 
-/** 用紙に印字するときだけ付く印（値には入らない）。様式の対応（bindings の prefix）から作る */
-function printedNotes(kind: FormKind): Map<string, string> {
+/** 用紙に印字するときだけ付く印（値には入らない）。書類の様式の版の対応（bindings の prefix）から作る */
+function printedNotes(doc: ChatDocument): Map<string, string> {
+  const hit = printedCache.get(doc.form)
+  if (hit) return hit
   const out = new Map<string, string>()
-  for (const b of Object.values(BINDINGS[kind])) {
+  printedCache.set(doc.form, out)
+  for (const b of Object.values(doc.form.bindings)) {
     if (b.op !== 'text@1' || !b.prefix) continue
-    const f = BY_KEY.get(b.ref.key)
+    const f = dictOf(doc).get(b.ref.key)
     if (!f || out.has(f.key)) continue
     const sub = (k: unknown) => subFieldsOf(f).find((s) => s.key === k)
     const flag = sub(b.prefix.flag)
@@ -140,7 +158,6 @@ function printedNotes(kind: FormKind): Map<string, string> {
   }
   return out
 }
-const PRINTED: Record<FormKind, Map<string, string>> = { assessment: printedNotes('assessment'), admission: printedNotes('admission') }
 
 function readForm(doc: ChatDocument, query: unknown, other = false) {
   const ts = terms(query)
@@ -148,10 +165,11 @@ function readForm(doc: ChatDocument, query: unknown, other = false) {
   const filled: { key: string, label: string, type: string, value: string, shape?: Shape, printed?: string }[] = []
   const emptyText: { key: string, label: string, note?: string }[] = []
   const empty: { key: string, label: string, type: string, shape?: Shape }[] = []
-  for (const f of formFields(doc.kind)) {
+  const printedOf = printedNotes(doc)
+  for (const f of formFields(doc)) {
     if (!pick(f)) continue
     const v = doc.fields[f.key]?.value
-    const printed = PRINTED[doc.kind].get(f.key)
+    const printed = printedOf.get(f.key)
     // 形は語で絞ったときだけ（全部の欄の選択肢を返すと長くなる）
     const shape = ts.length && !TEXT_TYPES.has(f.type) ? shapeOf(f) : undefined
     if (!isEmpty(v)) filled.push({ key: f.key, label: f.label, type: f.type, value: show(v), ...(shape ? { shape } : {}), ...(printed ? { printed } : {}) })
@@ -159,19 +177,19 @@ function readForm(doc: ChatDocument, query: unknown, other = false) {
     else if (f.type !== 'image') empty.push({ key: f.key, label: f.label, type: f.type, shape: shapeOf(f) })
   }
   // ほかの書類には案を出せないので、空の欄は返さない
-  if (other) return { document: FORM_NAME[doc.kind], filled }
+  if (other) return { document: doc.name, filled }
   // 空のまとまりの欄も、形つきで返す（1 回読めば案を組み立てられる）。長すぎるときは省き、語で絞らせる
-  if (ts.length || JSON.stringify(empty).length <= SHAPE_BUDGET) return { document: FORM_NAME[doc.kind], filled, emptyText, empty }
+  if (ts.length || JSON.stringify(empty).length <= SHAPE_BUDGET) return { document: doc.name, filled, emptyText, empty }
   // 一覧だけでも長い（アセスメントで約 1 万字。会話のたびに送り直す）ので、空のまとまりの欄は返さない
-  return { document: FORM_NAME[doc.kind], filled, emptyText, hint: '欄が多いので、空のまとまりの欄（選ぶ欄・表など）は省いた。query で欄の名前を絞って読むと、形つきで返す' }
+  return { document: doc.name, filled, emptyText, hint: '欄が多いので、空のまとまりの欄（選ぶ欄・表など）は省いた。query で欄の名前を絞って読むと、形つきで返す' }
 }
 
 function missingFields(doc: ChatDocument) {
-  if (doc.kind !== 'assessment') return { missing: [] }
+  if (!doc.required?.length) return { missing: [] }
   const values = Object.fromEntries(Object.entries(doc.fields).map(([k, f]) => [k, f.value]))
-  const missing = missingRequiredKeys(values)
+  const missing = missingRequiredKeys(values, doc.required)
   return {
-    missing: formFields(doc.kind).filter((f) => missing.has(f.key)).map((f) => {
+    missing: formFields(doc).filter((f) => missing.has(f.key)).map((f) => {
       const src = f.source ?? []
       return { key: f.key, label: f.label, how: src.length && src.every((s) => s.startsWith('doc')) ? '書類から' : '面談で聞く' }
     }),
@@ -202,14 +220,16 @@ function parseValue(f: FieldSpec, raw: unknown): { value: unknown } | string {
 
 /** 書き換えの案を確かめる。通れば案、通らなければ理由（欄の名前つき） */
 export function checkProposal(doc: ChatDocument, key: unknown, value: unknown): ChatProposal | string {
-  const f = typeof key === 'string' ? BY_KEY.get(key) : undefined
-  if (!f) return `${String(key)}（その欄はありません）`
-  if (!f.forms?.[FORM_KEY[doc.kind]]) return `${f.label}（この書類にない欄です）`
-  if (f.type === 'image') return `${f.label}（図の欄は案を出せません）`
+  const dict = dictOf(doc)
+  const known = typeof key === 'string' ? dict.get(key) : undefined
+  if (!known) return `${String(key)}（その欄はありません）`
+  if (known.type === 'image') return `${known.label}（図の欄は案を出せません）`
+  const f = fieldOf(doc, key)
+  if (!f) return `${known.label}（この書類にない欄です）`
   const parsed = parseValue(f, value)
   if (typeof parsed === 'string') return `${f.label}（${parsed}）`
   const after = f.type === 'object' || f.type === 'list' ? compactValue(parsed.value) : parsed.value
-  if (!validValue(f.key, after)) return `${f.label}（入れられない値です）`
+  if (!validValue(f.key, after, {}, dict)) return `${f.label}（入れられない値です）`
   const before = doc.fields[f.key]?.value ?? null
   if (sameValue(before, after)) return `${f.label}（今の値と同じです）`
   return { key: f.key, label: f.label, before, after }
@@ -228,7 +248,7 @@ export async function runChat({ model, document, others = [], recordings, messag
   onStep?: (step: string) => void
 }): Promise<ChatReply> {
   const byKind = new Map(others.filter((d) => d.kind !== document.kind).map((d) => [d.kind, d]))
-  const system = chatSystem(document.kind, [...byKind.keys()])
+  const system = chatSystem(document, [...byKind.values()])
   const contents: Content[] = messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }))
   const steps: string[] = []
   const step = (t: string) => { steps.push(t); onStep?.(t) }
@@ -260,7 +280,7 @@ export async function runChat({ model, document, others = [], recordings, messag
           step(`用紙を読めませんでした：${kind}`)
         } else {
           response = readForm(target, args.query, target !== document)
-          const head = target === document ? '' : FORM_NAME[target.kind]
+          const head = target === document ? '' : target.name
           step(head || q ? `用紙を読みました（${head}${q}）` : '用紙を読みました')
         }
       } else if (name === 'missing_fields') {
@@ -272,9 +292,9 @@ export async function runChat({ model, document, others = [], recordings, messag
       } else if (name === 'propose_edit') {
         const r = checkProposal(document, args.key, args.value)
         if (typeof r === 'string') {
-          const f = typeof args.key === 'string' ? BY_KEY.get(args.key) : undefined
+          const f = fieldOf(document, args.key)
           // 欄はあるのに値が通らないときは、欄の形を返して組み立て直させる
-          response = { ok: false, reason: r, ...(f?.forms?.[FORM_KEY[document.kind]] && f.type !== 'image' ? { shape: shapeOf(f) } : {}) }
+          response = { ok: false, reason: r, ...(f && f.type !== 'image' ? { shape: shapeOf(f) } : {}) }
           step(`案を作れませんでした：${r}`)
         } else {
           proposals.set(r.key, r)

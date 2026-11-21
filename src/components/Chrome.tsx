@@ -1,7 +1,7 @@
 // PC の上の帯（キャンバスの header と同じ）と、小さな共通部品
 import { useAuth } from '../lib/auth.tsx'
 
-export function PcHeader({ staffName }: { staffName: string }) {
+export function PcHeader({ staffName, roleLabel = 'ケアマネ' }: { staffName: string, roleLabel?: string }) {
   const auth = useAuth()
   return (
     <header style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 24px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA' }}>
@@ -9,7 +9,7 @@ export function PcHeader({ staffName }: { staffName: string }) {
         <Logo size={32} />
         <div style={{ fontWeight: 700, fontSize: 15 }}>ケア書類アシスタント<span style={{ fontWeight: 400, color: '#5A6270', fontSize: 12, marginLeft: 4 }}>（仮）</span></div>
       </div>
-      <button type="button" onClick={() => void auth.signOut()} title="ログアウト" style={{ font: 'inherit', fontSize: 13, color: '#5A6270', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>{staffName}（ケアマネ）</button>
+      <button type="button" onClick={() => void auth.signOut()} title="ログアウト" style={{ font: 'inherit', fontSize: 13, color: '#5A6270', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>{staffName}（{roleLabel}）</button>
     </header>
   )
 }

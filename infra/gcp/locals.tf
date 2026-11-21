@@ -49,6 +49,7 @@ locals {
     GCS_SOURCE_BUCKET    = google_storage_bucket.source.name
     GCS_OUTPUT_BUCKET    = google_storage_bucket.output.name
     GCS_WORK_BUCKET      = google_storage_bucket.work.name
+    GCS_FORMS_BUCKET     = google_storage_bucket.forms.name
     QUEUE_MODE           = "tasks"
     TASKS_QUEUE          = google_cloud_tasks_queue.jobs.id
     WORKER_URL           = local.worker_url
@@ -57,6 +58,10 @@ locals {
     DB_USER              = local.worker_db_user
     DB_NAME              = google_sql_database.app.name
   }
+
+  # 様式の置き場の中で、上げたままの PDF の場所（imports/<id>.pdf と offices/<office_id>/imports/<id>.pdf）だけに当てる IAM の条件
+  forms_objects           = "projects/_/buckets/${local.buckets.forms}/objects"
+  forms_imports_condition = "resource.name.startsWith(\"${local.forms_objects}/imports/\") || resource.name.extract(\"${local.forms_objects}/offices/{office}/imports/\") != \"\""
 
   # DB 移行のジョブは api の実行用サービスアカウント（= DB ユーザー）で動く
   migrate_env = {
