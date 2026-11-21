@@ -199,6 +199,17 @@ test('根拠は要約の行まで: cite は、挙げた要約の行の id（知�
   assert.deepEqual(r.values['summary.overall'].cite, { kind: 'summary', ids: ['u-w1'] })
 })
 
+test('根拠のない値は書かない: 挙げた要約の行がない値（空、または知らない行だけ）は捨て、書けなかった欄にする', async () => {
+  const { newLlm } = script(answers({
+    '書く:health': () => ({ 'health.history': { value: '11 月に脳梗塞で入院。', from: [] } }),
+    '書く:wishes': () => ({ 'complaint.person': { value: 'できるだけ自分でやりたい。', from: ['nothing-1'] } }),
+  }))
+  const r = await write(newLlm)
+  assert.equal(r.values['health.history'], undefined, '根拠を挙げていない値は、読んだ要約の行を根拠にして残さない')
+  assert.equal(r.values['complaint.person'], undefined, '知らない行だけを挙げた値も残さない')
+  assert.ok(r.incompleteFields.includes('health.history') && r.incompleteFields.includes('complaint.person'), '書けなかった欄として返す')
+})
+
 // ---------- 最後のチェック ----------
 
 test('最後のチェック: 切った部分は入らない。全部切られた欄は書かない（前の値が残る）。項目の説明は渡さない', async () => {
