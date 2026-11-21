@@ -187,10 +187,11 @@ export function topicWriter(newLlm: () => Llm, opts: TopicWriterOptions = {}): T
             if (v === null) continue
             const from = (Array.isArray(rec.from) ? rec.from : []).filter((x): x is string => typeof x === 'string').map((x) => refs.get(x.trim().replace(/^\[|\]$/g, '')))
             let ids = [...new Set(from.filter((x): x is string => !!x))]
+            // 根拠の要約の行を 1 つも挙げていない値は書かない（読んだ要約すべてを根拠にして残さない）
             if (!ids.length) {
-              bump('根拠のない値')
-              const read = new Set(chosen.get(s.key)?.topics ?? [])
-              ids = u.lines.filter((l) => read.has(l.topic)).map((l) => l.id)
+              bump('根拠のない値を捨てた')
+              incomplete.add(s.key)
+              continue
             }
             out.push({ spec: s, value: v, ids })
           }

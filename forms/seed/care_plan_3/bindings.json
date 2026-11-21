@@ -1,0 +1,93 @@
+{
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "作成年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "作成年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "作成年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "週間枠": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.weekly"
+    }
+  },
+  "日常生活活動": {
+    "op": "join@1",
+    "ui": "area",
+    "ref": {
+      "key": "dailySchedule"
+    },
+    "where": {
+      "rhythm": {
+        "nonEmpty": true
+      }
+    },
+    "show": "rhythm",
+    "label": {
+      "of": "time",
+      "map": {
+        "0": "0:00",
+        "1": "1:00",
+        "2": "2:00",
+        "3": "3:00",
+        "4": "4:00",
+        "5": "5:00",
+        "6": "6:00",
+        "7": "7:00",
+        "8": "8:00",
+        "9": "9:00",
+        "10": "10:00",
+        "11": "11:00",
+        "12": "12:00",
+        "13": "13:00",
+        "14": "14:00",
+        "15": "15:00",
+        "16": "16:00",
+        "17": "17:00",
+        "18": "18:00",
+        "19": "19:00",
+        "20": "20:00",
+        "21": "21:00",
+        "22": "22:00",
+        "23": "23:00"
+      }
+    },
+    "sep": "\n"
+  },
+  "週単位以外": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.nonWeeklyServices"
+    }
+  }
+}

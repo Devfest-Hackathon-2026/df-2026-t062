@@ -16,6 +16,9 @@ export interface TemplateSlot {
   width: number
   height: number
   fontSize?: number
+  fontName?: string
+  color?: string
+  borderWidth?: number
   lineHeight?: number
   alignment?: 'left' | 'center' | 'right'
   verticalAlignment?: 'top' | 'middle' | 'bottom'
@@ -31,6 +34,25 @@ export interface FormPage {
   /** mm */
   width: number
   height: number
+  /** 保存値から印字時だけ展開する。様式の種類ではなく、この宣言で改ページを決める。 */
+  print?: { type: 'text' } | {
+    type: 'table'
+    key: string
+    nested: string[]
+    slots: string[]
+    rowsPerPage: number
+    rowHeight: number
+  } | {
+    type: 'timeline'
+    key: string
+    slot: string
+    days: string[]
+    dayField: string
+    startField: string
+    endField: string
+    labelField: string
+    activity?: { key: string, slot: string, timeField: string, labelField: string }
+  }
 }
 
 /** api が画面に渡す様式の版（中身は変わらないので、ブラウザが覚えておける。置き場の場所は渡さない） */

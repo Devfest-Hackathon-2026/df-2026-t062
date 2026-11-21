@@ -2,9 +2,9 @@
 // 元の PDF は、その版が指す PDF（非公開の置き場 forms の pdf/<sha256>/base.pdf。npm run forms:assets が入れる）。
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { renderAll } from '../core/binding.ts'
 import { basePdfPath, type FormVersion } from '../db/forms.ts'
 import type { Storage } from './storage.ts'
+import { expandPrintLayout } from './pdf-layout.ts'
 
 /** 様式の元の PDF が、まだ置き場にない（npm run forms:assets） */
 export class FormUnavailable extends Error {}
@@ -28,10 +28,26 @@ export async function makePdf(storage: Storage, v: FormVersion, values: Record<s
     p.catch(() => bases.delete(v.id))
     bases.set(v.id, p)
   }
-  const template = { basePdf: await bases.get(v.id)!, schemas: v.schemas }
+  const pages = expandPrintLayout(v, values)
+  let basePdf = await bases.get(v.id)!
+  if (v.pages.some((p) => p.print)) {
+    const { PDFDocument } = await import('@pdfme/pdf-lib')
+    const source = await PDFDocument.load(basePdf)
+    const expanded = await PDFDocument.create({ updateMetadata: false })
+    for (const p of await expanded.copyPages(source, pages.map((p) => p.sourceIndex))) expanded.addPage(p)
+    basePdf = own(await expanded.save())
+  }
+  // 各ページの入力名を独立させ、継続ページが前ページの値で置き換わらないようにする。
+  const input: Record<string, string> = {}
+  const schemas = pages.map((page, pageIndex) => page.schemas.map((slot) => {
+    const name = `page${pageIndex}__${slot.name}`
+    input[name] = page.input[slot.name] ?? ''
+    return { ...slot, name }
+  }))
+  const template = { basePdf, schemas }
   const pdf = await generate({
     template: template as never,
-    inputs: [renderAll(v.bindings, values)],
+    inputs: [input],
     plugins: { text, circleMark } as never,
     options: { font: { BIZUDPGothic: { data: await font, fallback: true, subset: true } } },
   })

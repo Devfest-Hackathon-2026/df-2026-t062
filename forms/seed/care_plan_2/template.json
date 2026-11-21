@@ -1,0 +1,307 @@
+{
+  "basePdf": "base.pdf",
+  "schemas": [
+    [
+      {
+        "name": "利用者名",
+        "type": "text",
+        "position": {
+          "x": 29,
+          "y": 30.8
+        },
+        "width": 40,
+        "height": 5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_y",
+        "type": "text",
+        "position": {
+          "x": 231,
+          "y": 23.3
+        },
+        "width": 10,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_m",
+        "type": "text",
+        "position": {
+          "x": 247,
+          "y": 23.3
+        },
+        "width": 8,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_d",
+        "type": "text",
+        "position": {
+          "x": 262,
+          "y": 23.3
+        },
+        "width": 8,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "ニーズ",
+        "type": "text",
+        "position": {
+          "x": 20.5,
+          "y": 54
+        },
+        "width": 26,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "長期目標",
+        "type": "text",
+        "position": {
+          "x": 48.5,
+          "y": 54
+        },
+        "width": 24,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "長期期間",
+        "type": "text",
+        "position": {
+          "x": 76,
+          "y": 54
+        },
+        "width": 12.5,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "短期目標",
+        "type": "text",
+        "position": {
+          "x": 92,
+          "y": 54
+        },
+        "width": 24,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "短期期間",
+        "type": "text",
+        "position": {
+          "x": 119,
+          "y": 54
+        },
+        "width": 13,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "サービス内容",
+        "type": "text",
+        "position": {
+          "x": 133.5,
+          "y": 54
+        },
+        "width": 41,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "保険給付",
+        "type": "text",
+        "position": {
+          "x": 177,
+          "y": 54
+        },
+        "width": 5,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "サービス種別",
+        "type": "text",
+        "position": {
+          "x": 186,
+          "y": 54
+        },
+        "width": 32,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "提供事業所",
+        "type": "text",
+        "position": {
+          "x": 222,
+          "y": 54
+        },
+        "width": 16,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "頻度",
+        "type": "text",
+        "position": {
+          "x": 242,
+          "y": 54
+        },
+        "width": 16,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "サービス期間",
+        "type": "text",
+        "position": {
+          "x": 262,
+          "y": 54
+        },
+        "width": 15,
+        "height": 24,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      }
+    ]
+  ]
+}

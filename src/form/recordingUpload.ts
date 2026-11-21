@@ -3,7 +3,7 @@ import type { PendingRecording } from './recordingStore.ts'
 
 const CHUNK = 8 * 1024 * 1024 // 256 KiB の倍数
 
-/** 保存済みの範囲を照会し、最後に確定したバイトの次から送る。 */
+/** 保存済みの範囲を照会し、最後に確定したバイトの次から送る（録音、責任者が上げる書式の PDF、書類の取り込みで使う）。 */
 export async function upload(url: string, blob: Blob, onPct: (n: number) => void): Promise<'uploaded' | 'expired'> {
   const total = blob.size
   const put = (start: number, end: number) => new Promise<{ status: number, range: string | null }>((resolve, reject) => {
