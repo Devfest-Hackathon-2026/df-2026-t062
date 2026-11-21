@@ -313,3 +313,128 @@ export async function rebaseDocuments(db: Db, templateId: string, opts: { dryRun
     return result
   })
 }
+
+// ---------- 責任者の画面（#102）: 書類ごとの書式の様子・直す下書き・最初の書式に戻す・前の書式に戻す ----------
+
+export interface KindFormState {
+  key: string
+  name: string
+  /** 新しい書類に使う書式。office: 事業所で上げた書式か（でなければ全体の書式）。since: 使い始めた日時 */
+  current: { versionId: string, office: boolean, since: string | null } | null
+  /** 事業所の書式を使っていないときの、前に使っていた事業所の書式（「事業所の書式に戻す」） */
+  shelved: { versionId: string, since: string | null } | null
+  /** 事業所の下書き（いちばん新しいもの）と、取り込みが迷った欄 */
+  draft: { versionId: string, createdAt: string, fromImport: boolean, empty: boolean, review: { slot: string, reason: string }[] } | null
+  /** いちばん新しい取り込み（読み取り中・読めなかった・同じ書式だった）。uploaded: PDF が届いたか（届かないまま止まった取り込みは無視する） */
+  import: { id: string, status: string, uploaded: boolean, errorKind: string | null, versionId: string | null, createdAt: string, updatedAt: string } | null
+}
+
+const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : null)
+
+/** 事業所の、書類の種類ごとの書式の様子 */
+export async function officeFormStates(db: Q, officeId: string): Promise<KindFormState[]> {
+  const kinds = (await db.query('SELECT key, name FROM form_kinds ORDER BY is_primary DESC, key')).rows
+  const out: KindFormState[] = []
+  for (const k of kinds) {
+    const v = (await db.query(
+      `SELECT v.id, v.status, v.created_at, v.published_at, v.retired_at, t.office_id, jsonb_path_exists(v.schemas, '$[*][*]') AS has_slots FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id
+       WHERE t.kind = $1 AND (t.office_id = $2 OR (t.office_id IS NULL AND v.status = 'published'))
+       ORDER BY v.version DESC`,
+      [k.key, officeId],
+    )).rows
+    const mine = v.filter((r) => r.office_id !== null)
+    const officePub = mine.find((r) => r.status === 'published')
+    const globalPub = v.find((r) => r.office_id === null)
+    const cur = officePub ?? globalPub
+    const retired = officePub ? undefined : [...mine].filter((r) => r.status === 'retired').sort((a, b) => (b.retired_at?.getTime() ?? 0) - (a.retired_at?.getTime() ?? 0))[0]
+    const draft = mine.find((r) => r.status === 'draft')
+    const fromImport = draft ? (await db.query('SELECT review FROM form_imports WHERE version_id = $1 ORDER BY created_at DESC LIMIT 1', [draft.id])).rows[0] : undefined
+    const imp = (await db.query(
+      'SELECT id, status, uploaded_at, error_kind, version_id, created_at, updated_at FROM form_imports WHERE office_id = $1 AND kind = $2 ORDER BY created_at DESC, id LIMIT 1',
+      [officeId, k.key],
+    )).rows[0]
+    out.push({
+      key: k.key, name: k.name,
+      current: cur ? { versionId: cur.id, office: cur.office_id !== null, since: iso(cur.published_at) } : null,
+      shelved: retired ? { versionId: retired.id, since: iso(retired.published_at) } : null,
+      draft: draft ? { versionId: draft.id, createdAt: iso(draft.created_at)!, fromImport: !!fromImport, empty: !draft.has_slots, review: fromImport?.review ?? [] } : null,
+      import: imp ? { id: imp.id, status: imp.status, uploaded: imp.uploaded_at !== null, errorKind: imp.error_kind ?? null, versionId: imp.version_id ?? null, createdAt: iso(imp.created_at)!, updatedAt: iso(imp.updated_at)! } : null,
+    })
+  }
+  return out
+}
+
+/** 版を作った取り込みが迷った欄（取り込みから作った下書きだけ。直す下書きにはない） */
+export async function reviewOf(db: Q, versionId: string): Promise<{ slot: string, reason: string }[]> {
+  return (await db.query('SELECT review FROM form_imports WHERE version_id = $1 ORDER BY created_at DESC LIMIT 1', [versionId])).rows[0]?.review ?? []
+}
+
+/** 事業所の版で、責任者が扱えるもの（全体の書式は 403） */
+async function officeVersion(c: Tx, scope: ManagerScope, id: string): Promise<FormVersion> {
+  const v = await versionForManager(c, scope, id, { forUpdate: true })
+  if (v.officeId !== scope.officeId) throw new Forbidden('全体の様式は変えられません')
+  return v
+}
+
+async function insertCopy(c: Tx, v: FormVersion): Promise<string> {
+  await c.query('SELECT id FROM form_templates WHERE id = $1 FOR UPDATE', [v.templateId])
+  const version = Number((await c.query('SELECT coalesce(max(version), 0) AS v FROM form_template_versions WHERE template_id = $1', [v.templateId])).rows[0].v) + 1
+  const r = (await c.query(
+    `INSERT INTO form_template_versions (template_id, version, schemas, bindings, pages, local_fields, content_sha, base_pdf_sha256)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [v.templateId, version, JSON.stringify(v.schemas), JSON.stringify(v.bindings), JSON.stringify(v.pages), JSON.stringify(v.localFields), v.contentSha, v.basePdfSha256],
+  )).rows[0]
+  return r.id as string
+}
+
+/**
+ * 使っている（または前に使った）書式を直す下書き。中身は同じで、番号は次。直している途中の下書きがあれば、それを返す（created: false）。
+ * 上げた PDF から作った下書きは返さない（別の書式なので）。
+ * 全体の書式からは作れない（403）
+ */
+export async function draftFrom(db: Db, scope: ManagerScope, id: string): Promise<{ version: FormVersion, created: boolean }> {
+  return tx(db, async (c) => {
+    const v = await officeVersion(c, scope, id)
+    if (v.status === 'draft') return { version: v, created: false }
+    // 直している途中の下書き（取り込みから作ったものでない）があれば、それを続ける。上げた PDF の下書きは、ここでは使わない
+    const existing = (await c.query(
+      `SELECT v.id FROM form_template_versions v WHERE v.template_id = $1 AND v.status = 'draft'
+         AND NOT EXISTS (SELECT 1 FROM form_imports i WHERE i.version_id = v.id) ORDER BY v.version DESC LIMIT 1`,
+      [v.templateId],
+    )).rows[0]
+    if (existing) return { version: await readVersion(c, existing.id), created: false }
+    return { version: await readVersion(c, await insertCopy(c, v)), created: true }
+  })
+}
+
+/** 最初の書式（全体の書式）に戻す: 事業所の使う版を退かせる。もう戻っていれば何もしない。今の書類は前の版のまま */
+export async function revertToGlobal(db: Db, officeId: string, staffId: string, kind: string): Promise<void> {
+  await tx(db, async (c) => {
+    if (!(await c.query('SELECT 1 FROM form_kinds WHERE key = $1', [kind])).rows.length) throw new FormNotFound(kind)
+    const t = (await c.query('SELECT id FROM form_templates WHERE kind = $1 AND office_id = $2 FOR UPDATE', [kind, officeId])).rows[0]
+    if (!t) return
+    const r = await c.query(
+      "UPDATE form_template_versions SET status = 'retired', retired_at = now() WHERE template_id = $1 AND status = 'published' RETURNING id, version",
+      [t.id],
+    )
+    if (!r.rows.length) return
+    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.revert', $3)",
+      [officeId, staffId, JSON.stringify({ kind, from: { version: Number(r.rows[0].version) } })])
+  })
+}
+
+/**
+ * 前に使っていた事業所の書式に戻す。退いた版は公開し直せない（DB のトリガー）ので、同じ中身の版を作って公開する。
+ * 退いた版でなければ NotDraft と同じ 409、全体の書式は 403
+ */
+export async function reuseVersion(db: Db, scope: ManagerScope & { officeId: string }, staffId: string, id: string): Promise<FormVersion> {
+  return tx(db, async (c) => {
+    const v = await officeVersion(c, scope, id)
+    if (v.status !== 'retired') throw new Conflict('form_version')
+    const copy = await insertCopy(c, v)
+    await publish(c, v.templateId, copy)
+    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.reuse', $3)",
+      [scope.officeId, staffId, JSON.stringify({ kind: v.kind, from: { version: v.version } })])
+    return readVersion(c, copy)
+  })
+}

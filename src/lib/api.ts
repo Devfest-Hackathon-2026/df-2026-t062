@@ -7,8 +7,20 @@ import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
 import type { ChatMessage, ChatReply } from '../../api/chat.ts'
 import type { InspectionSummary, InspectionView } from '../../db/inspections.ts'
 import { readChatStream } from './chatStream.ts'
+import type { KindFormState } from '../../db/forms.ts'
+import type { FormImportView } from '../../db/form-imports.ts'
+import type { SlotMeaning } from '../../core/slot-meaning.ts'
+import type { LocalField } from '../../core/dictionary.ts'
 
-export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff }
+export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning }
+
+/** 責任者が見る様式の版（GET /api/office/form-versions/:id）。slots は印字欄ごとの入る内容の言葉、review は取り込みが迷った欄 */
+export interface ManagedVersion {
+  formVersion: FormVersionView & { status: 'draft' | 'published' | 'retired', global: boolean, localFields: LocalField[] }
+  problems: string[]
+  slots: Record<string, SlotMeaning>
+  review: { slot: string, reason: string }[]
+}
 
 /** 書類の種類と、その事業所で書類を作れるか（GET /api/form-kinds） */
 export type FormKindView = FormKindRow & { available: boolean }
@@ -103,6 +115,20 @@ export const api = {
     req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl }),
   completeRecording: (id: string, durationMs: number, bytes: number) =>
     req<{ jobId: string, status: string }>('POST', `/api/recordings/${id}/complete`, { durationMs, bytes }),
+  // ---------- 責任者の書類の設定（#102） ----------
+  officeForms: () => req<{ kinds: KindFormState[] }>('GET', '/api/office/forms'),
+  startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
+  completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),
+  managedVersion: (id: string) => req<ManagedVersion>('GET', `/api/office/form-versions/${id}`),
+  managedAssets: (id: string) => req<FormAssetsView>('GET', `/api/office/form-versions/${id}/assets`),
+  teachSlot: (id: string, slot: string, base: string, text: string) =>
+    req<ManagedVersion & { matched: 'field' | 'local' }>('POST', `/api/office/form-versions/${id}/slots/${encodeURIComponent(slot)}`, { base, text }),
+  unusedSlot: (id: string, slot: string, base: string) =>
+    req<ManagedVersion & { matched: 'unused' }>('POST', `/api/office/form-versions/${id}/slots/${encodeURIComponent(slot)}`, { base, unused: true }),
+  publishVersion: (id: string, base: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/publish`, { base }),
+  fixDraft: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/draft`, {}),
+  revertForm: (kind: string) => req<{ kinds: KindFormState[] }>('POST', `/api/office/forms/${encodeURIComponent(kind)}/revert`, {}),
+  reuseForm: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/reuse`, {}),
   async pdf(id: string): Promise<Blob> {
     const token = await tokenSource()
     const res = await fetch(`/api/documents/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })

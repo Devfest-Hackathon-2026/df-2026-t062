@@ -4,7 +4,8 @@ import { api, type ClientSummary } from '../lib/api.ts'
 import { linkProps, navigate } from '../lib/router.tsx'
 import { PcHeader } from '../components/Chrome.tsx'
 
-export function PcList({ staffName }: { staffName: string }) {
+/** embedded: 責任者の外枠（左のメニュー）の中に出す（上の帯と背景は外枠が持つ） */
+export function PcList({ staffName, embedded = false }: { staffName: string, embedded?: boolean }) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<'updated' | 'name'>('updated')
@@ -24,10 +25,9 @@ export function PcList({ staffName }: { staffName: string }) {
     return () => { clearTimeout(t); requestId.current++ }
   }, [q, sort])
 
-  return (
-    <div className="pc" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', minHeight: '100vh', fontSize: 14, lineHeight: 1.6 }}>
-      <PcHeader staffName={staffName} />
-      <main style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 24px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+  const Outer = embedded ? 'div' : 'main'
+  const body = (
+      <Outer style={{ maxWidth: 1000, margin: embedded ? 0 : '0 auto', padding: embedded ? 0 : '28px 24px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>担当の利用者</h1>
@@ -78,7 +78,13 @@ export function PcList({ staffName }: { staffName: string }) {
             })}
           </div>
         </div>
-      </main>
+      </Outer>
+  )
+  if (embedded) return <>{body}{adding && <AddClient onClose={() => setAdding(false)} />}</>
+  return (
+    <div className="pc" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', minHeight: '100vh', fontSize: 14, lineHeight: 1.6 }}>
+      <PcHeader staffName={staffName} />
+      {body}
       {adding && <AddClient onClose={() => setAdding(false)} />}
     </div>
   )
