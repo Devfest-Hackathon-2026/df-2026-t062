@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DOCUMENT_MIMES, MAX_DOCUMENT_BYTES, type DocumentCandidate, type DocumentInputView, type DocumentMime } from '../../core/document-input.ts'
+import { type DocumentInputView } from '../../core/document-input.ts'
 import type { FieldDict } from '../../core/dictionary.ts'
 import { CandidateEditor } from './CandidateEditor.tsx'
-import { OriginalPreview } from './OriginalPreview.tsx'
+import { attachDocumentInput } from './attachDocumentInput.ts'
 import { api, ApiError } from '../lib/api.ts'
-import { upload } from '../form/recordingUpload.ts'
 import { fieldLabel } from '../components/petAssessment.ts'
 import { PetIcon, PetMessage } from '../components/PetVisuals.tsx'
 import './DocumentInput.css'
@@ -30,11 +29,10 @@ const errors: Record<string, string> = {
 
 export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApplied }: Props) {
   const [inputs, setInputs] = useState<DocumentInputView[]>([])
-  const [file, setFile] = useState<File>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [percent, setPercent] = useState(0)
-  const urls = useRef(new Map<string, string>())
+  const uploading = useRef(false)
   const mounted = useRef(true)
   const refresh = useCallback(async () => {
     const r = await api.documentInputs(documentId)
@@ -43,7 +41,7 @@ export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApp
   useEffect(() => {
     mounted.current = true
     void refresh().catch(() => { if (mounted.current) setError('取り込み一覧を取得できませんでした。') })
-    return () => { mounted.current = false; urls.current.forEach((url) => URL.revokeObjectURL(url)) }
+    return () => { mounted.current = false }
   }, [refresh])
   useEffect(() => {
     if (!inputs.some((input) => input.status === 'queued' || input.status === 'processing')) return
@@ -52,131 +50,90 @@ export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApp
     }, 3000)
     return () => clearTimeout(timer)
   }, [inputs, refresh])
-  const start = async () => {
-    if (!file || busy) return
+  const start = async (file: File) => {
+    if (uploading.current) return
+    uploading.current = true
     setBusy(true); setError(''); setPercent(0)
     try {
-      const mime = file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : /\.png$/i.test(file.name) ? 'image/png' : /\.jpe?g$/i.test(file.name) ? 'image/jpeg' : '')
-      if (!DOCUMENT_MIMES.includes(mime as DocumentMime) || !file.size || file.size > MAX_DOCUMENT_BYTES) throw new Error('PDF・JPEG・PNGの10 MB以内のファイルを選んでください。')
-      const sha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map((b) => b.toString(16).padStart(2, '0')).join('')
-      const body = { fileName: file.name, mime: mime as DocumentMime, bytes: file.size, sha256 }
-      let session = await api.startDocumentInput(documentId, body)
-      if (session.uploadUrl && await upload(session.uploadUrl, file, (n) => { if (mounted.current) setPercent(n) }) === 'expired') {
-        session = await api.startDocumentInput(documentId, { ...body, expiredUploadUrl: session.uploadUrl })
-        if (session.uploadUrl && await upload(session.uploadUrl, file, setPercent) === 'expired') throw new Error('送信期限が切れました。もう一度お試しください。')
-      }
-      await api.completeDocumentInput(session.input.id)
-      if (mounted.current) { setFile(undefined); await refresh() }
-    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : '書類を送信できませんでした。') }
-    finally { if (mounted.current) setBusy(false) }
-  }
-  const original = async (id: string): Promise<string | null> => {
-    const cached = urls.current.get(id)
-    if (cached) return cached
-    try {
-      const blob = await api.documentOriginal(id)
-      if (!mounted.current) return null
-      const url = URL.createObjectURL(blob)
-      urls.current.set(id, url)
-      return url
-    } catch { setError('原本を開けませんでした。'); return null }
+      await attachDocumentInput(documentId, file, (n) => { if (mounted.current) setPercent(n) })
+      if (mounted.current) await refresh()
+    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : '画像を添付できませんでした。') }
+    finally { uploading.current = false; if (mounted.current) setBusy(false) }
   }
   return <div className="assistant-import document-input">
-    <PetMessage>書類を一緒に確認しましょう。<br />読み取った候補は、原本と見比べてから採用できます。</PetMessage>
-    <label className="assistant-file-picker">
+    <PetMessage>画像を添付してください。<br />書類に入れる内容を一緒に確認しましょう。</PetMessage>
+    <label className="assistant-file-picker document-input-attach" aria-disabled={busy}>
       <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={busy}
-        onChange={(e) => { setFile(e.target.files?.[0]); setError(''); e.target.value = '' }} aria-label="取り込む書類を選択" />
-      <span><PetIcon name="folder" />ファイルを選択</span>
+        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void start(file) }} aria-label="入力したい情報の画像を添付" />
+      <span><PetIcon name="folder" />{busy ? `添付中 ${percent}%` : '画像・書類を添付'}</span>
+      <small>JPEG・PNG・PDF／10 MBまで</small>
     </label>
-    <p>{file?.name ?? '認定調査票・主治医意見書・退院時情報など'}</p>
-    <small>PDF・スキャンPDF・JPEG・PNG／10 MB・30ページまで</small>
-    <button type="button" className="assistant-primary" disabled={!file || busy} onClick={() => void start()}>{busy ? `送信中 ${percent}%` : '読み取りを開始'}</button>
     {error && <p role="alert" className="assistant-error">{error}</p>}
     <div aria-live="polite">
       {inputs.map((input) => <InputReview key={input.id} dict={dict} input={input} clientName={clientName}
-        original={() => original(input.id)} retry={async () => { await api.retryDocumentInput(input.id); await refresh() }} beforeAdopt={beforeAdopt} onApplied={async () => { await refresh(); onApplied() }} />)}
+        retry={async () => { await api.retryDocumentInput(input.id); await refresh() }} beforeAdopt={beforeAdopt} onApplied={async () => { await refresh(); onApplied() }} />)}
     </div>
   </div>
 }
 
-function InputReview({ input, dict, clientName, original, retry, beforeAdopt, onApplied }: { input: DocumentInputView, dict: FieldDict, clientName: string,
-  original: () => Promise<string | null>, retry: () => Promise<void>, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
-  const [identity, setIdentity] = useState(false)
-  const [url, setUrl] = useState<string | null>(null)
-  const [previewPage, setPreviewPage] = useState<number | null>(null)
-  const [opening, setOpening] = useState(false)
-  const previewTrigger = useRef<HTMLElement | null>(null)
-  const [retrying, setRetrying] = useState(false)
-  const [error, setError] = useState('')
-  const openOriginal = async (page: number, trigger?: HTMLElement) => {
-    if (opening) return
-    previewTrigger.current = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
-    setOpening(true)
-    try {
-      const source = url ?? await original()
-      if (source) { setUrl(source); setPreviewPage(page) }
-    } finally { setOpening(false) }
-  }
-  return <details className="document-input-source" open>
-    <summary><strong>{input.fileName}</strong><small>{stateLabel[input.status]}</small></summary>
-    <button type="button" disabled={opening} onClick={(event) => void openOriginal(1, event.currentTarget)}>{opening ? '原本を開いています…' : '原本を表示'}</button>
-    {url && previewPage !== null && <OriginalPreview key={previewPage} url={url} mime={input.mime} fileName={input.fileName} page={previewPage} onClose={() => {
-      setPreviewPage(null)
-      previewTrigger.current?.focus({ preventScroll: true })
-    }} />}
-    {input.status === 'review' && <>
-      <label><input type="checkbox" checked={identity} onChange={(e) => setIdentity(e.target.checked)} />原本が{clientName}さんのものだと確認しました</label>
-      {!!input.result?.issues.length && <details className="document-input-warnings" open={input.result.issues.length <= 3}>
-        <summary>確認が必要な箇所 {input.result.issues.length}件</summary>
-        {input.result.issues.map((issue, i) => <p key={i} className="document-input-warning">p.{issue.page} 要確認 — {issue.text}</p>)}
-      </details>}
-      {input.result?.evidence.some((e) => e.uncertain) && <p className="document-input-warning">判読が不確かな箇所があります。候補には使わず、下の原文に残しています。</p>}
-      <details><summary>読み取った原文</summary>{input.result?.evidence.map((e) => <blockquote key={e.id}>
-        <small>p.{e.page}／記録日 {e.recordedOn ?? '不明'}{e.uncertain ? '／判読要確認' : ''}</small><p>{e.text}</p>
-      </blockquote>)}</details>
-      {input.result?.candidates.map((candidate) => <CandidateReview key={candidate.key} dict={dict} candidate={candidate} input={input}
-        identity={identity} openOriginal={openOriginal} openingOriginal={opening} beforeAdopt={beforeAdopt} onApplied={onApplied} />)}
-      {!input.result?.candidates.length && <p>反映できる候補はありません。原文と原本をご確認ください。</p>}
-      {!!input.result?.incompleteFields.length && <p>候補にできなかった項目があります。原本をご確認ください。</p>}
-    </>}
-    {input.status === 'failed' && <>
-      <p role="alert">{errors[input.errorKind ?? ''] ?? '読み取りを完了できませんでした。ファイルをご確認ください。'}</p>
-      {['location_not_approved', 'reader_not_configured', 'writer_not_configured', 'no_topics', 'processing_failed', 'attempts_exhausted'].includes(input.errorKind ?? '') && <button type="button" disabled={retrying} onClick={async () => {
-        setRetrying(true); setError('')
-        try { await retry() } catch { setError('再実行できませんでした。もう一度お試しください。') }
-        finally { setRetrying(false) }
-      }}>読み取りを再実行</button>}
-      {error && <p role="alert">{error}</p>}
-    </>}
-  </details>
-}
-function CandidateReview({ candidate, dict, input, identity, openOriginal, openingOriginal, beforeAdopt, onApplied }: { candidate: DocumentCandidate, dict: FieldDict,
-  input: DocumentInputView, identity: boolean, openOriginal: (page: number, trigger?: HTMLElement) => Promise<void>, openingOriginal: boolean, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
-  const [value, setValue] = useState(candidate.value)
-  const field = dict.get(candidate.key)
+function InputReview({ input, dict, clientName, retry, beforeAdopt, onApplied }: { input: DocumentInputView, dict: FieldDict, clientName: string,
+  retry: () => Promise<void>, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
+  const [edits, setEdits] = useState<Record<string, unknown>>({})
+  const [excluded, setExcluded] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const adopted = input.adopted.includes(candidate.key)
+  const candidates = input.result?.candidates ?? []
+  const pending = candidates.filter((c) => !input.adopted.includes(c.key))
+  const selected = pending.filter((c) => !excluded.includes(c.key) && !!dict.get(c.key))
   const adopt = async () => {
-    if (!identity || busy || adopted) return
+    if (busy || !selected.length || selected.length > 200) return
     setBusy(true); setError('')
     try {
       if (!await beforeAdopt()) throw new Error('用紙の編集内容を保存してからお試しください。')
-      await api.adoptDocumentInput(input.id, [{ key: candidate.key, value, base: candidate.base }])
+      await api.adoptDocumentInput(input.id, selected.map((c) => ({ key: c.key, value: Object.hasOwn(edits, c.key) ? edits[c.key] : c.value, base: c.base })))
       await onApplied()
-    } catch (e) { setError(e instanceof ApiError && e.status === 409 ? '用紙が変更されています。今の記載と候補を確認し、必要な内容を用紙で編集してください。' : '候補の内容を確認してください。') }
-    finally { setBusy(false) }
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 409
+        ? '用紙の記載が変わっています。変更された項目の選択を外すか、用紙で内容を確認してください。'
+        : e instanceof ApiError ? '反映できませんでした。入力内容を確認して、もう一度お試しください。' : e instanceof Error ? e.message : '反映できませんでした。')
+    } finally { setBusy(false) }
   }
-  return <section className="document-input-candidate">
-    <strong>{field?.label ?? fieldLabel(candidate.key)}{adopted ? '（採用済み）' : '（未確認）'}</strong>
-    <p>読取時の記載 <span className="document-input-value">{show(candidate.base)}</span>
-      {candidate.base != null && <small>出典 {candidate.baseSource?.fileName ?? '不明'}／記録日 {candidate.baseSource ? [...new Set(candidate.baseSource.recordedOn.map((date) => date ?? '不明'))].join('・') : '不明'}</small>}
-    </p>
-    {field && <CandidateEditor field={field} value={adopted ? input.adoptedValues[candidate.key] : value} disabled={busy || adopted} onChange={setValue} />}
-    {input.result?.evidence.filter((e) => candidate.cite.includes(e.id)).map((e) => <blockquote key={e.id}>
-      <small><button type="button" className="document-input-source-link" disabled={openingOriginal} onClick={(event) => void openOriginal(e.page, event.currentTarget)}>原本 p.{e.page}を確認</button>／記録日 {e.recordedOn ?? '不明'}</small><p>{e.text}</p><small>根拠ID {e.id}</small>
-    </blockquote>)}
-    <button type="button" disabled={!identity || busy || adopted} onClick={() => void adopt()}>{adopted ? '採用済み' : busy ? '反映中…' : '確認してこの候補を採用'}</button>
-    {error && <p role="alert">{error}</p>}
+  return <section className="document-input-source" aria-label={input.fileName}>
+    <header><PetIcon name="file-earmark-arrow-down" /><div><strong>{input.fileName}</strong><small>{stateLabel[input.status]}</small></div></header>
+    {input.status === 'review' && <>
+      {pending.length > 0 && <p className="document-input-guidance">内容を確認し、反映する項目を選んでください。</p>}
+      {candidates.map((candidate) => {
+        const field = dict.get(candidate.key)
+        const adopted = input.adopted.includes(candidate.key)
+        const label = field?.label ?? fieldLabel(candidate.key)
+        return <div key={candidate.key} className="document-input-candidate">
+          {adopted ? <strong className="document-input-done"><PetIcon name="check2" />{label} · 反映済み</strong> :
+            <label className="document-input-choice"><input type="checkbox" checked={!excluded.includes(candidate.key) && !!field} disabled={busy || !field}
+              onChange={(e) => setExcluded((keys) => e.target.checked ? keys.filter((key) => key !== candidate.key) : [...keys, candidate.key])} />{label}</label>}
+          {candidate.base != null && !adopted && <p className="document-input-current">現在の記載：{show(candidate.base)}</p>}
+          {field && <CandidateEditor hideLabel field={field} value={adopted ? input.adoptedValues[candidate.key] : Object.hasOwn(edits, candidate.key) ? edits[candidate.key] : candidate.value}
+            disabled={busy || adopted || excluded.includes(candidate.key)} onChange={(value) => setEdits((values) => ({ ...values, [candidate.key]: value }))} />}
+        </div>
+      })}
+      {!!input.result?.issues.length && <details className="document-input-warnings"><summary>読み取りにくかった箇所（{input.result.issues.length}件）</summary>
+        {input.result.issues.map((issue, i) => <p key={i}>{issue.text}</p>)}</details>}
+      {(input.result?.incompleteFields.length || input.result?.evidence.some((e) => e.uncertain)) ? <p className="document-input-warning">読み取れない項目は反映しません。必要に応じて、はっきり写った画像を追加してください。</p> : null}
+      {!candidates.length && <p>反映できる内容が見つかりませんでした。入力したい情報が写った画像を添付してください。</p>}
+      {pending.length > 0 && <footer>
+        <p>{clientName}さんの、開いている書類に反映します。</p>
+        <button type="button" className="assistant-primary" disabled={busy || !selected.length || selected.length > 200} onClick={() => void adopt()}>{busy ? '反映中…' : `選んだ${selected.length}項目を反映`}</button>
+        {selected.length > 200 && <p role="alert">一度に反映できるのは200項目です。項目の選択を減らしてください。</p>}
+      </footer>}
+      {!!candidates.length && !pending.length && <p className="document-input-done" role="status">書類に反映しました。</p>}
+    </>}
+    {input.status === 'failed' && <>
+      <p role="alert">{errors[input.errorKind ?? ''] ?? '読み取れませんでした。はっきり写った画像で、もう一度お試しください。'}</p>
+      {['location_not_approved', 'reader_not_configured', 'writer_not_configured', 'no_topics', 'processing_failed', 'attempts_exhausted'].includes(input.errorKind ?? '') && <button type="button" disabled={busy} onClick={async () => {
+        setBusy(true); setError('')
+        try { await retry() } catch { setError('再実行できませんでした。もう一度お試しください。') }
+        finally { setBusy(false) }
+      }}>もう一度読み取る</button>}
+    </>}
+    {error && <p role="alert" className="assistant-error">{error}</p>}
   </section>
 }

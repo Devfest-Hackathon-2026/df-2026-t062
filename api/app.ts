@@ -304,7 +304,7 @@ export function createApp(deps: ApiDeps) {
     } })
   }))
   app.post('/api/document-inputs/:id/adopt', staffRoute('care.work', async (c, staff, db) => {
-    const input = await body(c, z.object({ identityConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown(), base: z.unknown() })).min(1).max(200) }))
+    const input = await body(c, z.object({ targetConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown(), base: z.unknown() })).min(1).max(200) }))
     if (new Set(input.changes.map((ch) => ch.key)).size !== input.changes.length) throw new repo.BadRequest('同じ欄が重複しています')
     const document = await documentInputs.adoptInput(db, staff, c.req.param('id')!, input.changes)
     return json(c, { document })

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentInput } from '../document-input/DocumentInput.tsx'
 import { GLOBAL_DICT, type FieldDict } from '../../core/dictionary.ts'
-import { SurveyImport } from '../survey/SurveyImport.tsx'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
 import { PetInspection, useInspections } from './PetInspection.tsx'
@@ -38,7 +37,7 @@ interface Props {
   chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, dict?: FieldDict }
 }
 
-export function PetHelper({ clientId, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, beforeDocumentAdopt, onDocumentApplied }: Props) {
+export function PetHelper({ clientId, available, clientName, review, topics, onJump, chat, beforeDocumentAdopt, onDocumentApplied }: Props) {
   const [menu, setMenu] = useState<Menu | null>(null)
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
@@ -93,7 +92,6 @@ export function PetHelper({ clientId, available, clientName, review, topics, onJ
         )}
         {menu === 'documents' && <>
           {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} dict={chat.dict ?? GLOBAL_DICT} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
-          {available && <details><summary>広島市版3項目の比較用読取</summary><SurveyImport active available={available} clientName={clientName} onPreview={onPreview} onIdentity={onIdentity} verifiedSources={verifiedSources} /></details>}
         </>}
         {menu === 'review' && (
           <>

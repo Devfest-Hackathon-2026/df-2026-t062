@@ -1,33 +1,32 @@
-.document-input { display: grid; gap: 12px; }
-.document-input > p { margin: 0; overflow-wrap: anywhere; }
-.document-input-source { margin-top: 16px; padding: 12px; border: 1px solid #dfdcea; border-radius: 12px; background: white; }
-.document-input-source > summary { cursor: pointer; overflow-wrap: anywhere; }
-.document-input-source > summary small { display: block; margin-top: 4px; color: #656174; }
-.document-input-source > button { margin: 12px 0; }
+.document-input { display: grid; gap: 16px; }
+.document-input-attach { display: grid; gap: 8px; padding: 20px 12px; border: 1px dashed #b9a1e8; border-radius: 12px; background: #faf7ff; text-align: center; }
+.document-input-attach small { color: #656174; font-size: 12px; }
+.document-input-attach[aria-disabled=true] { opacity: .6; cursor: wait; }
+.document-input-source { margin-top: 0; padding: 16px; border: 1px solid #dfdcea; border-radius: 12px; background: white; min-width: 0; overflow-wrap: anywhere; }
+.document-input-source > header { display: flex; align-items: center; gap: 10px; }
+.document-input-source > header .assistant-icon { flex-shrink: 0; }
+.document-input-source > header strong { font-size: 13px; }
+.document-input-source > header small { display: block; margin-top: 4px; color: #656174; font-size: 12px; }
+.document-input-guidance, .document-input-source footer p { font-size: 12px; line-height: 1.7; color: #656174; }
 .document-input-source label { display: block; font-size: 13px; line-height: 1.7; }
-.document-input-source blockquote { margin: 10px 0; border-left: 3px solid #ded8f5; padding-left: 9px; overflow-wrap: anywhere; }
-.document-input-source blockquote p { white-space: pre-wrap; font-size: 13px; }
-.document-input-source small { overflow-wrap: anywhere; }
-.document-input-candidate { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e7e4ee; }
-.document-input-candidate textarea { display: block; width: 100%; min-height: 84px; padding: 8px; border: 1px solid #bcb7ca; border-radius: 7px; font: inherit; resize: vertical; }
-.document-input-candidate > p { font-size: 13px; }
-.document-input-value { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
-.document-input-source button { border: 1px solid #cac2e5; border-radius: 7px; background: #fff; color: #34215d; padding: 7px 10px; cursor: pointer; }
+.document-input-candidate { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e7e4ee; }
+.document-input-candidate .document-input-choice { display: flex; gap: 8px; align-items: baseline; font-weight: 700; margin-bottom: 8px; }
+.document-input input[type=checkbox] { accent-color: #6024df; }
+.document-input-candidate textarea { display: block; box-sizing: border-box; width: 100%; min-height: 84px; padding: 8px; border: 1px solid #bcb7ca; border-radius: 7px; font: inherit; resize: vertical; }
+.document-input-current { font-size: 12px; color: #656174; white-space: pre-wrap; }
+.document-input-source button:not(.assistant-primary) { border: 1px solid #cac2e5; border-radius: 7px; background: #fff; color: #34215d; padding: 7px 10px; cursor: pointer; }
 .document-input-source button:disabled { opacity: .5; cursor: default; }
-.document-input-warning { color: #8a4d10; font-size: 13px; }
-.document-input-warnings { margin: 10px 0; padding: 10px; border: 1px solid #e7cda8; border-radius: 7px; }
-.document-input-warnings > summary { cursor: pointer; color: #8a4d10; font-size: 13px; }
+.document-input-source footer { margin-top: 16px; }
+.document-input-source footer .assistant-primary { width: 100%; }
+.document-input-warning, .document-input-warnings { color: #8a4d10; font-size: 12px; line-height: 1.7; }
+.document-input-warnings { margin-top: 12px; }
+.document-input-warnings summary { cursor: pointer; }
+.document-input-done { display: flex; align-items: center; gap: 6px; color: #42604b; font-size: 13px; }
 .document-input-candidate fieldset { border: 1px solid #e7e4ee; border-radius: 7px; margin: 8px 0; padding: 8px; min-width: 0; }
 .document-input-candidate legend { font-size: 13px; }
-.document-input-candidate input:not([type=checkbox]), .document-input-candidate select { display: block; width: 100%; padding: 7px; font: inherit; border: 1px solid #bcb7ca; border-radius: 6px; }
+.document-input-candidate input:not([type=checkbox]), .document-input-candidate select { display: block; box-sizing: border-box; width: 100%; padding: 7px; font: inherit; border: 1px solid #bcb7ca; border-radius: 6px; }
 .document-input-row + .document-input-row { border-top: 1px solid #e7e4ee; margin-top: 8px; padding-top: 8px; }
-.document-input-source > a { display: inline-block; margin: 12px 0; }
-.document-input-source .document-input-source-link { padding: 0; border: 0; border-radius: 0; text-decoration: underline; background: transparent; color: #34215d; font: inherit; }
-.document-original { width: min(1040px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 0; border: 1px solid #dfdcea; border-radius: 12px; color: #1f2430; }
-.document-original::backdrop { background: rgb(20 24 32 / 55%); }
-.document-original header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; }
-.document-original header small { display: block; overflow-wrap: anywhere; }
-.document-original-content { height: min(76dvh, 960px); overflow: auto; background: #eef0f4; }
-.document-original iframe { display: block; width: 100%; height: 100%; border: 0; }
-.document-original img { display: block; max-width: 100%; height: auto; margin: auto; }
-.document-original footer { padding: 10px 16px; font-size: 13px; }
+
+.document-input-source + .document-input-source { margin-top: 16px; }
+.document-input-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.document-input-attach > span:not(.assistant-icon) { border: 0; background: transparent; font-size: 15px; }

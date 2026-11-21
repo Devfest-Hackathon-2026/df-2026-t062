@@ -144,15 +144,16 @@ test('アップロード完了と読取の重複は安全。候補ができて�
   assert.equal(original.response.headers.get('cache-control'), 'no-store')
   assert.deepEqual(Buffer.from(await original.response.arrayBuffer()), data)
 })
-test('本人確認と候補・型を確かめ、編集・採用を原子的に行う。別書類には反映しない', { skip }, async () => {
+test('反映先の確認と候補・型を確かめ、編集・採用を原子的に行う。別書類には反映しない', { skip }, async () => {
   const id = (await start()).input.id
   const path = `/api/document-inputs/${id}/adopt`
   const changes = [{ key: 'survey.2_2', value: '見守り等', base: null }]
   assert.equal((await call(path, 'POST', { changes })).status, 400)
-  assert.equal((await call(path, 'POST', { identityConfirmed: true, changes }, 'other@example.com')).status, 404)
-  assert.equal((await call(path, 'POST', { identityConfirmed: true, changes: [{ ...changes[0], value: 123 }] })).status, 400)
-  assert.equal((await call(path, 'POST', { identityConfirmed: true, changes: [{ key: 'unknown.key', value: '不正', base: null }] })).status, 400)
-  const r = await call(path, 'POST', { identityConfirmed: true, changes })
+  assert.equal((await call(path, 'POST', { identityConfirmed: true, changes })).status, 400, '原本の本人確認を反映先の確認として扱わない')
+  assert.equal((await call(path, 'POST', { targetConfirmed: true, changes }, 'other@example.com')).status, 404)
+  assert.equal((await call(path, 'POST', { targetConfirmed: true, changes: [{ ...changes[0], value: 123 }] })).status, 400)
+  assert.equal((await call(path, 'POST', { targetConfirmed: true, changes: [{ key: 'unknown.key', value: '不正', base: null }] })).status, 400)
+  const r = await call(path, 'POST', { targetConfirmed: true, changes })
   assert.equal(r.status, 200)
   const field = r.body.document.fields['survey.2_2']
   assert.equal(field.value, '見守り等')
@@ -163,7 +164,7 @@ test('本人確認と候補・型を確かめ、編集・採用を原子的に�
   assert.equal(reread.result.candidates[0].value, '一部介助', '評価用の生成候補は改変しない')
   assert.equal(field.documentSource.evidence[0].recordedOn, '2026-11-01')
   assert.equal((await repo.getDocument(db, staff.officeId, sibling)).fields['survey.2_2'], undefined)
-  assert.equal((await call(path, 'POST', { identityConfirmed: true, changes })).status, 200, '採用の再送は冪等')
+  assert.equal((await call(path, 'POST', { targetConfirmed: true, changes })).status, 200, '採用の再送は冪等')
 })
 test('読取後の人の編集と競合したら、全候補と採用状態をロールバックする', { skip }, async () => {
   const client = await repo.createClient(db, staff, { name: '架空 競合' })
@@ -171,7 +172,7 @@ test('読取後の人の編集と競合したら、全候補と採用状態を�
   await call(`/api/document-inputs/${id}/complete`, 'POST', {})
   await runDocumentInput(deps, id)
   await repo.patchFields(db, staff, client.documentId, [{ key: 'survey.2_2', value: '見守り等', base: null }])
-  const r = await call(`/api/document-inputs/${id}/adopt`, 'POST', { identityConfirmed: true, changes: [
+  const r = await call(`/api/document-inputs/${id}/adopt`, 'POST', { targetConfirmed: true, changes: [
     { key: 'survey.2_4', value: '見守り等', base: null }, { key: 'survey.2_2', value: '一部介助', base: null },
   ] })
   assert.equal(r.status, 409)
