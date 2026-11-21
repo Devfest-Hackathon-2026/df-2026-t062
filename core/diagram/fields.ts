@@ -1,0 +1,54 @@
+import { bodyPlacement, tapPosition } from './body.ts'
+import { z } from 'zod'
+import { blank, schema, type Doc, type Tab } from './model.ts'
+
+export const diagramChatFields = ['family.genogram', 'health.bodyMap'] as const
+export type DiagramChatField = typeof diagramChatFields[number]
+export function isDiagramChatField(key: unknown): key is DiagramChatField { return diagramChatFields.some((field) => field === key) }
+
+export const diagramKinds: Record<string, Tab> = {
+  'family.genogram': 'family',
+  'housing.floorPlan': 'house',
+  'health.bodyMap': 'body',
+}
+
+export const diagramSchema = z.discriminatedUnion('kind', [
+  z.object({ version: z.literal(1), kind: z.literal('house'), revision: z.number().int().nonnegative(), data: schema.shape.house }).strict(),
+  z.object({ version: z.literal(1), kind: z.literal('family'), revision: z.number().int().nonnegative(), data: schema.shape.family }).strict(),
+  z.object({ version: z.literal(1), kind: z.literal('body'), revision: z.number().int().nonnegative(), data: schema.shape.body }).strict(),
+]).superRefine((value, ctx) => {
+  const result = schema.safeParse({ ...blank(), [value.kind]: value.data })
+  if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: 'custom', message: issue.message })
+  if (value.kind === 'body') for (const item of value.data.items) if (item.anatomy) {
+    const placement = bodyPlacement(item.anatomy)
+    if (item.view !== item.anatomy.view || item.rotation !== 0) ctx.addIssue({ code: 'custom', message: '身体の部位と表示の向きが一致しません' })
+    const wrong = placement ? Math.abs(item.x - placement.x) > .01 || Math.abs(item.y - placement.y) > .01 || item.width !== placement.width || item.height !== placement.height || item.range !== placement.range : item.anatomy.region !== 'custom' || item.width !== 32 || item.height !== 52 || !tapPosition(item.anatomy.view, item.x + 16, item.y + 22)
+    if (wrong) ctx.addIssue({ code: 'custom', message: '身体の部位または指定位置が不正です' })
+  }
+  if (value.kind === 'house' && value.data.items.some((item) => !['room', 'wall', 'bed', 'rail', 'step', 'wheelchair', 'furniture', 'note'].includes(item.kind))) {
+    ctx.addIssue({ code: 'custom', message: '家屋に使えない図形があります' })
+  }
+  if (value.kind === 'body' && value.data.items.some((item) => !['disability', 'loss', 'pressure', 'pain', 'paralysis', 'contracture', 'note'].includes(item.kind))) {
+    ctx.addIssue({ code: 'custom', message: '身体図に使えない記号があります' })
+  }
+})
+export type DiagramValue = z.infer<typeof diagramSchema>
+export interface DiagramField { id: string, title: string, kind: Tab, value: DiagramValue | null }
+
+export function diagramDocument(value: DiagramValue | null): Doc {
+  return value ? schema.parse({ ...blank(), [value.kind]: value.data }) : blank()
+}
+
+export function nextDiagram(kind: Tab, doc: Doc, revision: number): DiagramValue {
+  return diagramSchema.parse({ version: 1, kind, revision: revision + 1, data: doc[kind] })
+}
+
+export function validDiagramUpdate(key: string, value: unknown, base: unknown): boolean {
+  if (!diagramKinds[key]) return true
+  if (value === null) return false
+  const parsed = diagramSchema.safeParse(value)
+  const previous = diagramSchema.safeParse(base)
+  if (base != null && (!previous.success || previous.data.kind !== diagramKinds[key])) return false
+  return parsed.success && parsed.data.kind === diagramKinds[key] &&
+    parsed.data.revision === (previous.success ? previous.data.revision : 0) + 1
+}

@@ -1,0 +1,25 @@
+.document-input { display: grid; gap: 16px; }
+.document-input-attach { display: grid; gap: 8px; padding: 20px 12px; border: 1px dashed #b9a1e8; border-radius: 12px; background: #faf7ff; text-align: center; }
+.document-input-attach small { color: #656174; font-size: 12px; }
+.document-input-attach[aria-disabled=true] { opacity: .6; cursor: wait; }
+.document-input-source { margin-top: 0; padding: 16px; border: 1px solid #dfdcea; border-radius: 12px; background: white; min-width: 0; overflow-wrap: anywhere; }
+.document-input-source > header { display: flex; align-items: center; gap: 10px; }
+.document-input-source > header .assistant-icon { flex-shrink: 0; }
+.document-input-source > header strong { font-size: 13px; }
+.document-input-source > header small { display: block; margin-top: 4px; color: #656174; font-size: 12px; }
+.document-input-guidance, .document-input-source footer p { font-size: 12px; line-height: 1.7; color: #656174; }
+.document-input-source label { display: block; font-size: 13px; line-height: 1.7; }
+.document-input-candidate { margin-top: 12px; }
+.document-input-candidate .document-input-choice { display: flex; gap: 8px; align-items: baseline; font-weight: 700; margin-bottom: 8px; }
+.document-input input[type=checkbox] { accent-color: #6024df; }
+.document-input-source button:not(.assistant-primary) { border: 1px solid #cac2e5; border-radius: 7px; background: #fff; color: #34215d; padding: 7px 10px; cursor: pointer; }
+.document-input-source button:disabled { opacity: .5; cursor: default; }
+.document-input-source footer { margin-top: 16px; }
+.document-input-source footer .assistant-primary { width: 100%; }
+.document-input-warning, .document-input-warnings { color: #8a4d10; font-size: 12px; line-height: 1.7; }
+.document-input-warnings { margin-top: 12px; }
+.document-input-warnings summary { cursor: pointer; }
+.document-input-done { display: flex; align-items: center; gap: 6px; color: #42604b; font-size: 13px; }
+
+.document-input-source + .document-input-source { margin-top: 16px; }
+.document-input-attach > span:not(.assistant-icon) { border: 0; background: transparent; font-size: 15px; }

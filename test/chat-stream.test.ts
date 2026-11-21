@@ -2,6 +2,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readChatStream } from '../src/lib/chatStream.ts'
+import { ChatError, chatError } from '../core/chat-error.ts'
+import { api } from '../src/lib/api.ts'
+import { restoreChatText } from '../src/diagram/chatEntry.ts'
 
 const body = (chunks: string[]) => new ReadableStream<Uint8Array>({
   start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode(x)); c.close() },
@@ -24,4 +27,30 @@ test('step を届いた順に知らせ、done で答えを返す。行や文字�
 test('error が来たら、done が来ないまま終わったら、失敗にする', async () => {
   await assert.rejects(readChatStream(body([`${JSON.stringify({ type: 'step', text: 'a' })}\n{"type":"error"}\n`]), () => {}))
   await assert.rejects(readChatStream(body([`${JSON.stringify({ type: 'step', text: 'a' })}\n`]), () => {}))
+})
+
+test('provider errors become fixed reasons; unknown codes and raw messages never reach the user', async () => {
+  for (const [status, code] of [[503, 'overloaded'], [429, 'rate_limited'], [504, 'timeout'], [403, 'access_denied'], [404, 'model_unavailable']] as const) {
+    const safe = chatError({ status, message: 'secret-provider-detail' })
+    assert.equal(safe.code, code)
+    await assert.rejects(readChatStream(body([JSON.stringify({ type: 'error', code: safe.code, message: 'secret-provider-detail' }) + '\n']), () => {}), (error: unknown) => error instanceof ChatError && error.code === code && !error.message.includes('secret-provider-detail'))
+  }
+  await assert.rejects(readChatStream(body(['{"type":"error","code":"constructor","message":"secret"}\n']), () => {}), (error: unknown) => error instanceof ChatError && error.code === 'unknown')
+  await assert.rejects(readChatStream(body([]), () => {}), (error: unknown) => error instanceof ChatError && error.code === 'interrupted')
+})
+
+test('selected diagram travels separately from question text in the actual chat request', async () => {
+  const original = globalThis.fetch
+  try {
+    globalThis.fetch = async (_url, init) => {
+      const sent = JSON.parse(String(init?.body))
+      assert.equal(sent.diagramField, 'health.bodyMap')
+      assert.equal(sent.messages[0].text, 'ここに追加して')
+      return new Response(body(['{"type":"error","code":"overloaded"}\n']), { status: 200 })
+    }
+    await assert.rejects(api.chat('doc', [{ role: 'user', text: 'ここに追加して' }], () => {}, undefined, 'health.bodyMap'), (error: unknown) => error instanceof ChatError && error.code === 'overloaded')
+  } finally { globalThis.fetch = original }
+  assert.equal(restoreChatText('送れなかった文', ''), '送れなかった文')
+  assert.equal(restoreChatText('送れなかった文', '次に書いた文'), '送れなかった文\n\n次に書いた文')
+  assert.equal(restoreChatText('同じ文', '同じ文'), '同じ文')
 })

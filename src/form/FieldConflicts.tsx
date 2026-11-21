@@ -1,4 +1,4 @@
-import { spec } from '../../core/fields.ts'
+import { fieldDict } from '../../core/dictionary.ts'
 import type { DocState } from './useDocument.ts'
 
 function valueText(value: unknown) {
@@ -12,7 +12,8 @@ export function FieldConflicts({ state }: { state: DocState }) {
     <section aria-label="入力の競合" style={{ flex: '0 0 auto', maxHeight: '34vh', overflow: 'auto', padding: '12px 16px', background: '#FFF4E5', borderBottom: '1px solid #F0C78A' }}>
       <div role="status">{state.conflicts.size} 欄で入力が重なりました。残してある入力を再適用するか、破棄してください。</div>
       {[...state.conflicts].map(([key, draft]) => {
-        const label = spec(key)?.label ?? key
+        // 欄の名前は書類の様式の版の辞書から（その様式だけの欄も名前で出す）
+        const label = fieldDict(state.form?.localFields).get(key)?.label ?? key
         return (
           <div key={key} role="group" aria-label={label} style={{ marginTop: 12, overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>
             <strong>{label}</strong>

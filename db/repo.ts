@@ -1,9 +1,13 @@
+import { validDiagramUpdate } from '../core/diagram/fields.ts'
 // DB の読み書き。api と worker が共通に使う。どの関数も office_id で絞る。
-import { planBatch, sameValue, type BatchPlan, type CurrentField } from '../core/apply-batch.ts'
+import { planBatch, sameValue, type BatchPlan, type Cite, type CurrentField } from '../core/apply-batch.ts'
 import { saveOneHunk } from '../core/diff.ts'
 import { slotPages, type FormKind } from '../core/form.ts'
+import type { DocumentSource } from '../core/document-input.ts'
 import type { SurveySource } from '../core/survey-import.ts'
 import { countRequired } from '../core/required.ts'
+import { fieldDict } from '../core/dictionary.ts'
+import { validValue } from '../core/schema.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
 import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind } from './kinds.ts'
@@ -13,7 +17,7 @@ type Q = Db | Tx
 
 export interface Staff { id: string, officeId: string, name: string, email: string | null, role: string, officeName: string }
 
-export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource }
+export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource, documentSource?: DocumentSource }
 export interface SavedRow { value: unknown, by: Who }
 
 export interface DocumentView {
@@ -177,7 +181,8 @@ export async function readFields(db: Q, documentId: string): Promise<Record<stri
   const out: Record<string, FieldRow> = {}
   for (const row of r.rows) {
     out[row.key] = { value: row.value, aiValue: row.ai_value, by: row.by, batchId: row.batch_id, updatedAt: new Date(row.updated_at).toISOString(),
-      ...(row.cite?.kind === 'survey-import' ? { surveySource: row.cite as SurveySource } : {}) }
+      ...(row.cite?.kind === 'survey-import' ? { surveySource: row.cite as SurveySource } : {}),
+      ...(row.cite?.kind === 'document-input' ? { documentSource: row.cite as DocumentSource } : {}) }
   }
   return out
 }
@@ -209,13 +214,13 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
 }
 
 /** 利用者の録音の文字起こし（古い順）。チャットの根拠に使う */
-export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
+export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ id: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
   const r = await db.query(
-    `SELECT r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
+    `SELECT r.id, r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
      WHERE t.office_id = $1 AND t.client_id = $2 ORDER BY r.recorded_at`,
     [officeId, clientId],
   )
-  return r.rows.map((x) => ({ recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
+  return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
 }
 
 /** 同じ利用者のほかの書類（書き方の相談で AI が読む）。同じ事業所の、同じ利用者のものだけ */
@@ -254,7 +259,7 @@ export async function writeField(c: Tx, officeId: string, clientId: string, docu
        by = EXCLUDED.by,
        batch_id = coalesce(EXCLUDED.batch_id, field_values.batch_id),
        cite = CASE
-         WHEN field_values.cite->>'kind' = 'survey-import' THEN EXCLUDED.cite
+         WHEN field_values.cite->>'kind' IN ('survey-import', 'document-input') THEN EXCLUDED.cite
          ELSE coalesce(EXCLUDED.cite, field_values.cite)
        END,
        updated_by = EXCLUDED.updated_by,
@@ -286,29 +291,35 @@ export interface FieldChange {
   base: unknown
   mode?: 'edit' | 'revert'
   surveySource?: SurveySource
+  documentSource?: DocumentSource
 }
 
 /**
  * 欄の値をそのまま変える直し（差分の欄の文章、前の文に戻す）。by=cm にする。
+ * 欄は書類の様式の版が読むものだけ。値の型は版の欄の辞書（fields.json と、その様式だけの欄）で確かめる（違えば BadRequest）。
  * 「前の文に戻す」（mode=revert）で保存した値と同じに戻ったときは、保存したときの by に戻す。
  * 画面が見ていた値（base）とサーバーの今の値が違えば、何も変えずに Conflict（AI が書いたばかりの値を上書きしない）。
  */
-export async function patchFields(db: Db, staff: Staff, documentId: string, changes: FieldChange[]) {
-  return tx(db, async (c) => {
+export async function patchFields(db: Db, staff: Staff, documentId: string, changes: FieldChange[], run: <T>(fn: (c: Tx) => Promise<T>) => Promise<T> = (fn) => tx(db, fn)) {
+  return run(async (c) => {
     const d = await lockDocument(c, staff.officeId, documentId)
-    const allowed = await allowedKeys(c, d.versionId)
+    const form = await loadFormDef(c, d.versionId)
+    const allowed = new Set(form.keys)
+    const dict = fieldDict(form.localFields)
     const saved = await readSaved(c, d.id)
     const fields = await readFields(c, d.id)
     for (const ch of changes) {
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
+      if (!validValue(ch.key, ch.value ?? null, {}, dict)) throw new BadRequest(`値の形が違います: ${ch.key}`)
       if (!sameValue(fields[ch.key]?.value ?? null, ch.base ?? null)) throw new Conflict(ch.key)
+      if (!validDiagramUpdate(ch.key, ch.value, fields[ch.key]?.value ?? null)) throw new BadRequest('図の版または内容が正しくありません')
       if (ch.surveySource && sameValue(ch.base, null) && !sameValue(saved[ch.key]?.value, null)) throw new Conflict(ch.key)
     }
     for (const ch of changes) {
       const back = ch.mode === 'revert' && saved[ch.key] && sameValue(saved[ch.key].value, ch.value)
       const cur = fields[ch.key]
       const by: Who = back ? saved[ch.key].by : ch.mode === 'revert' && cur ? cur.by : 'cm'
-      await writeField(c, staff.officeId, d.clientId, d.id, ch.key, ch.value, by, staff.id, { cite: ch.surveySource })
+      await writeField(c, staff.officeId, d.clientId, d.id, ch.key, ch.value, by, staff.id, { cite: ch.documentSource ?? ch.surveySource })
     }
     const values = applyChanges(plainValues(fields), changes.map((ch) => ({ key: ch.key, value: ch.value })))
     await afterEdit(c, staff, d, changes.map((ch) => ch.key), values)
@@ -438,7 +449,7 @@ export interface ApplyInput {
   jobId?: string
   /** Worker の今回の実行。ジョブ完了と用紙への反映を同じ transaction で確定する */
   completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown> }
-  proposed: Record<string, { value: unknown, cite?: string[] }>
+  proposed: Record<string, { value: unknown, cite?: Cite }>
   /** プログラムが決める欄の値（1 回目の録音の日をアセスメント実施日にする、など） */
   system?: Record<string, unknown>
 }
@@ -461,12 +472,13 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       }
     }
     const d = await lockDocument(c, input.officeId, input.documentId)
-    const allowed = await allowedKeys(c, d.versionId)
+    const form = await loadFormDef(c, d.versionId)
+    const allowed = new Set(form.keys)
     const fields = await readFields(c, d.id)
     const current: Record<string, CurrentField> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { value: v.value, by: v.by }]))
     const system = Object.fromEntries(Object.entries(input.system ?? {}).filter(([k]) => allowed.has(k)).map(([k, v]) => [k, { value: v }]))
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
-    const plan = planBatch(current, proposed, new Set(Object.keys(system)))
+    const plan = planBatch(current, proposed, new Set(Object.keys(system)), fieldDict(form.localFields))
     if (!plan.changes.length && !plan.kept.length) {
       if (input.completion) await finishJob(c, input, null, plan)
       return { batchId: null, plan }

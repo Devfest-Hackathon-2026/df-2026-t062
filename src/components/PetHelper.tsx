@@ -1,7 +1,11 @@
+import { diagramChatTitle } from '../diagram/chatEntry.ts'
 import { useEffect, useRef, useState } from 'react'
-import { SurveyImport } from '../survey/SurveyImport.tsx'
+import { DocumentInput } from '../document-input/DocumentInput.tsx'
+import { GLOBAL_DICT, type FieldDict } from '../../core/dictionary.ts'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
+import { PetInspection, useInspections } from './PetInspection.tsx'
+import { menuStatus } from './petInspection.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
 import type { ChatEntry } from './petChat.ts'
 import { fieldLabel, type availableTopics, type ReviewItem } from './petAssessment.ts'
@@ -10,6 +14,7 @@ import './PetHelper.css'
 const menus = [
   { id: 'documents', icon: 'file-earmark-arrow-down', title: '書類を取り込む' },
   { id: 'review', icon: 'check2-circle', title: '確認する' },
+  { id: 'inspect', icon: 'clipboard-check', title: '点検する' },
   { id: 'interview', icon: 'lightbulb', title: '面談のヒント' },
   { id: 'revise', icon: 'pencil', title: '書き方を相談する' },
 ] as const
@@ -17,7 +22,13 @@ const menus = [
 type Menu = typeof menus[number]['id']
 
 interface Props {
+  diagramRequest?: { key: string, id: number }
+  /** 点検（AI 点検）の相手。なければ「点検する」を出さない */
+  clientId?: string
+
   available: boolean
+  beforeDocumentAdopt: () => Promise<boolean>
+  onDocumentApplied: () => void
   clientName: string
   review: ReviewItem[]
   topics: ReturnType<typeof availableTopics>
@@ -26,14 +37,18 @@ interface Props {
   onIdentity: (sha256: string, confirmed: boolean) => void
   verifiedSources: ReadonlySet<string>
   /** 書き方の相談（開いている書類。アセスメントでも入院時情報提供書でも使える） */
-  chat: { documentId: string | undefined, current: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void }
+  chat: { documentId: string | undefined, current: Record<string, unknown>, saved?: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void>, dict?: FieldDict }
 }
 
-export function PetHelper({ available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat }: Props) {
+export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest }: Props) {
+
   const [menu, setMenu] = useState<Menu | null>(null)
+  const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
+  const [chatTopic, setChatTopic] = useState<string>()
+  const scopedDiagramRequest = activeDiagramRequest?.documentId === chat.documentId ? activeDiagramRequest : undefined
   // 相談のやり取りは画面の中だけ。メニューを行き来しても残し、書類が変わったら消す
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
-  useEffect(() => { setChatEntries([]) }, [chat.documentId])
+  useEffect(() => { setChatEntries([]); setActiveDiagramRequest(undefined); setChatTopic(undefined) }, [chat.documentId])
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
   const body = useRef<HTMLDivElement>(null)
@@ -41,16 +56,24 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
   const previousMenu = useRef<Menu | null>(null)
   const menuButtons = useRef<Partial<Record<Menu, HTMLButtonElement | null>>>({})
   const pending = review.filter((item) => !item.confirmed).length
+  const inspections = useInspections(clientId)
+  const inspectStatus = menuStatus(inspections.list)
 
   useEffect(() => {
     body.current?.scrollTo(0, 0)
-    if (menu) back.current?.focus({ preventScroll: true })
+    if (menu && !(menu === 'revise' && scopedDiagramRequest)) back.current?.focus({ preventScroll: true })
     else if (previousMenu.current) menuButtons.current[previousMenu.current]?.focus({ preventScroll: true })
   }, [menu])
+
+  useEffect(() => {
+    if (diagramRequest) { setActiveDiagramRequest({ ...diagramRequest, documentId: chat.documentId }); setChatTopic(diagramRequest.key); setMenu('revise'); setError('') }
+  }, [diagramRequest])
 
   const open = (next: Menu | null) => {
     if (menu) previousMenu.current = menu
     setMenu(next)
+    setActiveDiagramRequest(undefined)
+    setChatTopic(undefined)
     setError('')
     setConfirmed(false)
   }
@@ -62,24 +85,27 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
         {menu && (
           <header className="assistant-header">
             <button ref={back} type="button" aria-label="メニューに戻る" onClick={() => open(null)}><PetIcon name="arrow-left" /></button>
-            <h2 id="assistant-title">{menus.find(({ id }) => id === menu)?.title}</h2>
+            <h2 id="assistant-title">{menu === 'revise' ? diagramChatTitle(chatTopic) : menus.find(({ id }) => id === menu)?.title}</h2>
           </header>
         )}
         {!menu && (
           <>
             <PetMessage home>今日は何から<br />一緒に進めましょうか？</PetMessage>
             <div className="assistant-stack assistant-menu">
-              {menus.map(({ id, icon, title }) => (
+              {menus.filter(({ id }) => id !== 'inspect' || clientId).map(({ id, icon, title }) => (
                 <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className="assistant-card" onClick={() => open(id)}>
                   <PetIcon name={icon} />
-                  <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}</span>
+                  <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}
+                    {id === 'inspect' && inspectStatus && <small className={`insp-tone-${inspectStatus.tone}`}>{inspectStatus.text}</small>}</span>
                   <PetIcon name="chevron-right" />
                 </button>
               ))}
             </div>
           </>
         )}
-        <SurveyImport active={menu === 'documents'} available={available} clientName={clientName} onPreview={onPreview} onIdentity={onIdentity} verifiedSources={verifiedSources} />
+        {menu === 'documents' && <>
+          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} dict={chat.dict ?? GLOBAL_DICT} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
+        </>}
         {menu === 'review' && (
           <>
             <PetMessage>未確認の項目が{pending}件あります。<br />項目を選ぶと、用紙の該当欄に移動します。</PetMessage>
@@ -121,9 +147,11 @@ export function PetHelper({ available, clientName, review, topics, onJump, onPre
             {!topics.length && <p className="assistant-empty">{available ? '面談のヒントに対応する空欄はありません。' : 'アセスメントを開くと面談のヒントを表示します。'}</p>}
           </>
         )}
+        {menu === 'inspect' && clientId && <PetInspection clientId={clientId} list={inspections.list} reload={inspections.reload} onJump={jump} />}
         {menu === 'revise' && (
-          <PetChat documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet}
-            onJump={available ? jump : undefined} />
+          <PetChat key={chat.documentId} diagramRequest={scopedDiagramRequest} onTopicChange={setChatTopic} saved={chat.saved} documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
+            onJump={available ? jump : undefined} dict={chat.dict} />
+
         )}
         {error && <p className="assistant-error" role="alert">{error}</p>}
       </div>

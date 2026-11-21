@@ -41,8 +41,9 @@ export function addMissing(have: DraftSlot[], more: DraftSlot[]): DraftSlot[] {
   return out
 }
 
-/** 事業所だけの欄の定義（版の local_fields になる）。note は後の AI に欄の意味を伝えるため */
-export interface LocalField { key: string, label: string, type: 'text' | 'longtext' | 'date' | 'number' | 'enum' | 'bool', choices?: string[], note?: string }
+/** 事業所だけの欄の定義（版の local_fields になる）。note は後の AI に欄の意味を伝えるため。形は core/dictionary.ts */
+import type { LocalField } from '../../core/dictionary.ts'
+export type { LocalField }
 
 const LOCAL_KEY = /^local\.[a-zA-Z][a-zA-Z0-9_]*$/
 

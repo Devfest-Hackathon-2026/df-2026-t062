@@ -26,6 +26,7 @@ const enqueues = new Map<string, number>()
 /** チャットのエージェントに返した道具の答え（search_records） */
 const searchResults: Record<string, unknown>[] = []
 const crossReads: Record<string, unknown>[] = []
+const diagramReads: Record<string, unknown>[] = []
 
 const call = async (path: string, init: RequestInit & { token?: string } = {}) => {
   const res = await fetch(`${origin}${path}`, {
@@ -73,7 +74,7 @@ before(async () => {
     hasPdf = true
   }
   putFake = async (path, data) => { await storage.writeOnce('forms', path, data, 'image/png') }
-  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: f.fakeFormImport }) }
+  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } }) }
   const queue = new LocalQueue((id) => runJob(workerDeps, id))
   const server = createApiServer({
     db: async () => db,
@@ -89,10 +90,22 @@ before(async () => {
         await queue.enqueue(id)
       },
       async enqueueFormImport() {},
+      async enqueueInspection() {},
     }),
     // 台本: 録音を探してから、用紙を読んで案を出す
     chat: async () => async ({ contents }) => {
+      if (contents[0].parts[0].text === '#図503検証') throw Object.assign(new Error('private-provider-detail'), { status: 503 })
       const res = contents.at(-1)!.parts.find((p) => p.functionResponse)?.functionResponse
+      if (contents[0].parts[0].text?.includes('#133図検証')) {
+        if (!res) return [{ functionCall: { name: 'read_form', args: { query: 'health.bodyMap' } } }, { functionCall: { name: 'read_diagram_context', args: { field: 'health.bodyMap' } } }]
+        const context = contents.at(-1)!.parts.find((p) => p.functionResponse?.name === 'read_diagram_context')?.functionResponse?.response
+        if (context) {
+          diagramReads.push(context)
+          const id = (context.messages as { id: string }[]).at(-1)!.id
+          return [{ functionCall: { name: 'propose_edit', args: { key: 'health.bodyMap', baseRevision: 0, value: JSON.stringify({ version: 1, kind: 'body', revision: 1, data: { items: [{ id: 'api-right-knee', kind: 'pain', label: '本人の右膝の痛み', x: 0, y: 0, width: 32, height: 52, rotation: 0, view: 'front', anatomy: { region: 'knee', side: 'right', view: 'front' } }] } }), diagramChanges: { targetIds: ['api-right-knee'], evidence: [{ objectId: 'api-right-knee', sourceIds: [id] }] } } } }]
+        }
+        return [{ text: '右膝の痛みの案を作りました。まだ用紙は変わっていません。' }]
+      }
       // 台本 2: 「流用」なら、ほかの書類（アセスメント）を読むだけ
       if (/流用/.test(contents[0].parts[0].text ?? '')) {
         if (!res) return [{ functionCall: { name: 'read_form', args: { document: 'assessment' } } }]
@@ -453,4 +466,81 @@ test('書き方の相談: 入院時情報提供書から、同じ利用者のア
   assert.equal(read.document, 'アセスメント')
   const lifeHistory = read.filled.find((f) => f.key === 'person.lifeHistory')
   assert.equal(lifeHistory?.value, assessment.fields['person.lifeHistory'].value, 'アセスメントの値を読む')
+})
+
+test('図: 他欄を保持して更新・ページ保存でき、古いbaseや不正なrevisionでは何も上書きしない（#101）', { skip }, async () => {
+  const { blank } = await import('../core/diagram/model.ts')
+  const { nextDiagram } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const drawing = blank()
+  drawing.house.items.push({ id: 'fixture-bed', kind: 'bed', label: '検証用ベッド', x: 40, y: 40, width: 100, height: 70, rotation: 0 })
+  const value = nextDiagram('house', drawing, 0)
+  const patch = (next: unknown, base: unknown) => call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'housing.floorPlan', value: next, base }] }) })
+  const first = await patch(value, null)
+  assert.equal(first.status, 200)
+  const updated = (first.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) assert.deepEqual(updated.fields[key], field)
+  assert.equal(updated.saved['housing.floorPlan'], undefined)
+  assert.equal((await patch({ ...value, revision: 2 }, null)).status, 409)
+  assert.equal((await patch({ ...value, revision: 9 }, value)).status, 400)
+  assert.equal((await patch(value, { ...value, data: { items: drawing.house.items } })).status, 400)
+  assert.equal((await patch(null, value)).status, 400)
+  assert.equal((await patch(nextDiagram('family', blank(), 1), value)).status, 400)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 3 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved['housing.floorPlan'].value, value)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+})
+
+test('身体図チャット: 根拠取得→構造化案→明示反映→保存→PDF。未反映時・競合時は他欄を保持（#132・#133）', { skip }, async () => {
+  const { bodyAnchor } = await import('../core/diagram/body.ts')
+  const { diagramSchema } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const question = '#133図検証：本人の右膝が痛いです。この情報で身体図を作って'
+  const res = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: question }] }) })
+  assert.equal(res.status, 200)
+  const events = (await res.text()).trim().split('\n').map((line) => JSON.parse(line))
+  const done = events.at(-1)
+  assert.equal(done.type, 'done')
+  assert.equal(done.proposals.length, 1)
+  const proposal = done.proposals[0]
+  assert.equal(proposal.before, null)
+  const value = diagramSchema.parse(proposal.after)
+  assert.equal(value.kind, 'body')
+  if (value.kind !== 'body') return
+  assert.equal(value.data.items[0].sources![0].quote, question)
+  assert.equal(value.data.items[0].x + 16, bodyAnchor({ region: 'knee', side: 'right', view: 'front' })!.x)
+  assert.equal((diagramReads.at(-1)!.visitNotes as { available: boolean }).available, false)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields, before.fields)
+  const changes = [{ key: proposal.key, value: proposal.after, base: proposal.before }]
+  const applied = await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })
+  assert.equal(applied.status, 200)
+  const current = (applied.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) if (key !== proposal.key) assert.deepEqual(current.fields[key], field)
+  assert.equal(current.saved[proposal.key], undefined)
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })).status, 409)
+  const bad = structuredClone(value); bad.data.items[0].view = 'back'
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: proposal.key, value: { ...bad, revision: 2 }, base: value }] }) })).status, 400)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 4 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved[proposal.key].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+  const wrongDraft = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', text: '修正して' }], draft: { key: 'family.genogram', after: value } }) })
+  assert.equal(wrongDraft.status, 400)
+  const wrongTarget = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'family.genogram', messages: [{ role: 'user', text: '修正して' }], draft: { key: 'health.bodyMap', after: value } }) })
+  assert.equal(wrongTarget.status, 400)
+  const unsupported = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'housing.floorPlan', messages: [{ role: 'user', text: '作って' }] }) })
+  assert.equal(unsupported.status, 400)
+  const failed = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: '#図503検証' }] }) })
+  const failureEvents = (await failed.text()).trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(failureEvents.at(-1), { type: 'error', code: 'overloaded' })
+  assert.ok(!failureEvents.some((e) => e.type === 'done'))
+  assert.ok(!JSON.stringify(failureEvents).includes('private-provider-detail'))
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['health.bodyMap'].value, value)
 })

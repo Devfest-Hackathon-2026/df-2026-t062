@@ -20,7 +20,7 @@ export const LocalFieldSchema = z.object({
 const Mm = z.number().finite()
 export const PdfmeSlotSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(['text', 'circleMark']),
+  type: z.enum(['text', 'circleMark', 'image']),
   content: z.string(),
   position: z.object({ x: Mm, y: Mm }),
   width: Mm.positive(),
@@ -29,8 +29,8 @@ export const PdfmeSlotSchema = z.object({
 
 /** 対応の形（op ごとの中身は core/binding.ts の checkBindings で確かめる） */
 export const BindingSchema = z.object({
-  op: z.enum(['text@1', 'option@1', 'symbol@1', 'date@1', 'era@1', 'rhythm@1', 'ageAt@1', 'join@1']),
-  ui: z.enum(['text', 'area', 'check', 'circle', 'cell']),
+  op: z.enum(['text@1', 'option@1', 'symbol@1', 'date@1', 'era@1', 'rhythm@1', 'ageAt@1', 'join@1', 'diagram@1']),
+  ui: z.enum(['text', 'area', 'check', 'circle', 'cell', 'diagram']),
   ref: z.object({ key: z.string().min(1), path: z.array(z.unknown()).optional() }),
 }).passthrough()
 

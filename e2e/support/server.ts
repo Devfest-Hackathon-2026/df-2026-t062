@@ -50,7 +50,7 @@ try {
   }
   api = createApiServer({
     db: async () => db, verifier: () => new DevVerifier(), storage: () => storage,
-    queue: () => ({ async enqueue() {}, async enqueueFormImport() {} }), devAuth: true,
+    queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true,
   })
   api.listen(0, '127.0.0.1')
   await once(api, 'listening')

@@ -21,7 +21,6 @@ FORM_ORDER = ["assess", "cp1", "cp2", "cp3", "adm"]
 
 def check(d):
     errors = []
-    item_nos = {i["no"] for i in d["item23"]}
     choice_sets = d["choiceSets"]
     types = d["types"]
     sources = d["sources"]
@@ -42,10 +41,8 @@ def check(d):
         if "of" in f and f["of"] not in types:
             errors.append(f"{where}.{k}: of の参照先がない {f['of']}")
         if top:
-            if "item23" not in f:
-                errors.append(f"{k}: item23 がない（どれにも当たらないなら null）")
-            elif f["item23"] is not None and f["item23"] not in item_nos:
-                errors.append(f"{k}: item23 が 1〜23 でない {f['item23']}")
+            if "item23" in f:
+                errors.append(f"{k}: item23 はやめた（2026-11-20。録音からの書き込みは、まとめる項目と、AI が欄を選ぶ形にした）")
             for s in f.get("source", []):
                 if s not in sources:
                     errors.append(f"{k}: source が不明 {s}")
@@ -186,7 +183,6 @@ def main():
         sys.exit(1)
 
     fields = [f for f in d["fields"] if "group" not in f]
-    items = {i["no"]: i["name"] for i in d["item23"]}
     lines = []
     lines.append("# 欄の一覧（自動生成）")
     lines.append("")
@@ -215,16 +211,15 @@ def main():
         lines.append(f"{req['decided']} に決めた。決め方: {req['rule']}。")
         lines.append(f"{req['note']}。")
         lines.append("")
-        lines.append("| 欄 | key | 23 項目 | 用紙の場所 |")
-        lines.append("|---|---|---|---|")
+        lines.append("| 欄 | key | 用紙の場所 |")
+        lines.append("|---|---|---|")
         for k in req["keys"]:
             ks = k if isinstance(k, list) else [k]
             fs = [by_key[x] for x in ks]
             label = " または ".join(esc(f["label"]) for f in fs)
             keytxt = " または ".join(f"`{x}`" for x in ks)
-            item = "—" if fs[0]["item23"] is None else str(fs[0]["item23"])
             loc = "<br>".join(esc(f["forms"]["assess"]) for f in fs)
-            lines.append(f"| {label} | {keytxt} | {item} | {loc} |")
+            lines.append(f"| {label} | {keytxt} | {loc} |")
         lines.append("")
 
     # 欄どうしの関係（プログラムが使う属性）
@@ -288,17 +283,6 @@ def main():
         walk_detail(f, f["key"], f["label"], f["key"])
     lines.append("")
 
-    # 23 項目ごとの数
-    lines.append("## 23 項目ごとの欄の数")
-    lines.append("")
-    lines.append("| No. | 項目 | 欄の数 |")
-    lines.append("|---|---|---|")
-    cnt = collections.Counter(f["item23"] for f in fields)
-    for no, name in items.items():
-        lines.append(f"| {no} | {name} | {cnt.get(no, 0)} |")
-    lines.append(f"| — | どれにも当たらない | {cnt.get(None, 0)} |")
-    lines.append("")
-
     # 使い回す欄
     lines.append("## 様式をまたいで使い回す欄")
     lines.append("")
@@ -320,15 +304,14 @@ def main():
             group = f["group"]
             lines.append(f"### {group}")
             lines.append("")
-            lines.append("| 欄 | key | 型 | 選択肢 | 23 項目 | アセスメントで必須 | 出どころ | 様式 | 関係 | メモ |")
-            lines.append("|---|---|---|---|---|---|---|---|---|---|")
+            lines.append("| 欄 | key | 型 | 選択肢 | アセスメントで必須 | 出どころ | 様式 | 関係 | メモ |")
+            lines.append("|---|---|---|---|---|---|---|---|---|")
             continue
-        item = "—" if f["item23"] is None else str(f["item23"])
         forms = "<br>".join(f"{k}: {esc(v)}" for k, v in f.get("forms", {}).items()) or "（様式に欄なし）"
         src = "・".join(f["source"])
         must = "●" if f["key"] in req_assess else ""
         lines.append(
-            f"| {esc(f['label'])} | `{f['key']}` | {esc(type_text(f, d))} | {esc(choices_text(f, d['choiceSets']))} | {item} | {must} | {src} | {forms} | {relation_text(f)} | {esc(f.get('note', ''))} |"
+            f"| {esc(f['label'])} | `{f['key']}` | {esc(type_text(f, d))} | {esc(choices_text(f, d['choiceSets']))} | {must} | {src} | {forms} | {relation_text(f)} | {esc(f.get('note', ''))} |"
         )
     lines.append("")
 
@@ -346,7 +329,6 @@ def main():
     OUT.write_text("\n".join(lines), encoding="utf-8")
     print(f"OK: 欄 {len(fields)}、使い回し {len(shared)}、書き出し {OUT.name}")
     print("様式ごと:", dict(per_form))
-    print("23項目ごと:", {k: cnt[k] for k in sorted(cnt, key=lambda x: (x is None, x or 0))})
 
 
 if __name__ == "__main__":
