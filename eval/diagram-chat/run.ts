@@ -37,7 +37,7 @@ const results: { name: string, ok: boolean, reply?: unknown, error?: string }[] 
 for (const c of cases.filter((c) => !process.env.DIAGRAM_CASE || c.name === process.env.DIAGRAM_CASE)) {
   let reply: Awaited<ReturnType<typeof runChat>> | undefined
   try {
-    reply = await runChat({ model, document: c.document, recordings: records, messages: [{ role: 'user', text: c.text }] })
+    reply = await runChat({ model, document: c.document, recordings: records, diagramField: c.name.startsWith('family-') ? 'family.genogram' : 'health.bodyMap', messages: [{ role: 'user', text: c.text }] })
     c.check(reply)
     results.push({ name: c.name, ok: true, reply })
     console.log(JSON.stringify({ case: c.name, ok: true }))

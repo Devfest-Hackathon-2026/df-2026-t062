@@ -93,6 +93,7 @@ before(async () => {
     }),
     // 台本: 録音を探してから、用紙を読んで案を出す
     chat: async () => async ({ contents }) => {
+      if (contents[0].parts[0].text === '#図503検証') throw Object.assign(new Error('private-provider-detail'), { status: 503 })
       const res = contents.at(-1)!.parts.find((p) => p.functionResponse)?.functionResponse
       if (contents[0].parts[0].text?.includes('#133図検証')) {
         if (!res) return [{ functionCall: { name: 'read_form', args: { query: 'health.bodyMap' } } }, { functionCall: { name: 'read_diagram_context', args: { field: 'health.bodyMap' } } }]
@@ -501,7 +502,7 @@ test('身体図チャット: 根拠取得→構造化案→明示反映→保存
   const path = `/api/documents/${id}`
   const before = ((await call(path)).body as Doc).document
   const question = '#133図検証：本人の右膝が痛いです。この情報で身体図を作って'
-  const res = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', text: question }] }) })
+  const res = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: question }] }) })
   assert.equal(res.status, 200)
   const events = (await res.text()).trim().split('\n').map((line) => JSON.parse(line))
   const done = events.at(-1)
@@ -531,4 +532,14 @@ test('身体図チャット: 根拠取得→構造化案→明示反映→保存
   if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
   const wrongDraft = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', text: '修正して' }], draft: { key: 'family.genogram', after: value } }) })
   assert.equal(wrongDraft.status, 400)
+  const wrongTarget = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'family.genogram', messages: [{ role: 'user', text: '修正して' }], draft: { key: 'health.bodyMap', after: value } }) })
+  assert.equal(wrongTarget.status, 400)
+  const unsupported = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'housing.floorPlan', messages: [{ role: 'user', text: '作って' }] }) })
+  assert.equal(unsupported.status, 400)
+  const failed = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: '#図503検証' }] }) })
+  const failureEvents = (await failed.text()).trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(failureEvents.at(-1), { type: 'error', code: 'overloaded' })
+  assert.ok(!failureEvents.some((e) => e.type === 'done'))
+  assert.ok(!JSON.stringify(failureEvents).includes('private-provider-detail'))
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['health.bodyMap'].value, value)
 })

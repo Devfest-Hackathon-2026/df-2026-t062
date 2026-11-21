@@ -6,3 +6,7 @@ export function diagramChatQuestion(text: string, key?: string): string {
   const name = diagramChatName(key)
   return name && !text.includes(name) ? `${name}について：${text}` : text
 }
+/** Keep both the failed question and anything typed while the request was running. */
+export function restoreChatText(failed: string, current: string): string {
+  return current && current !== failed ? `${failed}\n\n${current}` : failed
+}

@@ -11,7 +11,16 @@ import { blank } from '../../core/diagram/model.ts'
 import { diagramSchema, nextDiagram, validDiagramUpdate } from '../../core/diagram/fields.ts'
 import { sameValue } from '../../core/apply-batch.ts'
 import { normalizeBodyProposal } from '../../core/diagram/body.ts'
+import { api } from '../../src/lib/api.ts'
+import { readChatStream } from '../../src/lib/chatStream.ts'
 import '../../src/components/PetHelper.css'
+// The fixture must never fall through to a real API, even when Send is pressed.
+api.chat = async (_id, _messages, onStep) => {
+  const status = new URLSearchParams(location.search).get('chatError')
+  const code = status === '503' ? 'overloaded' : status === '504' ? 'timeout' : status === '429' ? 'rate_limited' : 'unknown'
+  await new Promise((r) => setTimeout(r, status ? 1500 : 0))
+  return readChatStream(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(JSON.stringify({ type: 'error', code }) + '\n')); controller.close() } }), onStep)
+}
 const d = blank()
 d.family.people = [ { id: 'subject', name: '検証本人', sex: 'unknown', deceased: null, household: '同居', isSubject: true, x: 0, y: 0 }, { id: 'son', name: '検証長男', sex: 'male', deceased: null, household: '同居', x: 200, y: 0 } ]
 d.family.relations = [{ id: 'relation', source: 'subject', target: 'son', kind: '親子' }]

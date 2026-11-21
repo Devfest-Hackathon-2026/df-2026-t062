@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { makeDiagramContext, readDiagramContext, readDiagramRecords, prepareDiagramProposal } from '../api/diagram-chat.ts'
-import { checkProposal, runChat, type ChatDocument, type ChatProposal, type ChatRecording } from '../api/chat.ts'
+import { checkProposal, runChat, diagramChatSystem, chatSystem, type ChatDocument, type ChatProposal, type ChatRecording } from '../api/chat.ts'
 import { blank, type Item } from '../core/diagram/model.ts'
 import { nextDiagram, diagramSchema } from '../core/diagram/fields.ts'
 import { anatomySchema, bodyAnchor, normalizeBodyProposal, tapPosition, BODY_VIEWS } from '../core/diagram/body.ts'
@@ -16,6 +16,72 @@ const meta = (ids: string[], source: string) => ({ targetIds: ids, evidence: ids
 const candidate = (key: string, before: unknown, after: unknown): ChatProposal => ({ key, label: key, before, after })
 const pendingValue = () => nextDiagram('body', blank(), 0)
 const pain = (id = 'pain'): Item => ({ id, kind: 'pain', label: '右膝の痛み', x: 0, y: 0, width: 32, height: 52, rotation: 0, view: 'front', anatomy: { region: 'knee', side: 'right', view: 'front' } })
+
+test('selected diagram is preloaded with its shape and real sources; unrelated edits and tools are rejected', async () => {
+  const document: ChatDocument = { ...doc, fields: { ...doc.fields, 'complaint.person': { value: '元の文章', by: 'cm' } } }
+  const before = structuredClone(document)
+  let turn = 0
+  const reply = await runChat({ document, recordings: [], diagramField: 'health.bodyMap', messages: [{ role: 'user', text: '本人の右膝が痛いので身体図を作って' }], model: async ({ system, contents, tools }) => {
+    assert.match(system, /health.bodyMap/)
+    assert.ok(!tools.some((t) => t.name === 'missing_fields' || t.name === 'search_records'))
+    if (turn++ === 0) return [
+      { functionCall: { name: 'propose_edit', args: { key: 'complaint.person', value: '勝手な変更' } } },
+      { functionCall: { name: 'propose_edit', args: { key: 'family.genogram', value: '{}' } } },
+      { functionCall: { name: 'missing_fields' } },
+    ]
+    if (turn === 2) {
+      const responses = contents.at(-1)!.parts.map((p) => p.functionResponse!.response)
+      assert.match(String(responses[0].reason), /相談対象/)
+      assert.match(String(responses[1].reason), /相談対象/)
+      assert.ok(responses[2].error)
+      const attachment = contents[0].parts[1].text!
+      const preloaded = JSON.parse(attachment.slice(attachment.indexOf('{')))
+      assert.equal(preloaded.field, 'health.bodyMap')
+      assert.equal(preloaded.form.empty[0].key, 'health.bodyMap')
+      assert.ok(preloaded.form.empty[0].shape.schema)
+      const id = preloaded.context.messages[0].id
+      return [{ functionCall: { name: 'propose_edit', args: { key: 'health.bodyMap', baseRevision: 0, value: JSON.stringify({ version: 1, kind: 'body', revision: 1, data: { items: [pain()] } }), diagramChanges: meta(['pain'], id) } } }]
+    }
+    return [{ text: '右膝の痛みの案です。まだ用紙には反映していません。' }]
+  } })
+  assert.equal(reply.proposals.length, 1)
+  assert.equal(reply.proposals[0].key, 'health.bodyMap')
+  assert.deepEqual(document, before)
+  assert.ok(diagramChatSystem('health.bodyMap').length < chatSystem('assessment').length)
+  assert.doesNotMatch(diagramChatSystem('health.bodyMap'), /欄の置き場所の決まり/)
+})
+
+test('focused diagram cannot use a different draft or a missing published diagram slot', async () => {
+  let called = false
+  const base = { document: doc, recordings: [], messages: [{ role: 'user' as const, text: '直して' }], model: async () => { called = true; return [] } }
+  await assert.rejects(runChat({ ...base, diagramField: 'family.genogram', draft: { key: 'health.bodyMap', after: pendingValue() } }), /一致/)
+  await assert.rejects(runChat({ ...base, diagramField: 'family.genogram', document: { ...doc, editableKeys: [] } }), /図欄/)
+  assert.equal(called, false)
+})
+
+test('preloaded record page is not mistaken for complete retrieval', async () => {
+  let turn = 0
+  const reply = await runChat({ document: doc, diagramField: 'health.bodyMap', recordings: [{ recordedAt: '2026-11-20', utterances: Array.from({ length: 35 }, (_, i) => ({ id: `r${i}`, speaker: '本人', text: '右膝が痛いです' })) }], messages: [{ role: 'user', text: '訪問記録から身体図を作って' }], model: async ({ contents }) => {
+    if (turn++ === 0) {
+      const attachment = contents[0].parts[1].text!
+      const context = JSON.parse(attachment.slice(attachment.indexOf('{'))).context
+      assert.equal(context.recordings.complete, false)
+      assert.equal(context.recordings.nextCursor, 30)
+      return [{ functionCall: { name: 'propose_edit', args: { key: 'health.bodyMap', baseRevision: 0, value: JSON.stringify({ version: 1, kind: 'body', revision: 1, data: { items: [pain()] } }), diagramChanges: meta(['pain'], context.recordings.parts[0].id) } } }]
+    }
+    assert.match(String(contents.at(-1)!.parts[0].functionResponse!.response.reason), /未取得/)
+    return [{ text: 'まだ読み取っていない記録があります。' }]
+  } })
+  assert.equal(reply.proposals.length, 0)
+})
+
+test('an expired chat deadline never calls the model or changes the sheet', async () => {
+  let called = false
+  const before = structuredClone(doc)
+  await assert.rejects(runChat({ document: doc, diagramField: 'family.genogram', recordings: [], messages: [{ role: 'user', text: '作って' }], signal: AbortSignal.abort(new DOMException('deadline', 'TimeoutError')), model: async () => { called = true; return [] } }), { name: 'TimeoutError' })
+  assert.equal(called, false)
+  assert.deepEqual(doc, before)
+})
 
 test('record retrieval pages every utterance, including non-keyword and very long statements, without truncation', () => {
   const utterances = Array.from({ length: 93 }, (_, i) => ({ id: `u-${i}`, speaker: '本人', text: i === 70 ? '長い発言'.repeat(3000) : `語句に一致しない発言${i}` }))

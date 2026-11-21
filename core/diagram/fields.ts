@@ -2,6 +2,10 @@ import { bodyPlacement, tapPosition } from './body.ts'
 import { z } from 'zod'
 import { blank, schema, type Doc, type Tab } from './model.ts'
 
+export const diagramChatFields = ['family.genogram', 'health.bodyMap'] as const
+export type DiagramChatField = typeof diagramChatFields[number]
+export function isDiagramChatField(key: unknown): key is DiagramChatField { return diagramChatFields.some((field) => field === key) }
+
 export const diagramKinds: Record<string, Tab> = {
   'family.genogram': 'family',
   'housing.floorPlan': 'house',

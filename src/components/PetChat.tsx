@@ -1,6 +1,7 @@
-import { diagramChatName, diagramChatQuestion } from '../diagram/chatEntry.ts'
+import { diagramChatName, diagramChatQuestion, restoreChatText } from '../diagram/chatEntry.ts'
 import { sameValue } from '../../core/apply-batch.ts'
-import { diagramSchema, diagramDocument, diagramKinds } from '../../core/diagram/fields.ts'
+import { diagramSchema, diagramDocument, diagramKinds, isDiagramChatField } from '../../core/diagram/fields.ts'
+import { chatError } from '../../core/chat-error.ts'
 // 「書き方を相談する」: ペット（道具を使うエージェント）に書き方を相談する。したこと（作業ログ）を 1 行ずつ出す。書き換えの案は差分のカードで出し、押したときだけ用紙に入れる。
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react'
 import { api } from '../lib/api.ts'
@@ -46,6 +47,8 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
   const [applying, setApplying] = useState(false)
   const [text, setText] = useState('')
   const [topic, setTopic] = useState(diagramRequest?.key)
+  const activeTopic = useRef(topic)
+  activeTopic.current = topic
   const entryDrafts = useRef(new Map<string, { text: string, draft?: ProposalCard }>())
   const [revisionDraft, setRevisionDraft] = useState<ProposalCard>()
   const input = useRef<HTMLTextAreaElement>(null)
@@ -84,6 +87,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
     e?.preventDefault()
     const question = diagramChatQuestion(text.trim(), revisionDraft?.key ?? topic)
     if (!text.trim() || busy || !documentId) return
+    const startedTopic = topic
     const asked: ChatEntry = { id: nextId++, role: 'user', text: question }
     const history = historyFor([...entries, asked])
     setEntries((prev) => [...prev, asked])
@@ -92,16 +96,24 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
     setLive([])
     setBusy(true)
     try {
-      const r = await api.chat(documentId, history, (s) => { if (activeDoc.current === documentId) setLive((prev) => [...prev, s]) }, revisionDraft ? { key: revisionDraft.key, after: revisionDraft.after, pendingLocations: revisionDraft.pendingLocations } : undefined)
+      const field = revisionDraft?.key ?? topic
+      const r = await api.chat(documentId, history, (s) => { if (activeDoc.current === documentId) setLive((prev) => [...prev, s]) }, revisionDraft ? { key: revisionDraft.key, after: revisionDraft.after, pendingLocations: revisionDraft.pendingLocations } : undefined, isDiagramChatField(field) ? field : undefined)
       if (activeDoc.current !== documentId) return
-      setRevisionDraft(undefined)
+      setRevisionDraft((current) => current === revisionDraft ? undefined : current)
+      const previous = entryDrafts.current.get(startedTopic ?? 'general')
+      if (revisionDraft && previous?.draft === revisionDraft) entryDrafts.current.set(startedTopic ?? 'general', { ...previous, draft: undefined })
       setEntries((prev) => [...prev.map((entry) => ({ ...entry, proposals: entry.proposals?.map((p) => p.state === 'ready' && r.proposals.some((next) => next.key === p.key) ? { ...p, superseded: true } : p) })), { id: nextId++, role: 'pet', text: r.reply, steps: r.steps, proposals: r.proposals.map((p) => ({ ...p, state: 'ready' })) }])
-    } catch {
+    } catch (error) {
       if (activeDoc.current !== documentId) return
       // 送れなかった相談は入力欄に戻す
       setEntries((prev) => prev.filter((x) => x.id !== asked.id))
-      setText(question)
-      setError('ペットに相談できませんでした。少し待ってから、もう一度送ってください。')
+      if (activeTopic.current === startedTopic) setText((current) => restoreChatText(question, current))
+      else {
+        const previous = entryDrafts.current.get(startedTopic ?? 'general')
+        entryDrafts.current.set(startedTopic ?? 'general', { text: restoreChatText(question, previous?.text ?? ''), draft: previous?.draft })
+      }
+      const name = diagramChatName(startedTopic)
+      setError(`${name ? `${name}：` : ''}${chatError(error).message}`)
     } finally {
       if (activeDoc.current === documentId) { setBusy(false); setLive([]) }
     }
