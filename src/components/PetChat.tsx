@@ -1,5 +1,6 @@
 // 「書き方を相談する」: ペット（道具を使うエージェント）に書き方を相談する。したこと（作業ログ）を 1 行ずつ出す。書き換えの案は差分のカードで出し、押したときだけ用紙に入れる。
 import { useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react'
+import type { FieldDict } from '../../core/dictionary.ts'
 import { api } from '../lib/api.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
 import { cardAction, historyFor, proposalChanges, type ChatEntry, type ProposalCard } from './petChat.ts'
@@ -13,12 +14,14 @@ interface Props {
   onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void
   /** 用紙のその欄へ移る。移れない書類では undefined */
   onJump?: (key: string) => void
+  /** 書類の様式の版の欄の辞書（その様式だけの欄の差分を、型に合わせて出す） */
+  dict?: FieldDict
 }
 
 let nextId = 1
 
-function DiffLines({ field, before, after }: { field: string, before: unknown, after: unknown }) {
-  const { del, ins } = proposalChanges(field, before, after)
+function DiffLines({ field, before, after, dict }: { field: string, before: unknown, after: unknown, dict?: FieldDict }) {
+  const { del, ins } = proposalChanges(field, before, after, dict)
   return (
     <>
       {del.map((t, i) => <p key={`d${i}`} className="assistant-chat-del"><span aria-label="消える文">−</span>{t}</p>)}
@@ -27,7 +30,7 @@ function DiffLines({ field, before, after }: { field: string, before: unknown, a
   )
 }
 
-export function PetChat({ documentId, entries, setEntries, current, onSet, onJump }: Props) {
+export function PetChat({ documentId, entries, setEntries, current, onSet, onJump, dict }: Props) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -107,7 +110,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onJum
                   {onJump
                     ? <button type="button" className="assistant-chat-field" onClick={() => onJump(card.key)}>{card.label}<PetIcon name="chevron-right" /></button>
                     : <strong className="assistant-chat-field">{card.label}</strong>}
-                  <DiffLines field={card.key} before={card.before} after={card.after} />
+                  <DiffLines field={card.key} before={card.before} after={card.after} dict={dict} />
                   <div className="assistant-chat-actions">
                     {card.state === 'ready'
                       ? <button type="button" className="assistant-chat-apply" onClick={() => press(m.id, card)}><PetIcon name="pencil" />用紙に入れる</button>

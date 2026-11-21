@@ -310,7 +310,7 @@ class TestSheetMore(unittest.TestCase):
         self.assertEqual(verdict(r, "health.visits[disease=高血圧]/disease"), "正しい")
         self.assertEqual(verdict(r, "health.visits[disease=高血圧]/medication"), "正しい")
 
-    def test_default_gold_facts_are_same_source_and_same_item23(self):
+    def test_default_gold_facts_are_same_source(self):
         gold = make_gold(sheet={"entries": [{"key": "meal.chewing", "expect": "問題なし", "from": ["s2-001"]}]})
         facts = [f for f in SUB_FACTS if f["id"] != "f-1"]
         r = run({}, facts=facts, gold=gold)
@@ -342,11 +342,51 @@ class TestFacts(unittest.TestCase):
         r = run({})
         self.assertEqual(unit(r, "meal.chewing")["cause"], "書く段階")
 
-    def test_wrong_item23_is_counted(self):
+    def test_item23_is_not_scored(self):
+        # 欄は AI が要約を見て選ぶので、23 項目の番号（item23）では採点しない（docs/再設計/17）
         facts = [dict(f, item23=10) if f["id"] == "f-1" else f for f in SUB_FACTS]
         r = run({}, facts=facts)
-        self.assertEqual(r["facts"]["番号違い"], 1)
-        self.assertIn("番号違い", unit(r, "meal.chewing")["cause"])
+        self.assertNotIn("番号違い", r["facts"])
+        self.assertEqual(r["facts"]["取り出せた"], 4)
+        self.assertEqual(unit(r, "meal.chewing")["cause"], "書く段階")
+
+
+class TestSummaryLeaks(unittest.TestCase):
+    """要約の漏れ: 正解にある話のうち、要約に入らなかった数（要約から書く流れの提出だけ）"""
+
+    def test_leaks_are_gold_facts_not_in_the_summaries(self):
+        summaries = [{"id": "s-1", "topic": "eating", "seq": 1, "text": "咀嚼に大きな問題はない。退院後は嫁が3食作る"}]
+        r = bench.score_summaries(make_gold(), summaries, "v1", FakeJudge())
+        self.assertEqual(r["正解の数"], 4)
+        self.assertEqual(r["入った"], 2)
+        self.assertEqual(r["漏れ"], 2)
+        self.assertEqual(sorted(i["id"] for i in r["items"] if i["status"] == "漏れ"), ["g-2", "g-5"])
+
+    def test_only_facts_known_by_the_time_point(self):
+        r = bench.score_summaries(make_gold(), [], "v2", FakeJudge())
+        self.assertEqual(r["正解の数"], 5)
+        self.assertEqual(r["漏れ"], 5)
+
+    def test_pending_judgments_are_counted_separately(self):
+        r = bench.score_summaries(make_gold(), [{"id": "s-1", "topic": "x", "seq": 1, "text": "何か"}], "v1", FakeJudge(pending=True))
+        self.assertEqual(r["要判定"], 4)
+        self.assertEqual(r["漏れ"], 0)
+
+    def test_score_command_reports_leaks_when_summaries_exist(self):
+        with tempfile.TemporaryDirectory() as d:
+            dump(os.path.join(d, "fields.json"), FIELDS_RAW)
+            dump(os.path.join(d, "原本.json"), GENPON_RAW)
+            dump(os.path.join(d, "gold", "sheet.json"), GOLD_SHEET)
+            dump(os.path.join(d, "gold", "facts.json"), GOLD_FACTS)
+            dump(os.path.join(d, "gold", "questions.json"), GOLD_QUESTIONS)
+            dump(os.path.join(d, "sub", "v1", "sheet.json"), {"fields": {}, "unplaced": []})
+            dump(os.path.join(d, "sub", "v1", "summaries.json"), {"summaries": [{"id": "s-1", "topic": "eating", "seq": 1, "text": "咀嚼に大きな問題はない"}]})
+            code = bench.main(["score", "--gold", os.path.join(d, "gold"), "--submission", os.path.join(d, "sub"),
+                               "--fields", os.path.join(d, "fields.json"), "--at", "v1"])
+            self.assertEqual(code, 0)
+            result = json.loads(read(os.path.join(d, "sub", "bench", "result.json")))
+            self.assertEqual(result["results"][0]["summaryLeaks"]["正解の数"], 4)
+            self.assertIn("要約の漏れ", read(os.path.join(d, "sub", "bench", "report.md")))
 
     def test_floating_fact_is_neither_used_nor_marked_unplaced(self):
         r = run({"meal.chewing": {"value": "問題なし", "facts": ["f-1"]}}, unplaced=["f-2"])

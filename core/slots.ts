@@ -3,6 +3,7 @@
 //   editSlot    … 印字欄を直した → どの key をどう変えるか、または断る理由
 //   slotMarks   … 保存した値と今の値の違い → 印字欄ごとの印（橙＝AI、黄＝ケアマネ）
 import type { FormDef } from './form.ts'
+import { fieldDict } from './dictionary.ts'
 import { editSlot as editBinding, keysOf, renderAll, type Change, type EditResult, type Values } from './binding.ts'
 
 export type { Change, EditResult, Values }
@@ -18,7 +19,7 @@ export function renderSlots(form: FormDef, values: Values): Record<string, strin
  * text は、丸なら 'true'/'false'、✓ の欄なら '✓'/''、文字の欄なら打った文字。
  */
 export function editSlot(form: FormDef, values: Values, slot: string, text: string): EditResult {
-  return editBinding(form.bindings, values, slot, text)
+  return editBinding(form.bindings, values, slot, text, fieldDict(form.localFields))
 }
 
 /** 変更を値に入れる（null は消す） */

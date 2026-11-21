@@ -1,9 +1,10 @@
+import { GLOBAL_DICT, type FieldDict } from '../core/dictionary.ts'
 import { normalizeValue } from '../core/normalize.ts'
 import { validValue } from '../core/schema.ts'
 import type { ProposedValue } from './types.ts'
 
 /** 書類に反映できる提案と、値の形式が合わず反映できない欄を分ける。 */
-export function prepareWriterValues(values: Record<string, ProposedValue>): {
+export function prepareWriterValues(values: Record<string, ProposedValue>, dict: FieldDict = GLOBAL_DICT): {
   proposed: Record<string, ProposedValue>
   droppedFields: string[]
 } {
@@ -11,7 +12,7 @@ export function prepareWriterValues(values: Record<string, ProposedValue>): {
   const droppedFields: string[] = []
   for (const [key, proposal] of Object.entries(values)) {
     const value = normalizeValue(key, proposal.value)
-    if (validValue(key, value, { strictDates: true })) proposed[key] = { ...proposal, value }
+    if (validValue(key, value, { strictDates: true }, dict)) proposed[key] = { ...proposal, value }
     else droppedFields.push(key)
   }
   return { proposed, droppedFields }

@@ -7,17 +7,17 @@ import { Hono, type Context, type Handler } from 'hono'
 import { z } from 'zod'
 import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
-import { validValue } from '../core/schema.ts'
 import * as importsDb from '../db/form-imports.ts'
+import * as inspections from '../db/inspections.ts'
+import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
 import * as carePlans from '../db/care-plans.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
-import type { RequiredKeys } from '../core/required.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
-import { fakeModel, runChat, type ChatModel } from './chat.ts'
+import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
 import { previewPdf, publishProblems } from './form-check.ts'
 import { checkDraftVersion } from '../worker/form-import/check.ts'
@@ -25,6 +25,9 @@ import { BindingSchema, FormPageSchema, LocalFieldSchema, PdfmeSlotSchema } from
 import type { LocalField } from '../worker/form-import/draft.ts'
 import { allows, operationsOf, STAFF_ROLES, type Operation } from './permissions.ts'
 import type { Queue } from './queue.ts'
+import { editSlot } from './form-slots.ts'
+import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
+import { fieldDict } from '../core/dictionary.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 
 export interface ApiDeps {
@@ -36,6 +39,8 @@ export interface ApiDeps {
   chat?: () => Promise<ChatModel>
   /** ケアプランの AI 原案。なければ試しの原案（fake） */
   carePlanAi?: () => Promise<carePlans.CarePlanDrafter>
+  /** 責任者の言葉を欄に当てはめる（様式の下書きを直す）。なければ試しの当てはめ（fake） */
+  fieldMatcher?: () => Promise<FieldMatcher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -116,6 +121,7 @@ const RecordingInput = z.object({
   expiredUploadUrl: z.string().max(4096).optional(),
 })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
+const InspectionInput = z.object({ checkSet: z.string().min(1).max(100).optional() })
 const ChatInput = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'pet']), text: z.string().trim().min(1).max(4000) })).min(1).max(40)
     .refine((m) => m.at(-1)?.role === 'user'),
@@ -145,6 +151,11 @@ const FormVersionPatch = z.object({
   localFields: z.array(LocalFieldSchema).optional(),
 }).refine((v) => v.schemas || v.bindings || v.pages || v.localFields)
 const PublishInput = z.object({ base: Sha256 })
+// 印字欄を言葉で直す（ここに何が入るか）か、使っていないことにする
+const SlotEditInput = z.union([
+  z.object({ base: Sha256, text: z.string().trim().min(1).max(200) }),
+  z.object({ base: Sha256, unused: z.literal(true) }),
+])
 
 /** 入口の宣言: 操作、またはログインなし（public） */
 export type Declared = Operation | 'public'
@@ -324,7 +335,7 @@ export function createApp(deps: ApiDeps) {
 
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)
-    for (const ch of changes) if (!validValue(ch.key, ch.value)) throw new repo.BadRequest(`値の形が違います: ${ch.key}`)
+    // 欄と値の型は、書類の様式の版の欄の辞書で確かめる（repo.patchFields）
     await carePlans.assertGenericDocumentEdits(db, staff.officeId, c.req.param('id')!, changes.map((ch) => ch.key))
     const r = await repo.patchFields(db, staff, c.req.param('id')!, changes.map((ch) => ({ key: ch.key, value: ch.value ?? null, base: ch.base ?? null, mode: ch.mode })))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
@@ -333,10 +344,14 @@ export function createApp(deps: ApiDeps) {
   // 書き方の相談。AI が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。同じ利用者のほかの書類も読める。用紙は変えない
   app.post('/api/documents/:id/chat', staffRoute('care.work', async (c, staff, db) => {
     const { messages } = await body(c, ChatInput)
-    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys }
-    document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
+    // 道具は、書類の種類（名前・必須の欄）と様式の版（読む欄・印字欄の対応・その様式だけの欄）から読む
+    const asChat = async (d: repo.DocumentView): Promise<ChatDocument & repo.DocumentView> => {
+      const kind = await kinds.kindOf(db, d.kind)
+      return { ...d, name: kind?.name ?? d.kind, required: kind?.required ?? [], form: await forms.loadFormDef(db, d.formVersionId) }
+    }
+    const document = await asChat(await repo.getDocument(db, staff.officeId, c.req.param('id')!))
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
-    const others = await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)
+    const others = await Promise.all((await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)).map(asChat))
     const model = deps.chat ? await deps.chat() : fakeModel
     // 答えは 1 行 1 つの JSON（NDJSON）。道具を使うたびに {type:'step'} を流し、最後に {type:'done', reply, steps, proposals}。
     // 途中で失敗したら {type:'error'}（状態はもう 200 なので）。間の置き場がまとめて返しても、画面は最後に全部出すだけで壊れない
@@ -434,6 +449,18 @@ export function createApp(deps: ApiDeps) {
     return json(c, job, 202)
   }))
 
+  // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
+  app.post('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
+    const { checkSet } = await body(c, InspectionInput)
+    const r = await inspections.createInspection(db, staff, c.req.param('id')!, checkSet ?? DEFAULT_CHECK_SET)
+    if (r.created) await deps.queue().enqueueInspection(r.id, { initial: true })
+    return json(c, { inspectionId: r.id }, 202)
+  }))
+  app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspections: await inspections.listInspections(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspection: await inspections.getInspection(db, staff.officeId, c.req.param('id')!) })))
+
   app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => json(c, { jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!) })))
 
   // ---------- 職員の管理（責任者） ----------
@@ -497,16 +524,22 @@ export function createApp(deps: ApiDeps) {
 
   type VersionHandler = (c: Context, scope: forms.ManagerScope, db: Db) => Promise<Response>
   /** 責任者・サイト管理者に見せる版（置き場の場所は渡さない）と、公開前の確かめのうち印字しないで分かるもの */
-  const managerView = (v: forms.FormVersion) => ({
-    formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
-    problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
-  })
+  //   slots: 印字欄ごとの入る内容の言葉と、録音から AI が書くか（責任者には key を見せない）。review: 取り込みが迷った欄
+  const managerView = async (db: Db, v: forms.FormVersion) => {
+    const dict = fieldDict(v.localFields)
+    return {
+      formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
+      problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+      slots: Object.fromEntries(Object.entries(v.bindings).map(([n, b]) => [n, slotMeaning(b, dict, v.localFields)])),
+      review: v.status === 'draft' ? await forms.reviewOf(db, v.id) : [],
+    }
+  }
   const versionRoutes = (prefix: '/api/office' | '/api/admin', guard: (h: VersionHandler) => Handler) => {
-    app.get(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => json(c, managerView(await forms.versionForManager(db, scope, c.req.param('id')!)))))
+    app.get(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => json(c, await managerView(db, await forms.versionForManager(db, scope, c.req.param('id')!)))))
     app.get(`${prefix}/form-versions/:id/assets`, guard(async (c, scope, db) => json(c, await assetsOf(await forms.versionForManager(db, scope, c.req.param('id')!)))))
     app.patch(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
       const { base, ...patch } = await body(c, FormVersionPatch)
-      return json(c, managerView(await forms.updateDraft(db, scope, c.req.param('id')!, base, patch as forms.DraftPatch)))
+      return json(c, await managerView(db, await forms.updateDraft(db, scope, c.req.param('id')!, base, patch as forms.DraftPatch)))
     }))
     app.delete(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
       await forms.deleteDraft(db, scope, c.req.param('id')!)
@@ -530,10 +563,29 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
-      return json(c, managerView(await forms.publishDraft(db, scope, id, base)))
+      return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
+    }))
+    // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
+    app.post(`${prefix}/form-versions/:id/slots/:slot`, guard(async (c, scope, db) => {
+      const input = await body(c, SlotEditInput)
+      const r = await editSlot(db, scope, c.req.param('id')!, c.req.param('slot')!, input, deps.fieldMatcher ?? (async () => fakeFieldMatcher))
+      return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
+
+  // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
+  app.get('/api/office/forms', staffRoute('form.manage', async (c, staff, db) => json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })))
+  app.post('/api/office/form-versions/:id/draft', staffRoute('form.manage', async (c, staff, db) => {
+    const r = await forms.draftFrom(db, { officeId: staff.officeId }, c.req.param('id')!)
+    return json(c, await managerView(db, r.version), r.created ? 201 : 200)
+  }))
+  app.post('/api/office/forms/:kind/revert', staffRoute('form.manage', async (c, staff, db) => {
+    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!)
+    return json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })
+  }))
+  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await managerView(db, await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!)))))
   versionRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, db)))
 
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------

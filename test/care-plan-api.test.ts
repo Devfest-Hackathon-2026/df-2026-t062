@@ -162,7 +162,7 @@ before(async () => {
     db: async () => db,
     verifier: () => new DevVerifier(),
     storage: () => storage,
-    queue: () => ({ async enqueue() {}, async enqueueFormImport() {} }),
+    queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }),
     carePlanAi: async () => async () => {
       aiCalls++
       if (aiMode === 'throw') throw new Error('AI が落ちました')
