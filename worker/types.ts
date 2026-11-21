@@ -91,10 +91,12 @@ export interface SummaryLine {
 
 /** 3. 要約: 新しい録音を 1 回だけ全部読み、AI の項目ごとに要約する。話に出なかった項目は返さない */
 export interface Summarizer {
-  summarize(input: { kindName: string, topics: Topic[], utterances: Utterance[], people: Person[] }): Promise<{ texts: Record<string, string>, usage: Usage }>
+  summarize(input: { kindName: string, topics: Topic[], utterances: Utterance[], people: Person[], records?: Visit[] }): Promise<{ texts: Record<string, string>, sourceIds?: Record<string, string[]>, usage: Usage }>
 }
 
 export interface TopicWriterInput {
+  /** 原本の種類。書類なら書類専用の欄も候補に含める。省略時は会話 */
+  sourceKind?: '会話' | '書類'
   /** 書類の種類の名前（form_kinds.name） */
   kindName: string
   /** 使う項目の一覧（全体の一覧に事業所の書き足しと足した項目を合わせたもの） */
@@ -121,6 +123,9 @@ export interface Providers {
   recording: { summarizer: Summarizer, writer: TopicWriter }
   /** 様式の取り込み（上げた PDF → 下書きの版）の AI。変換 1 回ごとに新しく作る（使った量を数える） */
   formImport: () => Llm
+  /** 記入済み原本の画像読取と、録音と共通の要約・欄書き込み */
+  documentRead?: () => Llm
+  documentWrite?: NonNullable<Providers['recording']>
   /** AI 点検の AI。点検 1 回ごとに新しく作る（使った量を数える） */
   inspect?: () => Llm
 }

@@ -3,7 +3,8 @@ import { useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type 
 import type { FieldDict } from '../../core/dictionary.ts'
 import { api } from '../lib/api.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
-import { cardAction, historyFor, proposalChanges, type ChatEntry, type ProposalCard } from './petChat.ts'
+import { ProposalDiff } from './ProposalDiff.tsx'
+import { cardAction, historyFor, type ChatEntry, type ProposalCard } from './petChat.ts'
 
 interface Props {
   documentId: string | undefined
@@ -19,16 +20,6 @@ interface Props {
 }
 
 let nextId = 1
-
-function DiffLines({ field, before, after, dict }: { field: string, before: unknown, after: unknown, dict?: FieldDict }) {
-  const { del, ins } = proposalChanges(field, before, after, dict)
-  return (
-    <>
-      {del.map((t, i) => <p key={`d${i}`} className="assistant-chat-del"><span aria-label="消える文">−</span>{t}</p>)}
-      {ins.map((t, i) => <p key={`i${i}`} className="assistant-chat-ins"><span aria-label="足す文">＋</span>{t}</p>)}
-    </>
-  )
-}
 
 export function PetChat({ documentId, entries, setEntries, current, onSet, onJump, dict }: Props) {
   const [text, setText] = useState('')
@@ -110,7 +101,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onJum
                   {onJump
                     ? <button type="button" className="assistant-chat-field" onClick={() => onJump(card.key)}>{card.label}<PetIcon name="chevron-right" /></button>
                     : <strong className="assistant-chat-field">{card.label}</strong>}
-                  <DiffLines field={card.key} before={card.before} after={card.after} dict={dict} />
+                  <ProposalDiff field={card.key} before={card.before} after={card.after} dict={dict} />
                   <div className="assistant-chat-actions">
                     {card.state === 'ready'
                       ? <button type="button" className="assistant-chat-apply" onClick={() => press(m.id, card)}><PetIcon name="pencil" />用紙に入れる</button>

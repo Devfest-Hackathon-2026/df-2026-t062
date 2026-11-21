@@ -39,19 +39,20 @@ const THINKING_LEVEL = 'LOW'
 const log = (rec: Record<string, unknown>) => console.log(JSON.stringify({ severity: 'INFO', ...rec }))
 
 interface Client {
-  generate(args: { model: string, prompt: Prompt, schema: unknown | null, thinkingLevel?: string }): Promise<{ text: string | undefined, prompt: number, output: number, thinking: number, cached: number }>
+  generate(args: { model: string, prompt: Prompt, schema: unknown | null, thinkingLevel?: string, signal: AbortSignal }): Promise<{ text: string | undefined, prompt: number, output: number, thinking: number, cached: number }>
 }
 
 function realClient(env: NodeJS.ProcessEnv): Client {
   let ai: GoogleGenAI | undefined
   return {
-    async generate({ model, prompt, schema, thinkingLevel }) {
+    async generate({ model, prompt, schema, thinkingLevel, signal }) {
       // 3.6〜3.8 Flash は東京にない（global・us・eu だけ。2026-11-09 に確かめた）ので、既定は global
       ai ??= new GoogleGenAI({ vertexai: true, project: env.GOOGLE_CLOUD_PROJECT, location: env.GEMINI_LOCATION ?? 'global' })
       const r = await ai.models.generateContent({
         model,
         contents: toContents(prompt),
         config: {
+          abortSignal: signal,
           responseMimeType: 'application/json',
           maxOutputTokens: 65536,
           ...(schema ? { responseJsonSchema: schema } : {}),
@@ -82,6 +83,8 @@ function thinkingLevelOf(env: NodeJS.ProcessEnv): string | undefined {
 
 export interface GeminiOptions {
   retries?: number
+  /** 認証・通信を含む1試行の待ち時間。既定120秒。 */
+  timeoutMs?: number
   /** やり直しの待ち（テストで差し替える） */
   sleep?: (ms: number) => Promise<void>
   client?: Client
@@ -95,6 +98,8 @@ export function geminiFactory(env: NodeJS.ProcessEnv, opts: GeminiOptions = {}):
   const yenCached = Number(env.GEMINI_YEN_CACHED ?? yenIn * CACHED_RATE)
   const thinkingLevel = thinkingLevelOf(env)
   const retries = opts.retries ?? 4
+  const timeoutMs = opts.timeoutMs ?? 120_000
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('invalid_gemini_timeout')
   const sleep = opts.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)))
   const client = opts.client ?? realClient(env)
   return () => {
@@ -103,8 +108,17 @@ export function geminiFactory(env: NodeJS.ProcessEnv, opts: GeminiOptions = {}):
       let useSchema = true
       for (let attempt = 0; attempt <= retries; attempt++) {
         const t0 = Date.now()
+        let timer: ReturnType<typeof setTimeout> | undefined
         try {
-          const r = await client.generate({ model, prompt, schema: useSchema ? schema : null, thinkingLevel })
+          const controller = new AbortController()
+          const r = await Promise.race([
+            client.generate({ model, prompt, schema: useSchema ? schema : null, thinkingLevel, signal: controller.signal }),
+            new Promise<never>((_resolve, reject) => { timer = setTimeout(() => {
+              const error = new DOMException('Gemini request timed out', 'TimeoutError')
+              controller.abort(error)
+              reject(error)
+            }, timeoutMs) }),
+          ])
           u.calls++
           u.promptTokens += r.prompt
           u.cachedTokens += r.cached
@@ -122,6 +136,8 @@ export function geminiFactory(env: NodeJS.ProcessEnv, opts: GeminiOptions = {}):
           if ((e as { status?: number })?.status === 400 || msg.includes('INVALID_ARGUMENT')) useSchema = false
           if (attempt === retries) throw e
           await sleep(Math.min(60, 4 * 2 ** attempt) * 1000)
+        } finally {
+          clearTimeout(timer)
         }
       }
       throw new Error('unreachable')

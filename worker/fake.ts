@@ -91,3 +91,9 @@ export const fakeFormImport = (): Llm => ({
   ask: async (_prompt, _schema, meta) => (meta.step === '様式の欄' ? { slots: [], localFields: [] } : { slots: [], fixes: [], removes: [], localFields: [] }),
   usage: () => ZERO_USAGE,
 })
+
+/** 記入済み原本の試用。内容を作らず、試用モードと明示する。 */
+export const fakeDocumentRead = (): Llm => ({
+  ask: async () => ({ entries: [], issues: ['試用モードのため原本の内容は読み取っていません。'] }),
+  usage: () => ZERO_USAGE,
+})

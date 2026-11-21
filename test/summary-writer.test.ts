@@ -249,3 +249,33 @@ test('要約が 1 つもなければ（話に何も出なければ）AI を呼�
   assert.equal(calls.length, 0)
   assert.deepEqual(r.values, {})
 })
+
+test('同じ要約器で書類の原文・記録日を読み、各要約から原文IDをたどれる。存在しないIDの要約は捨てる', async () => {
+  const ai = script((call) => {
+    assert.match(call.prompt, /記入済み書類の原文/)
+    assert.match(call.prompt, /記録日 2026-11-01/)
+    assert.match(call.prompt, /\[doc-p1-1\]/)
+    assert.ok(call.schema.required.includes('sourceIds'))
+    return { summaries: { basic: '負担割合は1割。', history: '根拠のない要約' }, sourceIds: { basic: ['doc-p1-1'], history: ['forged-id'] } }
+  })
+  const result = await summarizer(ai.newLlm).summarize({ kindName: 'アセスメント', topics: TOPICS, utterances: [], people: [], records: [{
+    id: 'doc', date: '不明', scenes: [{ id: 'p1', kind: '書類', entries: [{ id: 'doc-p1-1', speaker: null, date: '2026-11-01', text: '負担割合1割' }] }],
+  }] })
+  assert.deepEqual(result.texts, { basic: '負担割合は1割。' })
+  assert.deepEqual(result.sourceIds, { basic: ['doc-p1-1'] })
+  assert.equal(ai.calls.length, 1)
+})
+
+test('共通の欄選択・書き込み・最終チェックが、書類入力では書類専用欄も扱う', async () => {
+  const ai = script(answers({
+    '欄を選ぶ:1': () => ({ fields: [] }), '欄を選ぶ:2': () => ({ fields: [] }),
+    '欄を選ぶ:3': () => ({ fields: [{ key: 'insurance.careCopayRate', topics: ['basic'] }] }),
+    '書く:basic': () => ({ 'insurance.careCopayRate': { value: '1割', from: ['basic-1'] } }),
+  }))
+  const result = await topicWriter(ai.newLlm).write({
+    kindName: 'アセスメント', topics: TOPICS, summaries: [line('document-summary-1', 'basic', 1, '負担割合1割。')],
+    current: {}, showNew: false, form: FORM, sourceKind: '書類',
+  })
+  assert.deepEqual(result.values['insurance.careCopayRate'], { value: '1割', cite: { kind: 'summary', ids: ['document-summary-1'] } })
+  assert.ok(ai.calls.some((call) => call.step === '最後のチェック'))
+})

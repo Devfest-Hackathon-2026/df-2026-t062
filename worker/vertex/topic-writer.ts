@@ -40,8 +40,8 @@ export interface Page { no: number, title: string, specs: Spec[] }
  * 版のページごとの、録音から書ける欄（候補）。版が読む書いてよい欄のうち、出どころが書類だけの欄は除く（録音は会話だけ）。
  * 欄の用紙での場所は、版のページと印字欄。並びは候補の順（fields.json の順、そのあとにその様式だけの欄）
  */
-export function pagesOf(form: FormDef): Page[] {
-  const specs = candidateFields(form).filter((s) => !needsDocument(s))
+export function pagesOf(form: FormDef, sourceKind: '会話' | '書類' = '会話'): Page[] {
+  const specs = candidateFields(form).filter((s) => sourceKind === '書類' || !needsDocument(s))
   const known = new Set(specs.map((s) => s.key))
   const pageOfSlot = slotPages(form)
   const placed = new Map<number, Map<string, string[]>>()
@@ -126,7 +126,7 @@ export function topicWriter(newLlm: () => Llm, opts: TopicWriterOptions = {}): T
 
       if (lines.length) {
         // ---------- 4. 欄を選ぶ（ページごと。同じ前置きなので、最初の 1 回を済ませてから残りを並べる） ----------
-        const pages = pagesOf(input.form).filter((p) => p.specs.length)
+        const pages = pagesOf(input.form, input.sourceKind).filter((p) => p.specs.length)
         const selectHead = head(lines, input.showNew)
         const select = (p: Page) => {
           const fields = p.specs.map((s) => (input.showNew ? `${fmtField(s)}\n- 今の値: ${fmtValue(input.current[s.key])}` : fmtField(s))).join('\n\n')

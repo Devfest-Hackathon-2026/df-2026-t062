@@ -40,23 +40,24 @@ locals {
   }
 
   worker_env = {
-    AI_PROVIDER          = var.ai_provider
-    GOOGLE_CLOUD_PROJECT = var.project_id
-    GEMINI_MODEL         = var.gemini_model
-    GEMINI_LOCATION      = var.gemini_location
-    STT_LOCATION         = var.stt_location
-    STORAGE_MODE         = "gcs"
-    GCS_SOURCE_BUCKET    = google_storage_bucket.source.name
-    GCS_OUTPUT_BUCKET    = google_storage_bucket.output.name
-    GCS_WORK_BUCKET      = google_storage_bucket.work.name
-    GCS_FORMS_BUCKET     = google_storage_bucket.forms.name
-    QUEUE_MODE           = "tasks"
-    TASKS_QUEUE          = google_cloud_tasks_queue.jobs.id
-    WORKER_URL           = local.worker_url
-    TASKS_INVOKER_SA     = google_service_account.tasks_invoker.email
-    CLOUD_SQL_INSTANCE   = google_sql_database_instance.main.connection_name
-    DB_USER              = local.worker_db_user
-    DB_NAME              = google_sql_database.app.name
+    DOCUMENT_INPUT_APPROVED_LOCATION = var.document_input_approved_location
+    AI_PROVIDER                      = var.ai_provider
+    GOOGLE_CLOUD_PROJECT             = var.project_id
+    GEMINI_MODEL                     = var.gemini_model
+    GEMINI_LOCATION                  = var.gemini_location
+    STT_LOCATION                     = var.stt_location
+    STORAGE_MODE                     = "gcs"
+    GCS_SOURCE_BUCKET                = google_storage_bucket.source.name
+    GCS_OUTPUT_BUCKET                = google_storage_bucket.output.name
+    GCS_WORK_BUCKET                  = google_storage_bucket.work.name
+    GCS_FORMS_BUCKET                 = google_storage_bucket.forms.name
+    QUEUE_MODE                       = "tasks"
+    TASKS_QUEUE                      = google_cloud_tasks_queue.jobs.id
+    WORKER_URL                       = local.worker_url
+    TASKS_INVOKER_SA                 = google_service_account.tasks_invoker.email
+    CLOUD_SQL_INSTANCE               = google_sql_database_instance.main.connection_name
+    DB_USER                          = local.worker_db_user
+    DB_NAME                          = google_sql_database.app.name
   }
 
   # 様式の置き場の中で、上げたままの PDF の場所（imports/<id>.pdf と offices/<office_id>/imports/<id>.pdf）だけに当てる IAM の条件

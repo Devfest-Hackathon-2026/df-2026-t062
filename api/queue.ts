@@ -3,6 +3,7 @@
 //     /tasks/inspections/<id>/run（AI 点検）を OIDC トークンつきで呼ぶ
 //   QUEUE_MODE=local（既定）: 同じプロセスで worker の処理を呼ぶ（ローカルとテスト）
 export interface Queue {
+  enqueueDocumentInput?(id: string, options?: { initial: boolean }): Promise<void>
   /** 録音 1 本の処理 */
   enqueue(jobId: string, options?: { initial: boolean }): Promise<void>
   /** 上げた PDF から様式の下書きを作る */
@@ -25,6 +26,10 @@ export class CloudTasksQueue implements Queue {
 
   enqueueFormImport(importId: string, options?: { initial: boolean }) {
     return this.createTask(`form-import-${importId}`, `/tasks/form-imports/${importId}/run`, options)
+  }
+
+  enqueueDocumentInput(id: string, options?: { initial: boolean }) {
+    return this.createTask(`document-input-${id}`, `/tasks/document-inputs/${id}/run`, options)
   }
 
   enqueueInspection(inspectionId: string, options?: { initial: boolean }) {
@@ -61,6 +66,7 @@ export class CloudTasksQueue implements Queue {
 export class LocalQueue implements Queue {
   private run: (jobId: string) => Promise<void>
   private runImport: (importId: string) => Promise<void>
+  private runDocument: (id: string) => Promise<void>
   private runInspection: (inspectionId: string) => Promise<void>
   private tail = Promise.resolve()
 
@@ -68,10 +74,12 @@ export class LocalQueue implements Queue {
     run: (jobId: string) => Promise<void>,
     runImport: (importId: string) => Promise<void> = async () => {},
     runInspection: (inspectionId: string) => Promise<void> = async () => {},
+    runDocument: (id: string) => Promise<void> = async () => {},
   ) {
     this.run = run
     this.runImport = runImport
     this.runInspection = runInspection
+    this.runDocument = runDocument
   }
 
   async enqueue(jobId: string) {
@@ -80,6 +88,10 @@ export class LocalQueue implements Queue {
 
   async enqueueFormImport(importId: string) {
     this.later(() => this.runImport(importId), { msg: 'form import failed', importId })
+  }
+
+  async enqueueDocumentInput(id: string) {
+    this.later(() => this.runDocument(id), { msg: 'document input failed', id })
   }
 
   async enqueueInspection(inspectionId: string) {

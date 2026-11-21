@@ -89,3 +89,17 @@ test('話した人: 知っている人はそのまま、新しい人は役割つ
   assert.deepEqual(r.map, { speaker_1: '甲斐', speaker_2: '長男の妻', speaker_3: null })
   assert.deepEqual(r.newPeople, [{ label: '長男の妻', role: '家族', relation: '長男の妻' }])
 })
+
+test('Gemini: 認証・通信が応答しなくても時間切れで中断し、再試行回数を守る', async () => {
+  const signals: AbortSignal[] = []
+  const client = { generate({ signal }: { signal: AbortSignal }) {
+    signals.push(signal)
+    // AbortSignalを処理しない認証待ちでも、呼出側を止めない。
+    return new Promise<never>(() => {})
+  } }
+  const llm = geminiFactory({}, { client, timeoutMs: 10, retries: 1, sleep: async () => {} })()
+  await assert.rejects(llm.ask('p', null, { step: 'timeout-test' }), { name: 'TimeoutError' })
+  assert.equal(signals.length, 2)
+  assert.ok(signals.every((signal) => signal.aborted))
+  assert.equal(llm.usage().calls, 0, '返答のない呼出の費用は未取得で、実際の課金0を意味しない')
+})
