@@ -88,11 +88,12 @@ function InputReview({ input, dict, clientName, retry, beforeAdopt, onApplied }:
     setBusy(true); setError('')
     try {
       if (!await beforeAdopt()) throw new Error('用紙の編集内容を保存してからお試しください。')
-      await api.adoptDocumentInput(input.id, selected.map((c) => ({ key: c.key, value: c.value, base: c.base })))
+      // 値はサーバーが保存した候補を使う。画面は、反映する項目を選ぶだけ。
+      await api.adoptDocumentInput(input.id, selected.map((c) => ({ key: c.key, base: c.base })))
       await onApplied()
     } catch (e) {
       setError(e instanceof ApiError && e.status === 409
-        ? '用紙の記載が変わっています。変更された項目の選択を外すか、用紙で内容を確認してください。'
+        ? (e.message.includes('様式の版') ? '様式の版が変わりました。同じ画像をもう一度選ぶと、新しい様式で読み取り直します。' : e.message)
         : e instanceof ApiError ? '反映できませんでした。入力内容を確認して、もう一度お試しください。' : e instanceof Error ? e.message : '反映できませんでした。')
     } finally { setBusy(false) }
   }

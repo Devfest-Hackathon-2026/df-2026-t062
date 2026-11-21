@@ -15,7 +15,8 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
   const db = await deps.db()
   const token = randomUUID()
   const row = (await db.query(`UPDATE document_inputs SET status='processing',attempts=attempts+1,run_token=$2,
-    lease_until=now()+interval '30 minutes',updated_at=now()
+    lease_until=now()+interval '30 minutes',updated_at=now(),
+    template_version_id=coalesce(template_version_id,(SELECT template_version_id FROM documents WHERE id=document_inputs.document_id))
     WHERE id=$1 AND attempts<$3 AND (status='queued' OR (status='processing' AND lease_until<now())) RETURNING *`, [id, token, MAX_ATTEMPTS])).rows[0]
   if (!row) return
   const update = async (sql: string, args: unknown[] = []) => {
@@ -30,7 +31,7 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     const providers = await deps.providers()
     if (!providers.documentRead) throw new DocumentReadError('reader_not_configured')
     const llm = providers.documentRead()
-    const data = await deps.storage().read('source', documentInputPath(row.office_id, row.client_id, id))
+    const data = await deps.storage().read('source', documentInputPath(row.office_id, row.client_id, id, row.upload_generation))
     if (createHash('sha256').update(data).digest('hex') !== row.sha256) throw new DocumentReadError('hash_mismatch')
     const readUsage = row.read_usage as Usage
     const pages = row.pages
@@ -45,7 +46,7 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     // Visit が共通接続点。書類別のキー変換や事実の構造化層は作らない。
     const doc = (await db.query('SELECT template_version_id FROM documents WHERE id=$1 AND office_id=$2 AND client_id=$3', [row.document_id, row.office_id, row.client_id])).rows[0]
     if (!doc) throw new DocumentReadError('document_missing')
-    const form = await loadFormDef(db, doc.template_version_id)
+    const form = await loadFormDef(db, row.template_version_id)
     const rows = (await db.query('SELECT key,value,cite FROM field_values WHERE document_id=$1', [row.document_id])).rows
     const sources = Object.fromEntries(rows.map((r) => [r.key, r.cite]))
     const current = Object.fromEntries(rows.map((r) => [r.key, r.value]))
@@ -102,6 +103,7 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
       incompleteFields: [...new Set([...written.incompleteFields, ...droppedFields, ...missingEvidence, ...unresolved])],
       usage: addUsage(addUsage(addUsage(readUsage, llm.usage()), bundle?.usage ?? ZERO_USAGE), written.usage),
     }
+    // 候補を作ったときの版を固定する。採用時はこの版と書類の今の版を照合する。
     await update("status='review',result=$3,run_token=NULL,lease_until=NULL,error_kind=NULL", [JSON.stringify(result)])
   } catch (e) {
     if (e instanceof LeaseLost) return

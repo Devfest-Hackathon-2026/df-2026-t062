@@ -50,7 +50,9 @@ export interface DocumentSource {
   sha256: string
   evidence: DocumentEvidence[]
 }
-export const documentInputPath = (officeId: string, clientId: string, id: string) => `document-inputs/${officeId}/${clientId}/${id}/original`
+/** 原本の置き場所。未検証の送信をやり直すときは世代を上げ、前の送信と混ざらないようにする。 */
+export const documentInputPath = (officeId: string, clientId: string, id: string, generation = 1) =>
+  `document-inputs/${officeId}/${clientId}/${id}/${generation > 1 ? `original-${generation}` : 'original'}`
 
 export class DocumentReadError extends Error {
   readonly kind: string
