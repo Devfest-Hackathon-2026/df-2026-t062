@@ -1,3 +1,4 @@
+import { seedFormDef } from '../forms/admin/files.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { makeDiagramContext, readDiagramContext, readDiagramRecords, prepareDiagramProposal } from '../api/diagram-chat.ts'
@@ -8,8 +9,8 @@ import { anatomySchema, bodyAnchor, normalizeBodyProposal, tapPosition, BODY_VIE
 import { familyLayout } from '../core/diagram/family-layout.ts'
 import { diagramSvg } from '../core/diagram/svg.ts'
 import { diagramChanges } from '../core/diagram/changes.ts'
-import { cardAction, diagramCardStatus, type ProposalCard } from '../src/components/petChat.ts'
-const doc: ChatDocument = { id: 'doc-a', kind: 'assessment', fields: { 'family.members': { value: [{ name: '一郎', relationship: '子' }], by: 'cm' } }, saved: { 'family.members': { value: [{ name: '一郎', relationship: '子' }] } } }
+import { cardAction, pendingDiagramDraft, diagramCardStatus, type ProposalCard } from '../src/components/petChat.ts'
+const doc: ChatDocument = { id: 'doc-a', kind: 'assessment', name: 'アセスメント', form: seedFormDef('assessment'), fields: { 'family.members': { value: [{ name: '一郎', relationship: '子' }], by: 'cm' } }, saved: { 'family.members': { value: [{ name: '一郎', relationship: '子' }] } } }
 const context = (text: string, recordings: ChatRecording[] = []) => makeDiagramContext([doc], recordings, [{ role: 'user', text }])
 const userSource = (c: ReturnType<typeof context>) => [...c.sources.values()].find((s) => s.type === 'message')!.id
 const meta = (ids: string[], source: string) => ({ targetIds: ids, evidence: ids.map((id) => ({ objectId: id, sourceIds: [source] })) })
@@ -47,7 +48,7 @@ test('selected diagram is preloaded with its shape and real sources; unrelated e
   assert.equal(reply.proposals.length, 1)
   assert.equal(reply.proposals[0].key, 'health.bodyMap')
   assert.deepEqual(document, before)
-  assert.ok(diagramChatSystem('health.bodyMap').length < chatSystem('assessment').length)
+  assert.ok(diagramChatSystem('health.bodyMap').length < chatSystem(doc).length)
   assert.doesNotMatch(diagramChatSystem('health.bodyMap'), /欄の置き場所の決まり/)
 })
 
@@ -265,4 +266,21 @@ test('diagram entry names the selected figure and preserves its context when the
   assert.equal(diagramChatQuestion('長男は別居です', 'family.genogram'), '家族構成図について：長男は別居です')
   assert.equal(diagramChatQuestion('身体図の右膝を直して', 'health.bodyMap'), '身体図の右膝を直して')
   assert.equal(diagramChatQuestion('相談内容を短くして'), '相談内容を短くして')
+})
+
+
+test('chat continues only the latest matching unapplied diagram, keeping edits and other figure topics safe', () => {
+  const body = pendingValue()
+  const card: ProposalCard = { key: 'health.bodyMap', label: '身体図', before: null, after: body, state: 'ready' }
+  const entry = (p: ProposalCard) => ({ id: 1, role: 'pet' as const, text: '案', proposals: [p] })
+  assert.equal(pendingDiagramDraft([entry(card)], {}, 'health.bodyMap'), card)
+  assert.equal(pendingDiagramDraft([entry(card)], {}), card)
+  assert.equal(pendingDiagramDraft([entry(card)], {}, 'family.genogram'), undefined)
+  for (const altered of [{ ...card, superseded: true }, { ...card, undone: true }, { ...card, state: 'applied' as const }]) {
+    assert.equal(pendingDiagramDraft([entry(card), entry(altered)], {}), undefined)
+  }
+  assert.equal(pendingDiagramDraft([entry(card)], { 'health.bodyMap': body }), undefined)
+  const family = { ...card, key: 'family.genogram', label: '家族構成図' }
+  assert.equal(pendingDiagramDraft([entry(card), entry(family)], {}, 'health.bodyMap'), card)
+  assert.equal(pendingDiagramDraft([{ ...entry(card), proposals: [card, family] }], {}), undefined)
 })

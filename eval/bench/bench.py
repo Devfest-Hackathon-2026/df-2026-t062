@@ -239,10 +239,10 @@ class Gold:
                 self._check_value(unit, v, where)
         return {"anyOf": vals}
 
-    def _facts_of(self, e, where, src, item23):
-        """この正解の元になる事実。書いていなければ、from が重なり 23 項目の番号が同じ事実。"""
+    def _facts_of(self, e, where, src, item23=None):
+        """この正解の元になる事実。書いていなければ、from が重なる事実（23 項目の番号では分けない）。"""
         if "facts" not in e:
-            return [fid for fid, f in self.facts.items() if set(f["from"]) & set(src) and f.get("item23") == item23]
+            return [fid for fid, f in self.facts.items() if set(f["from"]) & set(src)]
         for fid in e["facts"]:
             if fid not in self.facts:
                 raise GoldError(f"{where}: facts.json にない事実 {fid}")
@@ -534,8 +534,7 @@ def _score_facts(gold, sub, t, judge):
         elif m is None:
             status[g["id"]] = {"status": "未抽出"}
         else:
-            status[g["id"]] = {"status": "取り出せた", "match": m,
-                               "item23ok": sub.facts[m].get("item23") == g.get("item23")}
+            status[g["id"]] = {"status": "取り出せた", "match": m}
     matched = {s["match"] for s in status.values() if "match" in s}
     referenced = set()
     for rec in sub.values.values():
@@ -543,7 +542,6 @@ def _score_facts(gold, sub, t, judge):
     summary = {
         "正解の数": len(status),
         "取り出せた": sum(s["status"] == "取り出せた" for s in status.values()),
-        "番号違い": sum(s.get("item23ok") is False for s in status.values()),
         "未抽出": sum(s["status"] == "未抽出" for s in status.values()),
         "要判定": sum(s["status"] == "要判定" for s in status.values()),
         "提出の数": len(sub.facts),
@@ -562,7 +560,27 @@ def _cause(gold_facts, status):
         return "要判定"
     if any(s["status"] == "未抽出" for s in st):
         return "取り出し"
-    return "書く段階（番号違い）" if any(s.get("item23ok") is False for s in st) else "書く段階"
+    return "書く段階"
+
+
+# 要約の漏れを 1 回の判定で確かめる要点の数（多すぎると判定役が数え違える）
+LEAK_CHUNK = 25
+
+
+def score_summaries(gold, summaries, t, judge):
+    """要約の漏れ: その時点までに分かる正解の事実のうち、要約（その時点までの全部）に入らなかった数。
+    要約から書く流れ（docs/再設計/17）の提出だけ。summaries = [{"id", "topic", "seq", "text"}]"""
+    facts = gold.facts_at(t)
+    text = "\n".join(f"[{s['id']}] {s['text']}" for s in summaries)
+    r = {"正解の数": len(facts), "入った": 0, "漏れ": 0, "要判定": 0, "items": []}
+    for i in range(0, len(facts), LEAK_CHUNK):
+        chunk = facts[i:i + LEAK_CHUNK]
+        covered = judge.points("要約", text, chunk) if text else [False] * len(chunk)
+        for j, f in enumerate(chunk):
+            status = "要判定" if covered is judge_mod.PENDING else ("入った" if covered[j] else "漏れ")
+            r[status] += 1
+            r["items"].append({"id": f["id"], "text": f["text"], "status": status})
+    return r
 
 
 def _score_questions(gold, sub, t, judge):
@@ -622,11 +640,12 @@ def render_report(results, genpon, meta):
                 f"- 作り話: {s['書くべき']['作り話'] + s['空のはず']['作り話']} 件"
                 f"（空のはずの欄 {s['空のはず']['作り話']}、書くべき欄の文章 {s['書くべき']['作り話']}）", "",
                 "### 事実（2 層目）", "",
-                "| 正解の事実 | 取り出せた | うち番号違い | 未抽出 | 判定待ち | 提出の事実 | 正解にない | 宙に浮いた |",
-                "|---|---|---|---|---|---|---|---|",
-                f"| {fa['正解の数']} | {fa['取り出せた']} | {fa['番号違い']} | {fa['未抽出']} | {fa['要判定']} | "
+                "| 正解の事実 | 取り出せた | 未抽出 | 判定待ち | 提出の事実 | 正解にない | 宙に浮いた |",
+                "|---|---|---|---|---|---|---|",
+                f"| {fa['正解の数']} | {fa['取り出せた']} | {fa['未抽出']} | {fa['要判定']} | "
                 f"{fa['提出の数']} | {fa['正解にない']} | {fa['宙に浮いた']} |", "",
                 "- 宙に浮いた: シートのどこにも使われず、「入れる欄がない」（unplaced）とも示されていない事実", "",
+                *(_render_leaks(r["summaryLeaks"]) if r.get("summaryLeaks") else []),
                 "### 確かめること", "",
                 "| 正解 | 見つけた | 閉じるべき | 閉じた | 誤って閉じた | 判定待ち | 正解にないもの |",
                 "|---|---|---|---|---|---|---|",
@@ -658,6 +677,16 @@ def render_report(results, genpon, meta):
             out += ["| " + " | ".join(row(u)) + " |" for u in us]
             out.append("")
     return "\n".join(out) + "\n"
+
+
+def _render_leaks(lk):
+    out = ["### 要約の漏れ", "",
+           "| 正解の事実 | 要約に入った | 漏れ | 判定待ち |", "|---|---|---|---|",
+           f"| {lk['正解の数']} | {lk['入った']} | {lk['漏れ']} | {lk['要判定']} |", ""]
+    leaks = [i for i in lk["items"] if i["status"] == "漏れ"]
+    if leaks:
+        out += ["| 漏れた事実 | 中身 |", "|---|---|"] + [f"| {i['id']} | {_cell(i['text'])} |" for i in leaks] + [""]
+    return out
 
 
 def _quote(genpon, ids, limit=60):
@@ -850,7 +879,11 @@ def main(argv=None):
         sub = Submission(sheet=_load(os.path.join(d, "sheet.json"), {"fields": {}}),
                          facts=_load(os.path.join(d, "facts.json"), {"facts": []})["facts"],
                          questions=_load(os.path.join(d, "questions.json"), {"questions": []})["questions"])
-        results.append(score(fields, genpon, gold, sub, t, jd))
+        res = score(fields, genpon, gold, sub, t, jd)
+        sums = os.path.join(d, "summaries.json")
+        if os.path.exists(sums):
+            res["summaryLeaks"] = score_summaries(gold, _load(sums)["summaries"], t, jd)
+        results.append(res)
     jd.save()
     out = args.out or os.path.join(args.submission, "bench")
     os.makedirs(out, exist_ok=True)

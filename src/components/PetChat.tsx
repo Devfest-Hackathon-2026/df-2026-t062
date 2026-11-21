@@ -1,15 +1,17 @@
 import { diagramChatName, diagramChatQuestion, restoreChatText } from '../diagram/chatEntry.ts'
 import { sameValue } from '../../core/apply-batch.ts'
-import { diagramSchema, diagramDocument, diagramKinds, isDiagramChatField } from '../../core/diagram/fields.ts'
+import { diagramKinds, isDiagramChatField } from '../../core/diagram/fields.ts'
 import { chatError } from '../../core/chat-error.ts'
 // 「書き方を相談する」: ペット（道具を使うエージェント）に書き方を相談する。したこと（作業ログ）を 1 行ずつ出す。書き換えの案は差分のカードで出し、押したときだけ用紙に入れる。
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type FormEvent, type KeyboardEvent, type SetStateAction } from 'react'
+import type { FieldDict } from '../../core/dictionary.ts'
+import { ProposalDiff } from './ProposalDiff.tsx'
 import { api } from '../lib/api.ts'
 import { PetIcon, PetMessage } from './PetVisuals.tsx'
-import { cardAction, diagramCardStatus, historyFor, proposalChanges, type ChatEntry, type ProposalCard } from './petChat.ts'
+import { cardAction, pendingDiagramDraft, historyFor, type ChatEntry, type ProposalCard } from './petChat.ts'
 
 const DiagramProposalDetails = lazy(() => import('../diagram/DiagramProposalDetails.tsx'))
-const Preview = lazy(() => import('../diagram/Preview.tsx'))
+
 
 interface Props {
   onTopicChange?: (key: string | undefined) => void
@@ -24,33 +26,21 @@ interface Props {
   onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void>
   /** 用紙のその欄へ移る。移れない書類では undefined */
   onJump?: (key: string) => void
+  /** 書類の様式の版の欄の辞書（その様式だけの欄の差分を、型に合わせて出す） */
+  dict?: FieldDict
 }
 
 let nextId = 1
 
-function DiffLines({ field, before, after }: { field: string, before: unknown, after: unknown }) {
-  if (diagramKinds[field]) {
-    const b = diagramSchema.safeParse(before), a = diagramSchema.safeParse(after)
-    return <Suspense fallback={<p>図を読み込んでいます…</p>}><div>{b.success && <><p>変更前</p><Preview doc={diagramDocument(b.data)} tab={b.data.kind} cropBody /></>}{a.success && <><p>変更案</p><Preview doc={diagramDocument(a.data)} tab={a.data.kind} cropBody /></>}</div></Suspense>
-  }
-  const { del, ins } = proposalChanges(field, before, after)
-  return (
-    <>
-      {del.map((t, i) => <p key={`d${i}`} className="assistant-chat-del"><span aria-label="消える文">−</span>{t}</p>)}
-      {ins.map((t, i) => <p key={`i${i}`} className="assistant-chat-ins"><span aria-label="足す文">＋</span>{t}</p>)}
-    </>
-  )
-}
-
-export function PetChat({ documentId, entries, setEntries, current, onSet, onDiagramApply, onJump, saved = {}, diagramRequest, onTopicChange }: Props) {
+export function PetChat({ documentId, entries, setEntries, current, onSet, onDiagramApply, onJump, dict, diagramRequest, onTopicChange }: Props) {
   const applyingRef = useRef(false)
   const [applying, setApplying] = useState(false)
+
   const [text, setText] = useState('')
   const [topic, setTopic] = useState(diagramRequest?.key)
   const activeTopic = useRef(topic)
   activeTopic.current = topic
-  const entryDrafts = useRef(new Map<string, { text: string, draft?: ProposalCard }>())
-  const [revisionDraft, setRevisionDraft] = useState<ProposalCard>()
+  const entryDrafts = useRef(new Map<string, { text: string }>())
   const input = useRef<HTMLTextAreaElement>(null)
   const requestSeen = useRef<number | undefined>(undefined)
   useEffect(() => { onTopicChange?.(topic) }, [topic, onTopicChange])
@@ -59,12 +49,11 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
     const first = requestSeen.current === undefined
     requestSeen.current = diagramRequest.id
     if (!first && topic === diagramRequest.key) { input.current?.focus({ preventScroll: true }); return }
-    if (!first || topic !== diagramRequest.key) entryDrafts.current.set(topic ?? 'general', { text, draft: revisionDraft })
+    if (!first || topic !== diagramRequest.key) entryDrafts.current.set(topic ?? 'general', { text })
     const previous = entryDrafts.current.get(diagramRequest.key)
     const name = diagramChatName(diagramRequest.key) ?? '図'
     setTopic(diagramRequest.key)
     setText(previous?.text ?? (current[diagramRequest.key] ? `${name}を修正したい：` : `訪問記録と既存書類から${name}を作成して`))
-    setRevisionDraft(previous?.draft)
     input.current?.focus({ preventScroll: true })
   }, [diagramRequest])
   const [busy, setBusy] = useState(false)
@@ -85,6 +74,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
 
   const send = async (e?: FormEvent) => {
     e?.preventDefault()
+    const revisionDraft = pendingDiagramDraft(entries, current, topic)
     const question = diagramChatQuestion(text.trim(), revisionDraft?.key ?? topic)
     if (!text.trim() || busy || !documentId) return
     const startedTopic = topic
@@ -99,9 +89,6 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
       const field = revisionDraft?.key ?? topic
       const r = await api.chat(documentId, history, (s) => { if (activeDoc.current === documentId) setLive((prev) => [...prev, s]) }, revisionDraft ? { key: revisionDraft.key, after: revisionDraft.after, pendingLocations: revisionDraft.pendingLocations } : undefined, isDiagramChatField(field) ? field : undefined)
       if (activeDoc.current !== documentId) return
-      setRevisionDraft((current) => current === revisionDraft ? undefined : current)
-      const previous = entryDrafts.current.get(startedTopic ?? 'general')
-      if (revisionDraft && previous?.draft === revisionDraft) entryDrafts.current.set(startedTopic ?? 'general', { ...previous, draft: undefined })
       setEntries((prev) => [...prev.map((entry) => ({ ...entry, proposals: entry.proposals?.map((p) => p.state === 'ready' && r.proposals.some((next) => next.key === p.key) ? { ...p, superseded: true } : p) })), { id: nextId++, role: 'pet', text: r.reply, steps: r.steps, proposals: r.proposals.map((p) => ({ ...p, state: 'ready' })) }])
     } catch (error) {
       if (activeDoc.current !== documentId) return
@@ -110,7 +97,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
       if (activeTopic.current === startedTopic) setText((current) => restoreChatText(question, current))
       else {
         const previous = entryDrafts.current.get(startedTopic ?? 'general')
-        entryDrafts.current.set(startedTopic ?? 'general', { text: restoreChatText(question, previous?.text ?? ''), draft: previous?.draft })
+        entryDrafts.current.set(startedTopic ?? 'general', { text: restoreChatText(question, previous?.text ?? '') })
       }
       const name = diagramChatName(startedTopic)
       setError(`${name ? `${name}：` : ''}${chatError(error).message}`)
@@ -161,7 +148,7 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
                 {m.steps.map((s, i) => <li key={i}><PetIcon name="check2" />{s}</li>)}
               </ul>
             )}
-            <p className="assistant-chat-bubble">{m.text}</p>
+            {!(m.role === 'pet' && m.proposals?.length && m.proposals.every((p) => diagramKinds[p.key])) && <p className="assistant-chat-bubble">{m.text}</p>}
             {m.proposals?.map((card) => {
               const id = `${m.id}:${card.key}`
               return (
@@ -169,8 +156,8 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
                   {onJump
                     ? <button type="button" className="assistant-chat-field" onClick={() => onJump(card.key)}>{card.label}<PetIcon name="chevron-right" /></button>
                     : <strong className="assistant-chat-field">{card.label}</strong>}
-                  {['family.genogram', 'health.bodyMap'].includes(card.key) ? <Suspense fallback={<p>図を読み込んでいます…</p>}><DiagramProposalDetails card={card} disabled={applying || !!card.superseded} onChange={(next) => setEntries((prev) => prev.map((entry) => entry.id !== m.id ? entry : { ...entry, proposals: entry.proposals?.map((p) => p.key === card.key && p.state === 'ready' && !p.superseded && sameValue(p.after, card.after) ? next : p) }))} /></Suspense> : <DiffLines field={card.key} before={card.before} after={card.after} />}
-                  {!!diagramKinds[card.key] && <p role="status">{diagramCardStatus(card, current[card.key], saved[card.key])}</p>}
+                  {['family.genogram', 'health.bodyMap'].includes(card.key) ? <Suspense fallback={<p>図を読み込んでいます…</p>}><DiagramProposalDetails card={card} disabled={applying || !!card.superseded} onChange={(next) => setEntries((prev) => prev.map((entry) => entry.id !== m.id ? entry : { ...entry, proposals: entry.proposals?.map((p) => p.key === card.key && p.state === 'ready' && !p.superseded && sameValue(p.after, card.after) ? next : p) }))} /></Suspense> : <ProposalDiff field={card.key} before={card.before} after={card.after} dict={dict} />}
+
                   <div className="assistant-chat-actions">
                     {card.state === 'ready'
                       ? <button type="button" className="assistant-chat-apply" disabled={applying || !!card.superseded || !!card.pendingLocations?.length} onClick={() => void press(m.id, card)}><PetIcon name="pencil" />{diagramKinds[card.key] ? '用紙に反映' : '用紙に入れる'}</button>
@@ -178,7 +165,6 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
                         <span className="assistant-chat-done"><PetIcon name="check2" />反映しました</span>
                         <button type="button" className="assistant-chat-undo" disabled={applying} onClick={() => void press(m.id, card)}>{diagramKinds[card.key] ? 'この案を一括で戻す' : '戻す'}</button>
                       </>}
-                    {['family.genogram', 'health.bodyMap'].includes(card.key) && !card.superseded && <button type="button" disabled={applying || busy} onClick={() => { entryDrafts.current.set(topic ?? 'general', { text, draft: revisionDraft }); setTopic(card.key); setRevisionDraft(card); setText('この図案を修正して：'); input.current?.focus({ preventScroll: true }) }}>この案を修正</button>}
                   </div>
                   {stale.has(id) && <p className="assistant-error" role="alert">{card.state === 'ready' ? '案を出したあとに、この欄が直されています。もう一度相談してください。' : '入れたあとに、この欄が直されているので戻せません。用紙で直してください。'}</p>}
                 </div>
@@ -198,7 +184,6 @@ export function PetChat({ documentId, entries, setEntries, current, onSet, onDia
         )}
       </ol>
       {error && <p className="assistant-error" role="alert">{error}</p>}
-      {revisionDraft && <p role="status">{revisionDraft.label}の案を修正します。<button type="button" onClick={() => setRevisionDraft(undefined)}>修正対象を解除</button></p>}
       <form className="assistant-chat-form" onSubmit={send}>
         <textarea ref={input} className="assistant-revision" aria-label="相談内容" placeholder={documentId ? '相談したい内容を入力…（Ctrl＋Enter で送る）' : '用紙を開くと相談できます'}
           value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} disabled={!documentId} maxLength={4000} rows={3} />

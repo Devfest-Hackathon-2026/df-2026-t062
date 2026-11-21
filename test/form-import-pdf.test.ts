@@ -7,9 +7,44 @@ import { test } from 'node:test'
 import { generate } from '@pdfme/generator'
 import { text, rectangle, line } from '@pdfme/schemas'
 import { openPdf } from '../worker/form-import/pdf.ts'
+import { PDFDocument, PDFName } from '@pdfme/pdf-lib'
+import { loadImage, createCanvas } from '@napi-rs/canvas'
 
 const font = { BIZUDPGothic: { data: readFileSync(new URL('../forms/fonts/BIZUDPGothic-Regular.ttf', import.meta.url)), fallback: true, subset: true } }
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol
+
+async function bitmapPdf(bitmap: Uint8Array, filter: string) {
+  const pdf = await PDFDocument.create()
+  const image = pdf.context.register(pdf.context.stream(bitmap, {
+    Type: 'XObject', Subtype: 'Image', Width: 128, Height: 128, ColorSpace: 'DeviceGray', BitsPerComponent: 1,
+    Filter: filter, DecodeParms: { K: -1, Columns: 128, Rows: 128, BlackIs1: true },
+  }))
+  const page = pdf.addPage([128, 128])
+  page.node.set(PDFName.of('Resources'), pdf.context.obj({ XObject: { Scan: image } }))
+  const drawing = pdf.context.register(pdf.context.stream('q 128 0 0 128 0 0 cm /Scan Do Q'))
+  page.node.set(PDFName.of('Contents'), drawing)
+  return pdf.save()
+}
+
+test('CCITT圧縮のスキャン画像を消さずに描画する（復号用WASMをローカルから読む）', async () => {
+  // 自作の128px白地＋中央64px黒正方形をGroup4圧縮したもの。自治体資料は含まない。
+  const bitmap = Buffer.from('JqGQG///////////INWzX//////////////////////////////////////////H//////////gAgAg=', 'base64')
+  const opened = await openPdf(await bitmapPdf(bitmap, 'CCITTFaxDecode'))
+  try {
+    const png = await loadImage(await opened.png(1, 72))
+    const canvas = createCanvas(128, 128)
+    canvas.getContext('2d').drawImage(png, 0, 0)
+    const pixel = (x: number, y: number) => canvas.getContext('2d').getImageData(x, y, 1, 1).data[0]
+    assert.ok(pixel(64, 64) < 30, '中央の黒い画像が欠けていない')
+    assert.ok(pixel(8, 8) > 240, '白地は白のまま')
+  } finally { await opened.close() }
+})
+
+test('画像だけの復号に失敗したPDFを、白紙の原本として正常終了しない', async () => {
+  const opened = await openPdf(await bitmapPdf(new Uint8Array([0, 1, 2]), 'JPXDecode'))
+  try { await assert.rejects(opened.png(1, 72), /pdf_image_decode_failed/) }
+  finally { await opened.close() }
+})
 
 async function samplePdf(): Promise<Uint8Array> {
   const t = (name: string, x: number, y: number, size: number) => ({

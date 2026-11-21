@@ -7,27 +7,34 @@ import { formKeys } from '../core/binding.ts'
 //   サイト管理者の入口（/api/admin/...）: siteRoute。site_admins にいなければ 403
 //   ログインなしの入口: openRoute（health と、ローカルの置き場だけの、署名で確かめる入口）
 // worker の道（/tasks/*）はここには置かない（worker/app.ts）。
+import * as documentInputs from '../db/document-inputs.ts'
+import { documentInputPath } from '../core/document-input.ts'
 import { Hono, type Context, type Handler } from 'hono'
 import { z } from 'zod'
 import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/form.ts'
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
-import { validValue } from '../core/schema.ts'
 import * as importsDb from '../db/form-imports.ts'
+import * as inspections from '../db/inspections.ts'
+import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
+import * as carePlans from '../db/care-plans.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
-import type { RequiredKeys } from '../core/required.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
-import { fakeModel, runChat, type ChatModel } from './chat.ts'
+import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
+import { PdfOverflow } from './pdf-layout.ts'
 import { previewPdf, publishProblems } from './form-check.ts'
 import { checkDraftVersion } from '../worker/form-import/check.ts'
 import { BindingSchema, FormPageSchema, LocalFieldSchema, PdfmeSlotSchema } from '../worker/form-import/contract.ts'
 import type { LocalField } from '../worker/form-import/draft.ts'
 import { allows, operationsOf, STAFF_ROLES, type Operation } from './permissions.ts'
 import type { Queue } from './queue.ts'
+import { editSlot } from './form-slots.ts'
+import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
+import { fieldDict } from '../core/dictionary.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 
 export interface ApiDeps {
@@ -37,6 +44,10 @@ export interface ApiDeps {
   queue: () => Queue
   /** 書き方の相談のエージェントが使う Gemini。なければ試しの答え（fake） */
   chat?: () => Promise<ChatModel>
+  /** ケアプランの AI 原案。なければ試しの原案（fake） */
+  carePlanAi?: () => Promise<carePlans.CarePlanDrafter>
+  /** 責任者の言葉を欄に当てはめる（様式の下書きを直す）。なければ試しの当てはめ（fake） */
+  fieldMatcher?: () => Promise<FieldMatcher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -60,6 +71,70 @@ const SaveInput = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('page'), page: z.number().int().min(1).max(20) }),
   z.object({ scope: z.literal('hunk'), key: z.string().min(1), hunkIndex: z.number().int().min(0) }),
 ])
+// ケアプラン（#90）。日付は YYYY-MM-DD、期間の前後はリポジトリで確かめる
+const CarePlanInput = z.object({
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullish(),
+  copyFromPlanId: z.string().uuid().nullish(),
+})
+const PlanPeriod = {
+  periodText: z.string().trim().max(200).nullish(),
+  periodFrom: z.iso.date().nullish(),
+  periodTo: z.iso.date().nullish(),
+}
+const PlanServiceInput = z.object({
+  id: z.string().uuid().optional(),
+  content: z.string().trim().min(1).max(500),
+  insured: z.boolean().optional(),
+  kind: z.string().trim().max(100).nullish(),
+  provider: z.string().trim().max(200).nullish(),
+  frequency: z.string().trim().max(100).nullish(),
+  ...PlanPeriod,
+})
+const PlanShortGoalInput = z.object({
+  id: z.string().uuid().optional(),
+  goal: z.string().trim().min(1).max(500),
+  ...PlanPeriod,
+  services: z.array(PlanServiceInput).max(50).optional(),
+})
+const PlanNeedInput = z.object({
+  id: z.string().uuid().optional(),
+  need: z.string().trim().min(1).max(1000),
+  longGoal: z.object({
+    id: z.string().uuid().optional(),
+    goal: z.string().trim().min(1).max(1000),
+    ...PlanPeriod,
+  }),
+  shortGoals: z.array(PlanShortGoalInput).max(50).optional(),
+})
+const PlanNeedsInput = z.object({
+  baseVersion: z.number().int().positive(),
+  needs: z.array(PlanNeedInput).max(50),
+})
+const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
+const PlanScheduleInput = z.object({
+  baseVersion: z.number().int().positive(),
+  slots: z.array(z.object({
+    id: z.string().uuid().optional(),
+    serviceId: z.string().uuid(),
+    scheduleType: z.enum(['weekly', 'other']),
+    weekday: z.number().int().nullish(),
+    start: z.string().max(20).nullish(),
+    end: z.string().max(20).nullish(),
+    endsNextDay: z.boolean().optional(),
+    note: z.string().max(1000).nullish(),
+    periodFrom: z.iso.date().nullish(),
+    periodTo: z.iso.date().nullish(),
+  })).max(500),
+})
+const PlanAiDraftInput = z.object({
+  sourceDocumentId: z.string().uuid(),
+  sourceRevisionId: z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)]),
+})
+const PlanAiApplyInput = z.object({
+  baseVersion: z.number().int().positive(),
+  acceptedProposalIds: z.array(z.string().max(200)).max(200).optional(),
+})
 const RecordingInput = z.object({
   mime: z.string().min(1).max(100),
   // 録音を始めた書類。省いたときは主な書類
@@ -68,6 +143,7 @@ const RecordingInput = z.object({
   expiredUploadUrl: z.string().max(4096).optional(),
 })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
+const InspectionInput = z.object({ checkSet: z.string().min(1).max(100).optional() })
 const ChatInput = z.object({
   diagramField: z.enum(diagramChatFields).optional(),
   draft: z.object({ key: z.enum(['family.genogram', 'health.bodyMap']), after: z.unknown(), pendingLocations: z.array(pendingLocationSchema).max(100).optional() }).optional(),
@@ -99,6 +175,11 @@ const FormVersionPatch = z.object({
   localFields: z.array(LocalFieldSchema).optional(),
 }).refine((v) => v.schemas || v.bindings || v.pages || v.localFields)
 const PublishInput = z.object({ base: Sha256 })
+// 印字欄を言葉で直す（ここに何が入るか）か、使っていないことにする
+const SlotEditInput = z.union([
+  z.object({ base: Sha256, text: z.string().trim().min(1).max(200) }),
+  z.object({ base: Sha256, unused: z.literal(true) }),
+])
 
 /** 入口の宣言: 操作、またはログインなし（public） */
 export type Declared = Operation | 'public'
@@ -202,6 +283,86 @@ export function createApp(deps: ApiDeps) {
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
 
+  // ---------- ケアプラン（#90）----------
+
+  app.get('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { plans: await carePlans.listClientCarePlans(db, staff.officeId, c.req.param('clientId')!) })))
+
+  app.post('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CarePlanInput)
+    const plan = await carePlans.createCarePlan(db, staff, c.req.param('clientId')!, {
+      effectiveFrom: input.effectiveFrom,
+      effectiveTo: input.effectiveTo ?? null,
+      copyFromPlanId: input.copyFromPlanId ?? null,
+    })
+    return json(c, { plan }, 201)
+  }))
+
+  app.get('/api/care-plans/:planId', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { plan: await carePlans.getCarePlan(db, staff.officeId, c.req.param('planId')!) })))
+
+  app.put('/api/care-plans/:planId/needs', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanNeedsInput)
+    const plan = await carePlans.saveCarePlanNeeds(db, staff, c.req.param('planId')!, input.baseVersion, input.needs)
+    return json(c, { plan })
+  }))
+
+  app.put('/api/care-plans/:planId/schedule', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanScheduleInput)
+    return c.json({ plan: await carePlans.saveCarePlanSchedule(db, staff, c.req.param('planId')!, input.baseVersion, input.slots) })
+  }))
+
+  app.post('/api/care-plans/:planId/confirm', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanSaveInput)
+    return c.json(await carePlans.confirmCarePlan(db, staff, c.req.param('planId')!, input.baseVersion))
+  }))
+
+  app.get('/api/care-plans/:planId/pdf', staffRoute('care.work', async (c, staff, db) => {
+    const { clientId, sources } = await carePlans.carePlanPdfSources(db, staff, c.req.param('planId')!)
+    const selection = c.req.query('form') ?? 'all'
+    if (!['all', '1', '2', '3'].includes(selection)) throw new repo.BadRequest('form は 1・2・3・all です')
+    const selected = sources.filter((s) => selection === 'all' || String(s.formNo) === selection)
+    const pdfs: Uint8Array[] = []
+    for (const source of selected) {
+      const version = await forms.loadVersion(db, source.formVersionId)
+      pdfs.push(await makePdf(deps.storage(), version, source.values))
+    }
+    const { PDFDocument } = await import('@pdfme/pdf-lib')
+    const combined = await PDFDocument.create({ updateMetadata: false })
+    for (const bytes of pdfs) {
+      const pdf = await PDFDocument.load(bytes)
+      for (const page of await combined.copyPages(pdf, pdf.getPageIndices())) combined.addPage(page)
+    }
+    const bytes = new Uint8Array(await combined.save())
+    await repo.audit(db, staff, staff.officeId, 'care_plan.pdf', { clientId }, {
+      planId: c.req.param('planId'), form: selection, revisions: selected.map((s) => ({ formNo: s.formNo, rev: s.rev })),
+    })
+    return new Response(new Blob([bytes], { type: 'application/pdf' }), {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="care-plan-${selection}.pdf"`,
+        'Cache-Control': 'no-store',
+      },
+    })
+  }))
+
+  app.post('/api/care-plans/:planId/save', staffRoute('care.work', async (c, staff, db) => {
+    const { baseVersion } = await body(c, PlanSaveInput)
+    return json(c, await carePlans.saveCarePlan(db, staff, c.req.param('planId')!, baseVersion))
+  }))
+
+  app.post('/api/care-plans/:planId/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const { sourceDocumentId, sourceRevisionId } = await body(c, PlanAiDraftInput)
+    const drafter = deps.carePlanAi ? await deps.carePlanAi() : (await import('./care-plan-ai.ts')).fakeCarePlanDrafter
+    const draft = await carePlans.createCarePlanAiDraft(db, staff, c.req.param('planId')!, sourceDocumentId, sourceRevisionId, drafter)
+    return json(c, { draft }, 201)
+  }))
+
+  app.post('/api/care-plans/:planId/ai-drafts/:draftId/apply', staffRoute('care.work', async (c, staff, db) => {
+    const { baseVersion } = await body(c, PlanAiApplyInput)
+    return json(c, await carePlans.applyCarePlanAiDraft(db, staff, c.req.param('planId')!, c.req.param('draftId')!, baseVersion))
+  }))
+
   // 書類を作る（どの種類も同じ流れ。db/repo.ts の createDocument）。1 人 1 通の種類で、もうあれば今の書類を返す（200）
   app.post('/api/clients/:id/documents', staffRoute('care.work', async (c, staff, db) => {
     const { kind } = await body(c, z.object({ kind: z.string().trim().min(1).max(100) }))
@@ -237,7 +398,8 @@ export function createApp(deps: ApiDeps) {
 
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)
-    for (const ch of changes) if (!validValue(ch.key, ch.value)) throw new repo.BadRequest(`値の形が違います: ${ch.key}`)
+    // 欄と値の型は、書類の様式の版の欄の辞書で確かめる（repo.patchFields）
+    await carePlans.assertGenericDocumentEdits(db, staff.officeId, c.req.param('id')!, changes.map((ch) => ch.key))
     const r = await repo.patchFields(db, staff, c.req.param('id')!, changes.map((ch) => ({ key: ch.key, value: ch.value ?? null, base: ch.base ?? null, mode: ch.mode })))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
@@ -247,12 +409,17 @@ export function createApp(deps: ApiDeps) {
     const { messages, draft, diagramField } = await body(c, ChatInput)
     if (diagramField && draft && draft.key !== diagramField) throw new repo.BadRequest('相談対象の図と修正対象の案が一致しません')
     if (draft) { const value = diagramSchema.safeParse(draft.after); if (!value.success || value.data.kind !== diagramKinds[draft.key]) throw new repo.BadRequest('図案の形が正しくありません') }
-    const document = { ...await repo.getDocument(db, staff.officeId, c.req.param('id')!), required: [] as RequiredKeys, editableKeys: [] as string[] }
-    document.editableKeys = formKeys((await forms.versionForOffice(db, staff.officeId, document.formVersionId)).bindings)
-    document.required = (await kinds.kindOf(db, document.kind))?.required ?? []
+    // 道具は、書類の種類（名前・必須の欄）と様式の版（読む欄・印字欄の対応・その様式だけの欄）から読む
+    const asChat = async (d: repo.DocumentView): Promise<ChatDocument & repo.DocumentView> => {
+      const kind = await kinds.kindOf(db, d.kind)
+      return { ...d, name: kind?.name ?? d.kind, required: kind?.required ?? [], form: await forms.loadFormDef(db, d.formVersionId) }
+    }
+    const document = await asChat(await repo.getDocument(db, staff.officeId, c.req.param('id')!))
+    document.editableKeys = document.form.keys
     if (diagramField && !document.editableKeys.includes(diagramField)) throw new repo.BadRequest('この書類に対象の図欄がありません')
+
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
-    const others = await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)
+    const others = await Promise.all((await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)).map(asChat))
     const model = deps.chat ? await deps.chat() : fakeModel
     // 答えは 1 行 1 つの JSON（NDJSON）。道具を使うたびに {type:'step'} を流し、最後に {type:'done', reply, steps, proposals}。
     // 途中で失敗したら {type:'error'}（状態はもう 200 なので）。間の置き場がまとめて返しても、画面は最後に全部出すだけで壊れない
@@ -273,6 +440,46 @@ export function createApp(deps: ApiDeps) {
     return new Response(stream, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' } })
   }))
 
+  app.post('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) => {
+    const r = await documentInputs.startInput(db, staff, c.req.param('id')!, await body(c, documentInputs.DocumentUploadInput), deps.storage(), c.req.header('Origin'))
+    return json(c, r, 201)
+  }))
+  app.get('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inputs: await documentInputs.listInputs(db, staff, c.req.param('id')!) })))
+  app.get('/api/document-inputs/:id', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { input: await documentInputs.inputView(db, staff, c.req.param('id')!) })))
+  app.post('/api/document-inputs/:id/complete', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const queue = deps.queue()
+    if (!queue.enqueueDocumentInput) throw new repo.BadRequest('書類読取を設定してください')
+    await documentInputs.completeInput(db, staff, id, deps.storage())
+    const input = await documentInputs.inputView(db, staff, id)
+    if (input.status === 'queued') await queue.enqueueDocumentInput(id, { initial: true })
+    return json(c, { input }, 202)
+  }))
+  app.post('/api/document-inputs/:id/retry', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const queue = deps.queue()
+    if (!queue.enqueueDocumentInput) throw new repo.BadRequest('書類読取を設定してください')
+    await documentInputs.retryInput(db, staff, id)
+    await queue.enqueueDocumentInput(id)
+    return json(c, { input: await documentInputs.inputView(db, staff, id) }, 202)
+  }))
+  app.get('/api/document-inputs/:id/original', staffRoute('care.work', async (c, staff, db) => {
+    const r = await documentInputs.getInput(db, staff.officeId, c.req.param('id')!)
+    const data = await deps.storage().read('source', documentInputPath(staff.officeId, r.client_id, r.id))
+    return new Response(new Blob([new Uint8Array(data)], { type: r.mime }), { headers: {
+      'Content-Type': r.mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(r.file_name)}`,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox",
+    } })
+  }))
+  app.post('/api/document-inputs/:id/adopt', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, z.object({ targetConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown(), base: z.unknown() })).min(1).max(200) }))
+    if (new Set(input.changes.map((ch) => ch.key)).size !== input.changes.length) throw new repo.BadRequest('同じ欄が重複しています')
+    const document = await documentInputs.adoptInput(db, staff, c.req.param('id')!, input.changes)
+    return json(c, { document })
+  }))
+
   app.post('/api/documents/:id/survey-import', staffRoute('care.work', async (c, staff, db) => {
     const { fileName, sha256, recordedOn, changes } = await body(c, SurveyImportInput)
     if (new Set(changes.map((ch) => ch.key)).size !== changes.length) throw new repo.BadRequest('同じ欄が重複しています')
@@ -287,12 +494,14 @@ export function createApp(deps: ApiDeps) {
 
   // 用紙の印字欄の直し。サーバーがその時点の値に当てる（当てられない直しは理由を返す）
   app.post('/api/documents/:id/edits', staffRoute('care.work', async (c, staff, db) => {
+    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const { formVersionId, edits } = await body(c, EditsInput)
     const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits)
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
 
   app.post('/api/documents/:id/save', staffRoute('care.work', async (c, staff, db) => {
+    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const r = await repo.saveDocument(db, staff, c.req.param('id')!, await body(c, SaveInput))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
@@ -347,6 +556,18 @@ export function createApp(deps: ApiDeps) {
     const job = await repo.dispatchRecordingJob(db, jobId, () => deps.queue().enqueue(jobId, { initial: true }))
     return json(c, job, 202)
   }))
+
+  // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
+  app.post('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
+    const { checkSet } = await body(c, InspectionInput)
+    const r = await inspections.createInspection(db, staff, c.req.param('id')!, checkSet ?? DEFAULT_CHECK_SET)
+    if (r.created) await deps.queue().enqueueInspection(r.id, { initial: true })
+    return json(c, { inspectionId: r.id }, 202)
+  }))
+  app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspections: await inspections.listInspections(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { inspection: await inspections.getInspection(db, staff.officeId, c.req.param('id')!) })))
 
   app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => json(c, { jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!) })))
 
@@ -411,16 +632,22 @@ export function createApp(deps: ApiDeps) {
 
   type VersionHandler = (c: Context, scope: forms.ManagerScope, db: Db) => Promise<Response>
   /** 責任者・サイト管理者に見せる版（置き場の場所は渡さない）と、公開前の確かめのうち印字しないで分かるもの */
-  const managerView = (v: forms.FormVersion) => ({
-    formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
-    problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
-  })
+  //   slots: 印字欄ごとの入る内容の言葉と、録音から AI が書くか（責任者には key を見せない）。review: 取り込みが迷った欄
+  const managerView = async (db: Db, v: forms.FormVersion) => {
+    const dict = fieldDict(v.localFields)
+    return {
+      formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
+      problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+      slots: Object.fromEntries(Object.entries(v.bindings).map(([n, b]) => [n, slotMeaning(b, dict, v.localFields)])),
+      review: v.status === 'draft' ? await forms.reviewOf(db, v.id) : [],
+    }
+  }
   const versionRoutes = (prefix: '/api/office' | '/api/admin', guard: (h: VersionHandler) => Handler) => {
-    app.get(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => json(c, managerView(await forms.versionForManager(db, scope, c.req.param('id')!)))))
+    app.get(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => json(c, await managerView(db, await forms.versionForManager(db, scope, c.req.param('id')!)))))
     app.get(`${prefix}/form-versions/:id/assets`, guard(async (c, scope, db) => json(c, await assetsOf(await forms.versionForManager(db, scope, c.req.param('id')!)))))
     app.patch(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
       const { base, ...patch } = await body(c, FormVersionPatch)
-      return json(c, managerView(await forms.updateDraft(db, scope, c.req.param('id')!, base, patch as forms.DraftPatch)))
+      return json(c, await managerView(db, await forms.updateDraft(db, scope, c.req.param('id')!, base, patch as forms.DraftPatch)))
     }))
     app.delete(`${prefix}/form-versions/:id`, guard(async (c, scope, db) => {
       await forms.deleteDraft(db, scope, c.req.param('id')!)
@@ -444,10 +671,29 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
-      return json(c, managerView(await forms.publishDraft(db, scope, id, base)))
+      return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
+    }))
+    // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
+    app.post(`${prefix}/form-versions/:id/slots/:slot`, guard(async (c, scope, db) => {
+      const input = await body(c, SlotEditInput)
+      const r = await editSlot(db, scope, c.req.param('id')!, c.req.param('slot')!, input, deps.fieldMatcher ?? (async () => fakeFieldMatcher))
+      return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
+
+  // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
+  app.get('/api/office/forms', staffRoute('form.manage', async (c, staff, db) => json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })))
+  app.post('/api/office/form-versions/:id/draft', staffRoute('form.manage', async (c, staff, db) => {
+    const r = await forms.draftFrom(db, { officeId: staff.officeId }, c.req.param('id')!)
+    return json(c, await managerView(db, r.version), r.created ? 201 : 200)
+  }))
+  app.post('/api/office/forms/:kind/revert', staffRoute('form.manage', async (c, staff, db) => {
+    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!)
+    return json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })
+  }))
+  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await managerView(db, await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!)))))
   versionRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, db)))
 
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------
@@ -485,8 +731,13 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
     if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
+    if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
+    if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)
+    if (err instanceof carePlans.UsePlanApi) return json(c, { error: 'use_plan_api', message: '第2表・第3表は計画版の API で直してください' }, 409)
     if (err instanceof repo.BadRequest) return json(c, { error: 'bad_request', message: err.message }, 400)
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)
+    if (err instanceof PdfOverflow) return json(c, { error: 'overflow', slots: err.slots, message: err.message }, 422)
     // ログには中身を出さない（種類と道だけ）
     console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: err.name }))
     return json(c, { error: 'internal' }, 500)

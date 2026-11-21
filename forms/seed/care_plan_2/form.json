@@ -1,0 +1,44 @@
+{
+  "kind": "care_plan_2",
+  "name": "居宅サービス計画書（2）",
+  "title": "居宅サービス計画書（2）（厚生労働省 令和6年7月4日）",
+  "publisher": "厚生労働省",
+  "sourceUrl": "https://www.mhlw.go.jp/content/001271371.pdf",
+  "sourcePdfSha256": "b525d876cc7b4c7252d243b6e3bfaf32c1508cb2dc8f7763686841967af4e5c9",
+  "sourcePages": [
+    18
+  ],
+  "basePdfSha256": "d8be84d34e0bc64f0f7a884475bf8d72312f23e7d1c5addd720593162ec36837",
+  "pages": [
+    {
+      "no": 1,
+      "pdfIndex": 0,
+      "title": "居宅サービス計画書（2）",
+      "width": 297,
+      "height": 210,
+      "print": {
+        "type": "table",
+        "key": "plan.needs",
+        "nested": [
+          "shortGoals",
+          "services"
+        ],
+        "slots": [
+          "ニーズ",
+          "長期目標",
+          "長期期間",
+          "短期目標",
+          "短期期間",
+          "サービス内容",
+          "保険給付",
+          "サービス種別",
+          "提供事業所",
+          "頻度",
+          "サービス期間"
+        ],
+        "rowsPerPage": 5,
+        "rowHeight": 25.4
+      }
+    }
+  ]
+}

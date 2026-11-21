@@ -1,0 +1,430 @@
+{
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "住所": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.address"
+    }
+  },
+  "作成者": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.careManagerName"
+    }
+  },
+  "事業所名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.name"
+    }
+  },
+  "事業所所在地": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.address"
+    }
+  },
+  "作成年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "作成年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "作成年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "生年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.birthDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "生年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.birthDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "生年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.birthDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "変更日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.changedDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "変更日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.changedDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "変更日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.changedDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "初回作成日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.firstCreatedDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "初回作成日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.firstCreatedDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "初回作成日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.firstCreatedDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "認定日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.certifiedDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "認定日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.certifiedDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "認定日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.certifiedDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "有効期間開始_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validFrom"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "有効期間開始_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validFrom"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "有効期間開始_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validFrom"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "有効期間終了_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validTo"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "有効期間終了_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validTo"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "有効期間終了_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "cert.validTo"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "種別_初回": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.kind"
+    },
+    "is": {
+      "eq": "初回"
+    }
+  },
+  "種別_紹介": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.kind"
+    },
+    "is": {
+      "eq": "紹介"
+    }
+  },
+  "種別_継続": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.kind"
+    },
+    "is": {
+      "eq": "継続"
+    }
+  },
+  "認定済": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.status"
+    },
+    "is": {
+      "eq": "認定済"
+    }
+  },
+  "申請中": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.status"
+    },
+    "is": {
+      "in": [
+        "新規申請中",
+        "区分変更申請中",
+        "更新申請中"
+      ]
+    },
+    "edit": {
+      "on": {
+        "set": [
+          {
+            "value": "新規申請中"
+          }
+        ]
+      },
+      "off": {
+        "set": [
+          {
+            "value": null
+          }
+        ]
+      }
+    }
+  },
+  "要介護1": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.careLevel"
+    },
+    "is": {
+      "eq": "要介護1"
+    }
+  },
+  "要介護2": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.careLevel"
+    },
+    "is": {
+      "eq": "要介護2"
+    }
+  },
+  "要介護3": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.careLevel"
+    },
+    "is": {
+      "eq": "要介護3"
+    }
+  },
+  "要介護4": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.careLevel"
+    },
+    "is": {
+      "eq": "要介護4"
+    }
+  },
+  "要介護5": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "cert.careLevel"
+    },
+    "is": {
+      "eq": "要介護5"
+    }
+  },
+  "本人意向": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "intention.person"
+    }
+  },
+  "家族意向": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "intention.family"
+    }
+  },
+  "意向を踏まえた課題分析": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.intentionAnalysis"
+    }
+  },
+  "審査会意見": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "cert.reviewBoardOpinion"
+    }
+  },
+  "総合的援助方針": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.overallPolicy"
+    }
+  },
+  "生活援助_一人暮らし": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.livingAssistanceReason",
+      "path": [
+        "reason"
+      ]
+    },
+    "is": {
+      "eq": "一人暮らし"
+    }
+  },
+  "生活援助_家族障害疾病": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.livingAssistanceReason",
+      "path": [
+        "reason"
+      ]
+    },
+    "is": {
+      "eq": "家族等が障害、疾病等"
+    }
+  },
+  "生活援助_その他": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "plan.livingAssistanceReason",
+      "path": [
+        "reason"
+      ]
+    },
+    "is": {
+      "eq": "その他"
+    }
+  },
+  "生活援助_その他理由": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.livingAssistanceReason",
+      "path": [
+        "other"
+      ]
+    }
+  }
+}

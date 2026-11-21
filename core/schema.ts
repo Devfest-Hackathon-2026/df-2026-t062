@@ -1,7 +1,9 @@
-// fields.json から作る値の型の確かめ（zod）。AI が書いた値と、画面からの直しの両方に使う。
+// 版の欄の辞書（fields.json と、その版の local_fields）から作る値の型の確かめ（zod）。AI が書いた値と、画面からの直しの両方に使う。
 import { diagramSchema, diagramKinds } from './diagram/fields.ts'
+
 import { z } from 'zod'
-import { BY_KEY, choicesOf, subFieldsOf, type FieldSpec } from './fields.ts'
+import { GLOBAL_DICT, type FieldDict } from './dictionary.ts'
+import { choicesOf, subFieldsOf, type FieldSpec } from './fields.ts'
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 /** ケアマネの直しでは、年だけ・年月だけの日付も持てる（手帳の交付日など、用紙に年月しかない欄もある） */
@@ -44,21 +46,22 @@ function scalar(f: FieldSpec, o: SchemaOptions = {}): z.ZodType {
   }
 }
 
-const cache = new Map<string, z.ZodType>()
+/** 欄の定義ごとに覚える（fields.json の欄はいつも同じもの、その様式だけの欄は版の辞書ごとのもの） */
+const cache = new WeakMap<FieldSpec, { S?: z.ZodType, L?: z.ZodType }>()
 
-/** key の値の型。fields.json にない key は undefined */
-export function valueSchema(key: string, o: SchemaOptions = {}): z.ZodType | undefined {
-  const f = BY_KEY.get(key)
+/** key の値の型。辞書（既定は fields.json だけ）にない key は undefined */
+export function valueSchema(key: string, o: SchemaOptions = {}, dict: FieldDict = GLOBAL_DICT): z.ZodType | undefined {
+  const f = dict.get(key)
   if (!f) return undefined
-  const ck = `${o.strictDates ? 'S' : 'L'}:${key}`
-  let s = cache.get(ck)
-  if (!s) { s = scalar(f, o); cache.set(ck, s) }
-  return s
+  const c = cache.get(f) ?? {}
+  const mode = o.strictDates ? 'S' : 'L'
+  if (!c[mode]) { c[mode] = scalar(f, o); cache.set(f, c) }
+  return c[mode]
 }
 
-/** 値が型どおりか。null は「消す」なので通す。AI が書いた値は strictDates で確かめる */
-export function validValue(key: string, value: unknown, o: SchemaOptions = {}): boolean {
+/** 値が型どおりか。null は「消す」なので通す。AI が書いた値は strictDates で確かめる。その様式だけの欄は、版の辞書を渡す */
+export function validValue(key: string, value: unknown, o: SchemaOptions = {}, dict: FieldDict = GLOBAL_DICT): boolean {
   if (value === null) return true
-  const s = valueSchema(key, o)
+  const s = valueSchema(key, o, dict)
   return !!s && s.safeParse(value).success
 }

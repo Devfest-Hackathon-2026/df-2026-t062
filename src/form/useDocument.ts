@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getRef, parseYear, specOf, type Binding, type EraShort } from '../../core/binding.ts'
 import { sameValue } from '../../core/apply-batch.ts'
+import { fieldDict, type FieldDict } from '../../core/dictionary.ts'
 import { sentenceDiff } from '../../core/diff.ts'
 import { slotPages, toFormDef, type FormAssetsView, type FormDef } from '../../core/form.ts'
 import { applyChanges, editSlot, renderSlots, slotMarks, type Values, type Who } from '../../core/slots.ts'
@@ -33,13 +34,13 @@ export interface PageCount { ai: number, hand: number }
 const ERA_CHANGE_YEARS = new Set([1868, 1912, 1926, 1989, 2019])
 
 /** 打っている途中の文字が値にならない欄（確定するまで下書きで持つ） */
-function needsDraft(b: Binding | undefined): boolean {
+function needsDraft(b: Binding | undefined, dict: FieldDict): boolean {
   if (!b) return false
   switch (b.op) {
     case 'date@1': case 'ageAt@1': case 'join@1': return true
     case 'symbol@1': return b.ui !== 'cell'
     case 'text@1': {
-      const s = specOf(b.ref)
+      const s = specOf(b.ref, dict)
       return !!s && !s.detail && (s.type === 'number' || s.type === 'enum')
     }
     default: return false
@@ -355,7 +356,7 @@ export function useDocument(docId: string | undefined) {
   /** 打った文字。下書きの欄は確定するまで持つ */
   const type = useCallback((slot: string, text: string) => {
     if (!form) return
-    if (!needsDraft(form.bindings[slot])) { edit(slot, text); return }
+    if (!needsDraft(form.bindings[slot], fieldDict(form.localFields))) { edit(slot, text); return }
     setDrafts((prev) => new Map(prev).set(slot, text))
     setReason(slot, null)
   }, [form, edit, setReason])

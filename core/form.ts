@@ -1,6 +1,7 @@
 // 様式の版（DB の form_template_versions の 1 行）。画面・api・worker で共通に使う。
 // 様式はコードではなくデータ: 欄の位置（pdfme の schemas）・対応（bindings）・ページ。版は書き換えない。
 import { formKeys, type Bindings } from './binding.ts'
+import type { LocalField } from './dictionary.ts'
 
 /**
  * 書類の種類の key（form_kinds.key）。種類は DB の行で、コードは種類の名前を知らない（docs/再設計/16 の「書類の種類ごとの動き」）。
@@ -15,6 +16,9 @@ export interface TemplateSlot {
   width: number
   height: number
   fontSize?: number
+  fontName?: string
+  color?: string
+  borderWidth?: number
   lineHeight?: number
   alignment?: 'left' | 'center' | 'right'
   verticalAlignment?: 'top' | 'middle' | 'bottom'
@@ -30,6 +34,25 @@ export interface FormPage {
   /** mm */
   width: number
   height: number
+  /** 保存値から印字時だけ展開する。様式の種類ではなく、この宣言で改ページを決める。 */
+  print?: { type: 'text' } | {
+    type: 'table'
+    key: string
+    nested: string[]
+    slots: string[]
+    rowsPerPage: number
+    rowHeight: number
+  } | {
+    type: 'timeline'
+    key: string
+    slot: string
+    days: string[]
+    dayField: string
+    startField: string
+    endField: string
+    labelField: string
+    activity?: { key: string, slot: string, timeField: string, labelField: string }
+  }
 }
 
 /** api が画面に渡す様式の版（中身は変わらないので、ブラウザが覚えておける。置き場の場所は渡さない） */
@@ -42,6 +65,8 @@ export interface FormVersionView {
   bindings: Bindings
   pages: FormPage[]
   contentSha: string
+  /** その様式だけの欄の定義（版の local_fields）。fields.json と合わせて版の欄の辞書にする（core/dictionary.ts）。前の画面が覚えた版にはない */
+  localFields?: LocalField[]
 }
 
 /** ページの画像の期限つきの URL（画像がまだ置き場になければ null）と、元の PDF が置き場にあるか */

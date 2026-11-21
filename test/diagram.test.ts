@@ -1,3 +1,4 @@
+import { seedFormDef } from '../forms/admin/files.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { blank, type Item } from '../core/diagram/model.ts'
@@ -63,7 +64,7 @@ test('the verified assessment adapter owns all three positions; normal text edit
   assert.ok(checkBindings({ invalid: { op: 'diagram@1', ui: 'diagram', ref: { key: 'client.name' } } }).length)
 })
 test('AI proposals use the shared schema, captured baseRevision and one atomic field value', () => {
-  const doc: ChatDocument = { kind: 'assessment', fields: {} }
+  const doc: ChatDocument = { kind: 'assessment', name: 'アセスメント', form: seedFormDef('assessment'), fields: {} }
   const value = house()
   assert.equal(typeof checkProposal({ ...doc, editableKeys: [] }, 'housing.floorPlan', value, 0), 'string')
   assert.equal(typeof checkProposal(doc, 'housing.floorPlan', value), 'string')

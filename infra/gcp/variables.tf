@@ -146,6 +146,12 @@ variable "gemini_location" {
   default     = "global"
 }
 
+variable "document_input_approved_location" {
+  description = "記入済み原本を処理する確認済みの地域。gemini_location と同じ値で有効。空なら読取を停止する。"
+  type        = string
+  default     = ""
+}
+
 variable "stt_location" {
   description = "worker の STT_LOCATION（Speech-to-Text のロケーション）。Chirp 3 の日本語は東京では断られるようになり、使えるのは us・eu だけなので us（2026-11-10）。"
   type        = string

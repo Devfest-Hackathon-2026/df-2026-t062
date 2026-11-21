@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { diagramSchema, diagramDocument } from '../../core/diagram/fields.ts'
-import { diagramChanges, diagramObjects } from '../../core/diagram/changes.ts'
+import { diagramChanges } from '../../core/diagram/changes.ts'
 import type { Item } from '../../core/diagram/model.ts'
 import type { PendingLocation } from '../../core/diagram/evidence.ts'
 import type { ProposalCard } from '../components/petChat.ts'
@@ -31,10 +31,6 @@ export default function DiagramProposalDetails({ card, disabled, onChange }: { c
     {changes.length > 5 && <details><summary>残りの変更（{changes.length - 5}件）</summary><ul>{changes.slice(5).map((c) => <li key={c.id}>{c.text}</li>)}</ul></details>}
     {!!card.questions?.length && <div><strong>確認したいこと</strong><ul>{card.questions.map((q, i) => <li key={i}>{q}</li>)}</ul></div>}
     {pending.length > 0 && card.state === 'ready' && <div className="diagram-location-requests"><p>場所を指定してから用紙に反映します。</p>{pending.map((p) => <button key={p.id} type="button" disabled={disabled} onClick={() => setTarget(p)}>{p.label}：図上で場所を指定</button>)}</div>}
-    <details><summary>内容の詳細と根拠</summary>
-      <ul>{diagramObjects(value).map((o) => <li key={o.id}>{'name' in o ? `${o.name || '名前未確認'}・${o.sex === 'male' ? '男性' : o.sex === 'female' ? '女性' : '性別不明'}・${o.age == null ? '年齢不明' : `${o.age}歳`}・${o.household}・${o.deceased == null ? '生死未確認' : o.deceased ? '死亡' : '存命'}` : 'label' in o ? o.label : `${value.kind === 'family' ? value.data.people.find((p) => p.id === o.source)?.name || '名前未確認' : ''} → ${value.kind === 'family' ? value.data.people.find((p) => p.id === o.target)?.name || '名前未確認' : ''}（${o.kind}）`}</li>)}</ul>
-      {card.evidence?.length ? <ul aria-label="確認できた出典">{card.evidence.map(({ objectId, sources }) => <li key={objectId}>{sources.map((source) => <div key={source.id}><strong>{source.label}</strong><blockquote>{source.quote}</blockquote></div>)}</li>)}</ul> : <p>この案に確認できる出典情報はありません。</p>}
-    </details>
     {target && <Suspense fallback={<p role="status">人体図を開いています…</p>}><PositionPicker value={value} target={target} onPlace={place} onClose={() => setTarget(null)} /></Suspense>}
   </div>
 }

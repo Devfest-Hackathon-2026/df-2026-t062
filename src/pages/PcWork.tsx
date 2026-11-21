@@ -1,5 +1,6 @@
 // PC ② 作業画面（キャンバス Main）。新しい利用者は ③（PcNew）、2 回目からの書き換えのあとは ④（PcDiff）の印になる。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fieldDict } from '../../core/dictionary.ts'
 import { countRequired } from '../../core/required.ts'
 import { FieldConflicts } from '../form/FieldConflicts.tsx'
 import { H, W } from '../form/layout.ts'
@@ -296,9 +297,10 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           )}
         </section>
 
-        <PetHelper diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
-          chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram }}
+          chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram, dict: fieldDict(state.form?.localFields) }}
+
           onIdentity={(sha, confirmed) => {
             setCandidateError('')
             setVerifiedSources((previous) => {

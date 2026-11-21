@@ -78,10 +78,11 @@ def mark(c, height, box, faint=False):
     c.line(x + 2.5, height - top - 10.5, x + 9, height - top - 3.5)
 
 
-def write_fixture(path, basic, notes, boxes, answers, cases, difficult):
+def write_fixture(path, basic, notes, boxes, answers, cases, difficult, blank=False):
     pages = [*PdfReader(BytesIO(basic)).pages, *PdfReader(BytesIO(notes)).pages]
     writer = PdfWriter()
-    for index, page in enumerate(pages, 1):
+    for index, source_page in enumerate(pages, 1):
+        page = writer.add_page(source_page)
         width, height = float(page.mediabox.width), float(page.mediabox.height)
         buffer = BytesIO()
         c = Canvas(buffer, pagesize=(width, height))
@@ -101,6 +102,8 @@ def write_fixture(path, basic, notes, boxes, answers, cases, difficult):
             for item, answer in answers.items():
                 if int(answer['source_page']) != index:
                     continue
+                if blank and item == '2-5':
+                    continue
                 case = cases['difficult'].get(item, {}) if difficult else {}
                 for selection in map(int, answer['selected'].split(',')):
                     mark(c, height, boxes[item][selection - 1], case.get('kind') == 'faint_mark')
@@ -115,7 +118,6 @@ def write_fixture(path, basic, notes, boxes, answers, cases, difficult):
         c.showPage()
         c.save()
         page.merge_page(PdfReader(buffer).pages[0])
-        writer.add_page(page)
     writer.add_metadata({'/Title': '架空の認定調査票（難読版）' if difficult else '架空の認定調査票（通常版）'})
     with path.open('wb') as file:
         writer.write(file)
@@ -137,10 +139,19 @@ def main():
         raise ValueError('The answer key does not match the form items')
     pdfmetrics.registerFont(TTFont(FONT, str(FONT_FILE)))
     args.out.mkdir(parents=True, exist_ok=True)
-    for filename, difficult in [('survey-clean.pdf', False), ('survey-difficult.pdf', True)]:
+    for filename, difficult, blank in [('survey-clean.pdf', False, False), ('survey-difficult.pdf', True, False), ('survey-blank.pdf', False, True)]:
         path = args.out / filename
-        write_fixture(path, basic, notes, boxes, answers, cases, difficult)
+        write_fixture(path, basic, notes, boxes, answers, cases, difficult, blank)
         print(path)
+    manifest = {
+        'synthetic': True,
+        'basicSha256': BASIC_SHA,
+        'notesSha256': NOTES_SHA,
+        'goldSha256': sha256((HERE / 'gold.tsv').read_bytes()).hexdigest(),
+        'files': {name: sha256((args.out / name).read_bytes()).hexdigest()
+                  for name in ['survey-clean.pdf', 'survey-difficult.pdf', 'survey-blank.pdf']},
+    }
+    (args.out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 
 
 if __name__ == '__main__':

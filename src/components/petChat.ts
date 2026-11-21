@@ -3,7 +3,8 @@ import { diagramSchema, diagramKinds, diagramDocument, nextDiagram } from '../..
 // やり取りは画面の中だけで持つ（開き直すと消える）。書き換えの案は、ケアマネが押したときだけ用紙に入れる。
 import type { ChatMessage, ChatProposal } from '../../api/chat.ts'
 import { splitSentences } from '../../core/diff.ts'
-import { BY_KEY, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import { GLOBAL_DICT, type FieldDict } from '../../core/dictionary.ts'
+import { subFieldsOf, type FieldSpec } from '../../core/fields.ts'
 import { sameValue } from '../../core/apply-batch.ts'
 
 /** ready: まだ入れていない／applied: 用紙に入れた（「戻す」ができる） */
@@ -11,6 +12,17 @@ export type CardState = 'ready' | 'applied'
 export interface ProposalCard extends ChatProposal { state: CardState, superseded?: boolean, undone?: boolean }
 /** steps: ペットが使った道具の作業ログ（1 行ずつ） */
 export interface ChatEntry { id: number, role: ChatMessage['role'], text: string, steps?: string[], proposals?: ProposalCard[] }
+
+/** Continue the selected figure's latest unapplied draft; never resurrect stale, applied or undone proposals. */
+export function pendingDiagramDraft(entries: ChatEntry[], current: Record<string, unknown>, topic?: string): ProposalCard | undefined {
+  for (const entry of entries.toReversed()) {
+    const diagrams = entry.proposals?.filter((p) => p.key === 'family.genogram' || p.key === 'health.bodyMap') ?? []
+    if (!diagrams.length) continue
+    const card = topic ? diagrams.find((p) => p.key === topic) : diagrams.length === 1 ? diagrams[0] : undefined
+    if (!card) { if (!topic) return; continue }
+    return card.state === 'ready' && !card.superseded && !card.undone && sameValue(current[card.key], card.before) ? card : undefined
+  }
+}
 
 export function diagramCardStatus(card: ProposalCard, current: unknown, saved: unknown): string {
   if (card.superseded) return '新しい案を確認してください。'
@@ -77,8 +89,8 @@ function lines(f: FieldSpec, v: unknown): string[] {
 }
 
 /** 案のカードに出す差分。文章の欄は文ごと、ほかの欄は「項目の名前：値」の行ごとに、消えるものと足すものを出す */
-export function proposalChanges(key: string, before: unknown, after: unknown): { del: string[], ins: string[] } {
-  const f = BY_KEY.get(key)
+export function proposalChanges(key: string, before: unknown, after: unknown, dict: FieldDict = GLOBAL_DICT): { del: string[], ins: string[] } {
+  const f = dict.get(key)
   if (!f || f.type === 'text' || f.type === 'longtext') return sentenceChanges(typeof before === 'string' ? before : null, typeof after === 'string' ? after : '')
   const b = lines(f, before)
   const a = lines(f, after)

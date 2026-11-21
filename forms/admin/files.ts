@@ -1,7 +1,7 @@
 // forms/seed/<種類>/ の様式のファイル（様式の情報 form.json・欄の位置 template.json・対応 bindings.json）を読む。
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import type { Bindings } from '../../core/binding.ts'
-import type { FormKind, FormPage, TemplateSlot } from '../../core/form.ts'
+import { toFormDef, type FormDef, type FormKind, type FormPage, type TemplateSlot } from '../../core/form.ts'
 import type { VersionInput } from '../../db/forms.ts'
 
 export const SEED_DIR = new URL('../seed/', import.meta.url)
@@ -12,6 +12,9 @@ export interface FormMeta {
   title: string
   publisher: string | null
   sourceUrl: string | null
+  /** 公開通知から様式だけを取り出す場合の、元ファイルのハッシュと1始まりページ番号 */
+  sourcePdfSha256?: string
+  sourcePages?: number[]
   basePdfSha256: string
   pages: FormPage[]
 }
@@ -39,3 +42,9 @@ export const seedKinds = (): FormKind[] =>
     .filter((d) => d.isDirectory() && existsSync(new URL(`${d.name}/form.json`, SEED_DIR)))
     .map((d) => d.name)
     .sort()
+
+/** 全体の様式の版を、共通の仕組みで使う形にする（DB を通さない。eval とテストが使う） */
+export function seedFormDef(kind: FormKind): FormDef {
+  const s = readSeed(kind)
+  return toFormDef({ id: `seed:${kind}`, kind, name: s.name, version: 0, contentSha: '', schemas: s.schemas, bindings: s.bindings, pages: s.pages })
+}

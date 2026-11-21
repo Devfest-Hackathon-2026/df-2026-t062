@@ -1,3 +1,4 @@
+import { seedFormDef } from '../../forms/admin/files.ts'
 // Shared synthetic cases. Importing this file never calls a model.
 import assert from 'node:assert/strict'
 import type { runChat, ChatDocument, ChatRecording } from '../../api/chat.ts'
@@ -12,7 +13,7 @@ base.family.people = [
 ]
 base.family.relations = [{ id: 'older-link', source: 'subject', target: 'older-son', kind: '親子' }, { id: 'younger-link', source: 'subject', target: 'younger-son', kind: '親子' }]
 const family = nextDiagram('family', base, 0)
-const doc: ChatDocument = { id: 'synthetic-document', kind: 'assessment', fields: { 'person.name': { value: '検証本人', by: 'cm' }, 'family.genogram': { value: family, by: 'cm' } }, saved: { 'family.genogram': { value: family } } }
+const doc: ChatDocument = { id: 'synthetic-document', kind: 'assessment', name: 'アセスメント', form: seedFormDef('assessment'), fields: { 'person.name': { value: '検証本人', by: 'cm' }, 'family.genogram': { value: family, by: 'cm' } }, saved: { 'family.genogram': { value: family } } }
 export const records: ChatRecording[] = [{ id: 'synthetic-recording', recordedAt: '2026-11-20T01:00:00Z', utterances: [
   { id: 'f1', speaker: '本人', text: 'これは検証用の架空の記録です。私は検証本人です。長男の一郎と同居しています。次男の二郎は別居です。両方とも私の子です。' },
   { id: 'b1', speaker: '本人', text: '右膝が痛いです。左手がしびれます。麻痺と言われたことはありません。' },
