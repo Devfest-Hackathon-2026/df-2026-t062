@@ -345,8 +345,8 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
         const r = await api.applyCarePlanAi(plan.id, aiDraft.id, plan.lockVersion)
         setPlan(r.plan); setNeeds(r.plan.needs); setSlots(r.plan.slots); await first.reload()
         setAiNeeds(new Set(r.applied.needs))
-        setAiDraft({ ...aiDraft, status: 'applied' })
-        const count = r.applied.fields.length + r.applied.needs.length
+        setAiDraft({ ...aiDraft, status: r.plan.aiDraft?.id === aiDraft.id ? r.plan.aiDraft.status : 'partially_applied' })
+        const count = r.applied.fields.length + r.applied.needs.length + r.applied.slots.length
         setAiOpen(false)
         setNotice(count ? `AI原案を${count}項目入力しました。${r.applied.skipped.length ? `${r.applied.skipped.length}項目は入力していません。` : ''}内容を確認し、第1〜3表を保存してください。`
           : '原案は入力されませんでした。人の入力・既存の内容などを優先しています。手入力はそのまま続けられます。')
@@ -389,6 +389,12 @@ function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
       <h3>AI原案（未確定）</h3><p>参照：保存版 {draft.sourceRevisionRev}・生成日時 {new Date(draft.referencedAt).toLocaleString('ja-JP')}</p>
       {Object.entries(asRecord(proposal.plan1)).map(([key, value]) => <div className="cp-service" key={key}><strong>{key === 'plan.overallPolicy' ? '総合的な援助の方針' : key === 'plan.intentionAnalysis' ? '意向を踏まえた課題分析' : '第1表の候補'}</strong><p>{typeof value === 'string' ? value : '候補を確認してください'}</p></div>)}
       {records(proposal.needs).map((n, i) => <div className="cp-service" key={i}><strong>{text(n.need)}</strong><p>長期目標：{text(asRecord(n.longGoal).goal)}</p>{records(n.shortGoals).map((g, j) => <p key={j}>{text(g.goal)}：{records(g.services).map((s) => text(s.content)).join('、')}</p>)}</div>)}
+      {records(proposal.slots).map((slot, i) => {
+        const ref = asRecord(slot.serviceRef)
+        const service = records(records(records(proposal.needs)[Number(ref.need)]?.shortGoals)[Number(ref.shortGoal)]?.services)[Number(ref.service)]
+        return <div className="cp-service" key={`slot${i}`}><strong>第3表の候補：{text(service?.content) || '対応するサービスを確認してください'}</strong>
+          <p>{slot.scheduleType === 'other' ? text(slot.note) : `${days[Number(slot.weekday) - 1] ?? '曜日未確認'} ${text(slot.start)}〜${slot.endsNextDay ? '翌' : ''}${text(slot.end)}`}</p></div>
+      })}
       {records(draft.conflicts).map((conflict, i) => <p key={i} className="cp-error">確認が必要な点：{text(conflict.reason)}</p>)}
       <p>人が直した欄・既存のニーズは上書きしません。入力後も編集できます。保存・確定は別の操作です。</p>
       <button className="btn btn-p" disabled={busy || !['proposed'].includes(draft.status)} onClick={onApply}>この原案を入力する</button>

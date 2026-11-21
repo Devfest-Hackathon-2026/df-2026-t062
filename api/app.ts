@@ -1,3 +1,4 @@
+import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
 import { chatError } from '../core/chat-error.ts'
@@ -114,18 +115,7 @@ const PlanNeedsInput = z.object({
 const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
 const PlanScheduleInput = z.object({
   baseVersion: z.number().int().positive(),
-  slots: z.array(z.object({
-    id: z.string().uuid().optional(),
-    serviceId: z.string().uuid(),
-    scheduleType: z.enum(['weekly', 'other']),
-    weekday: z.number().int().nullish(),
-    start: z.string().max(20).nullish(),
-    end: z.string().max(20).nullish(),
-    endsNextDay: z.boolean().optional(),
-    note: z.string().max(1000).nullish(),
-    periodFrom: z.iso.date().nullish(),
-    periodTo: z.iso.date().nullish(),
-  })).max(500),
+  slots: z.array(PlanSlotSchema).max(500),
 })
 const PlanAiDraftInput = z.object({
   sourceDocumentId: z.string().uuid(),

@@ -206,7 +206,11 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
 function FitTextarea({ label, value, disabled, onChange, onBlur, style, base }: { label: string, value: string, disabled: boolean, onChange: (t: string) => void, onBlur: () => void, style: CSSProperties, base: string }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const s = useFitScale(ref, base, value)
-  return <textarea ref={ref} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} style={{ ...style, fontSize: scaled(base, s) }} />
+  return <textarea ref={ref} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={(e) => {
+    // 貼り付け等の直後に離れても、Reactへの反映前の表示値を保存から落とさない。
+    if (e.currentTarget.value !== value) onChange(e.currentTarget.value)
+    onBlur()
+  }} style={{ ...style, fontSize: scaled(base, s) }} />
 }
 
 export const FormPage = memo(FormPageInner)

@@ -93,7 +93,7 @@ export const api = {
   carePlanAiDraft: (id: string, draftId: string) =>
     req<{ draft: AiDraftDetail }>('GET', `/api/care-plans/${id}/ai-drafts/${draftId}`),
   applyCarePlanAi: (id: string, draftId: string, baseVersion: number) =>
-    req<{ plan: CarePlanView, applied: { fields: string[], needs: string[], skipped: { target: string, reason: string }[] } }>('POST', `/api/care-plans/${id}/ai-drafts/${draftId}/apply`, { baseVersion }),
+    req<{ plan: CarePlanView, applied: { fields: string[], needs: string[], slots: string[], skipped: { target: string, reason: string }[] } }>('POST', `/api/care-plans/${id}/ai-drafts/${draftId}/apply`, { baseVersion }),
   async carePlanPdf(id: string, form: 'all' | '1' | '2' | '3'): Promise<Blob> {
     const token = await tokenSource()
     const response = await fetch(`/api/care-plans/${id}/pdf?form=${form}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })

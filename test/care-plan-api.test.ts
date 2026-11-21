@@ -509,9 +509,15 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
   const oldDraft = await db.query('SELECT source_revision_id, proposal FROM care_plan_ai_drafts WHERE id = $1', [draft.id])
   assert.equal(Number(oldDraft.rows[0].source_revision_id), assessmentRevision.id)
   assert.deepEqual((oldDraft.rows[0].proposal as { plan1: Record<string, unknown> }).plan1['plan.intentionAnalysis'], 'AI の意向分析')
+  aiProposal = { plan1: { 'plan.intentionAnalysis': '別の原案による置き換え' }, needs: [], slots: [] }
   const newer = await post(`/api/care-plans/${plan.id}/ai-drafts`, { sourceDocumentId: assessmentRevision.documentId, sourceRevisionId: Number(nextRev.rows[0].id) })
   assert.equal(newer.status, 201, JSON.stringify(newer.body))
   assert.equal((newer.body as DraftBody).draft.sourceRevisionRev, Number(nextRev.rows[0].rev))
+  const newerId = (newer.body as DraftBody).draft.id
+  const retained = await post(`/api/care-plans/${plan.id}/ai-drafts/${newerId}/apply`, { baseVersion: (await getPlan(plan.id)).lockVersion })
+  assert.equal(retained.status, 200)
+  assert.equal((retained.body as { plan: PlanBody }).plan.plan1?.['plan.intentionAnalysis'], 'AI の意向分析', '別原案の非空欄も自動上書きしない')
+
 
   // AI が失敗しても 201 で failed を返し、手入力は続けられる
   aiMode = 'throw'
@@ -646,4 +652,37 @@ test('第2・3表の印字欄から氏名は独立して直せるが、構造の
     assert.equal(result.status, 409)
     assert.equal((result.body as { error: string }).error, 'not_draft')
   }
+})
+
+test('AI週間候補は今回作ったサービスだけに対応付け、時刻・重複を検査し再適用で人の変更を戻さない', { skip }, async () => {
+  const plan = await createPlan(clients.yamada)
+  aiMode = 'ok'
+  const ref = { need: 0, shortGoal: 0, service: 0 }
+  const slot = { serviceRef: ref, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '10:00' }
+  aiProposal = {
+    plan1: {}, needs: [{ need: '週間候補の架空ニーズ', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴支援' }] }] }],
+    slots: [slot, slot, { ...slot, start: '10:00', end: '09:00' }, { ...slot, serviceRef: { ...ref, service: 5 } },
+      { ...slot, serviceRef: undefined, serviceId: randomUUID() }, { serviceRef: ref, scheduleType: 'other', note: '月1回の確認' }],
+  }
+  const made = await post(`/api/care-plans/${plan.id}/ai-drafts`, { sourceDocumentId: assessmentRevision.documentId, sourceRevisionId: assessmentRevision.id })
+  const draft = (made.body as DraftBody).draft
+  const path = `/api/care-plans/${plan.id}/ai-drafts/${draft.id}/apply`
+  const applied = await post(path, { baseVersion: plan.lockVersion })
+  assert.equal(applied.status, 200, JSON.stringify(applied.body))
+  const result = applied.body as { plan: PlanBody, applied: { slots: string[], skipped: { reason: string }[] } }
+  assert.equal(result.plan.slots?.length, 2)
+  assert.equal(result.applied.slots.length, 2)
+  assert.equal(result.applied.skipped.length, 4)
+  const slots = result.plan.slots as { id: string, serviceId: string, scheduleType: string, start: string }[]
+  assert.ok(slots.every((s) => s.serviceId === result.plan.needs![0].shortGoals[0].services[0].id))
+  assert.ok(result.applied.skipped.some((s) => s.reason === 'duplicate'))
+  assert.equal(result.plan.aiDraft?.status, 'partially_applied')
+  // 人が予定を修正した後も、同じ原案の再送で追加・巻き戻ししない。
+  const edited = await put(`/api/care-plans/${plan.id}/schedule`, { baseVersion: result.plan.lockVersion,
+    slots: slots.map((s) => s.scheduleType === 'weekly' ? { ...s, start: '08:30' } : s) })
+  assert.equal(edited.status, 200, JSON.stringify(edited.body))
+  const current = (edited.body as { plan: PlanBody }).plan
+  const again = await post(path, { baseVersion: current.lockVersion })
+  assert.equal(again.status, 200)
+  assert.deepEqual((again.body as { plan: PlanBody }).plan.slots, current.slots)
 })

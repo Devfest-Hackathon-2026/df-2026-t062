@@ -1,3 +1,4 @@
+import { AiPlanSlotSchema } from '../core/care-plan-slot.ts'
 // ケアプラン（#90）の読み書き。計画版・第1〜3表の書類・第2表のニーズ/目標/サービス・AI 原案。
 // 仕様: docs/ケアプラン仕様.md。値そのものは documents ごとの field_values に持ち、計画版の表は stable ID を持つ。
 import { createHash, randomUUID } from 'node:crypto'
@@ -98,62 +99,68 @@ export interface SlotInput {
   periodTo?: string | null
 }
 
+function validatedSlots(view: CarePlanView, input: SlotInput[]): SlotView[] {
+  if (input.length > 500) throw new PlanValidationFailed([{ path: 'slots', reason: 'too_many' }])
+  const services = new Map(view.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((s) => [s.id, s] as const))))
+  const serviceIds = new Set(services.keys())
+  const existingIds = new Set(view.slots.map((s) => s.id))
+  const seenIds = new Set<string>()
+  const problems: { path: string, reason: string }[] = []
+  const slots: SlotView[] = input.map((s, i) => {
+    const path = `slots.${i}`
+    if (!serviceIds.has(s.serviceId)) problems.push({ path, reason: 'unknown_service' })
+    if (s.id && (!existingIds.has(s.id) || seenIds.has(s.id))) problems.push({ path, reason: 'unknown_id' })
+    if (s.id) seenIds.add(s.id)
+    if (s.periodFrom && s.periodTo && s.periodTo < s.periodFrom) problems.push({ path, reason: 'period_order' })
+    const slot: SlotView = {
+      ...s, id: s.id ?? randomUUID(), weekday: s.weekday ?? null, start: s.start ?? null, end: s.end ?? null,
+      endsNextDay: s.endsNextDay ?? false, note: s.note?.trim() || null,
+      periodFrom: s.periodFrom ?? null, periodTo: s.periodTo ?? null,
+    }
+    if (slot.scheduleType === 'other') {
+      if (slot.weekday !== null || slot.start !== null || slot.end !== null || slot.endsNextDay || !slot.note) problems.push({ path, reason: 'invalid_other' })
+    } else {
+      const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+      if (!slot.weekday || slot.weekday < 1 || slot.weekday > 7 ||
+          !slot.start || !slot.end || !time.test(slot.start) || !time.test(slot.end) ||
+          (slot.endsNextDay ? slot.end >= slot.start : slot.end <= slot.start)) problems.push({ path, reason: 'invalid_time' })
+    }
+    return slot
+  })
+  if (problems.length) throw new PlanValidationFailed(problems)
+  const minutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3))
+  for (let i = 0; i < slots.length; i++) {
+    const a = slots[i]
+    if (a.scheduleType !== 'weekly') continue
+    const startA = (a.weekday! - 1) * 1440 + minutes(a.start!)
+    const endA = (a.weekday! - 1) * 1440 + minutes(a.end!) + (a.endsNextDay ? 1440 : 0)
+    for (const b of slots.slice(0, i)) {
+      if (b.scheduleType !== 'weekly' || a.serviceId !== b.serviceId) continue
+      const duplicate = a.weekday === b.weekday && a.start === b.start && a.end === b.end && a.endsNextDay === b.endsNextDay &&
+        a.periodFrom === b.periodFrom && a.periodTo === b.periodTo
+      const service = services.get(a.serviceId)!
+      const fromA = a.periodFrom ?? service.periodFrom ?? view.effectiveFrom
+      const fromB = b.periodFrom ?? service.periodFrom ?? view.effectiveFrom
+      const toA = a.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
+      const toB = b.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
+      const startB = (b.weekday! - 1) * 1440 + minutes(b.start!)
+      const endB = (b.weekday! - 1) * 1440 + minutes(b.end!) + (b.endsNextDay ? 1440 : 0)
+      const overlap = fromA <= toB && fromB <= toA &&
+        [-10080, 0, 10080].some((offset) => startA < endB + offset && startB + offset < endA)
+      if (duplicate || overlap) problems.push({ path: `slots.${i}`, reason: duplicate ? 'duplicate' : 'overlap' })
+    }
+  }
+  if (problems.length) throw new PlanValidationFailed(problems)
+  return slots
+}
+
 /** 時間軸は週初からの分。日曜の翌日部分は次の週の月曜とも比較する。 */
 export async function saveCarePlanSchedule(db: Db, staff: Staff, planId: string, baseVersion: number, input: SlotInput[]) {
   return tx(db, async (c) => {
     const plan = await lockPlan(c, staff.officeId, planId)
     checkBase(plan, baseVersion)
     const view = await getCarePlan(c, staff.officeId, planId)
-    const services = new Map(view.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((s) => [s.id, s] as const))))
-    const serviceIds = new Set(services.keys())
-    const existingIds = new Set(view.slots.map((s) => s.id))
-    const seenIds = new Set<string>()
-    const problems: { path: string, reason: string }[] = []
-    const slots: SlotView[] = input.map((s, i) => {
-      const path = `slots.${i}`
-      if (!serviceIds.has(s.serviceId)) problems.push({ path, reason: 'unknown_service' })
-      if (s.id && (!existingIds.has(s.id) || seenIds.has(s.id))) problems.push({ path, reason: 'unknown_id' })
-      if (s.id) seenIds.add(s.id)
-      if (s.periodFrom && s.periodTo && s.periodTo < s.periodFrom) problems.push({ path, reason: 'period_order' })
-      const slot: SlotView = {
-        ...s, id: s.id ?? randomUUID(), weekday: s.weekday ?? null, start: s.start ?? null, end: s.end ?? null,
-        endsNextDay: s.endsNextDay ?? false, note: s.note?.trim() || null,
-        periodFrom: s.periodFrom ?? null, periodTo: s.periodTo ?? null,
-      }
-      if (slot.scheduleType === 'other') {
-        if (slot.weekday !== null || slot.start !== null || slot.end !== null || slot.endsNextDay || !slot.note) problems.push({ path, reason: 'invalid_other' })
-      } else {
-        const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/
-        if (!slot.weekday || slot.weekday < 1 || slot.weekday > 7 ||
-            !slot.start || !slot.end || !time.test(slot.start) || !time.test(slot.end) ||
-            (slot.endsNextDay ? slot.end >= slot.start : slot.end <= slot.start)) problems.push({ path, reason: 'invalid_time' })
-      }
-      return slot
-    })
-    if (problems.length) throw new PlanValidationFailed(problems)
-    const minutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3))
-    for (let i = 0; i < slots.length; i++) {
-      const a = slots[i]
-      if (a.scheduleType !== 'weekly') continue
-      const startA = (a.weekday! - 1) * 1440 + minutes(a.start!)
-      const endA = (a.weekday! - 1) * 1440 + minutes(a.end!) + (a.endsNextDay ? 1440 : 0)
-      for (const b of slots.slice(0, i)) {
-        if (b.scheduleType !== 'weekly' || a.serviceId !== b.serviceId) continue
-        const duplicate = a.weekday === b.weekday && a.start === b.start && a.end === b.end && a.endsNextDay === b.endsNextDay &&
-          a.periodFrom === b.periodFrom && a.periodTo === b.periodTo
-        const service = services.get(a.serviceId)!
-        const fromA = a.periodFrom ?? service.periodFrom ?? view.effectiveFrom
-        const fromB = b.periodFrom ?? service.periodFrom ?? view.effectiveFrom
-        const toA = a.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
-        const toB = b.periodTo ?? service.periodTo ?? view.effectiveTo ?? '9999-12-31'
-        const startB = (b.weekday! - 1) * 1440 + minutes(b.start!)
-        const endB = (b.weekday! - 1) * 1440 + minutes(b.end!) + (b.endsNextDay ? 1440 : 0)
-        const overlap = fromA <= toB && fromB <= toA &&
-          [-10080, 0, 10080].some((offset) => startA < endB + offset && startB + offset < endA)
-        if (duplicate || overlap) problems.push({ path: `slots.${i}`, reason: duplicate ? 'duplicate' : 'overlap' })
-      }
-    }
-    if (problems.length) throw new PlanValidationFailed(problems)
+    const slots = validatedSlots(view, input)
     // 全体置換だが ID は維持する。時刻の入れ替え時にも一意制約に途中で触れない。
     await c.query('DELETE FROM care_plan_service_slots WHERE plan_id = $1', [planId])
     for (const [i, s] of slots.entries()) {
@@ -172,7 +179,7 @@ export async function saveCarePlanSchedule(db: Db, staff: Staff, planId: string,
 
 export interface CarePlanAiDraftView {
   id: string
-  status: string
+  status: AiDraftDetail['status']
   referencedAt: string
   sourceRevisionId: number
 }
@@ -403,7 +410,7 @@ export async function getCarePlan(db: Q, officeId: string, planId: string): Prom
     slots,
     aiDraft: draft ? {
       id: draft.id as string,
-      status: draft.status as string,
+      status: draft.status as AiDraftDetail['status'],
       referencedAt: iso(draft.referenced_at),
       sourceRevisionId: Number(draft.source_revision_id),
     } : null,
@@ -1171,7 +1178,7 @@ export async function createCarePlanAiDraft(
        FROM revisions r WHERE r.id = $10
        RETURNING id, plan_id, status, source_document_id, source_revision_id, source_revision_rev, referenced_at, proposal, conflicts, applied, error_kind`,
       [
-        staff.officeId, plan.clientId, plan.id, status, 'care-plan-draft-v1',
+        staff.officeId, plan.clientId, plan.id, status, 'care-plan-draft-v2',
         JSON.stringify(proposal), JSON.stringify(proposal.conflicts), errorKind, staff.id, sourceRevisionId,
       ],
     )).rows[0]
@@ -1216,7 +1223,7 @@ export async function getCarePlanAiDraft(db: Db, officeId: string, planId: strin
 
 export interface ApplyResult {
   plan: CarePlanView
-  applied: { fields: string[], needs: string[], skipped: { target: string, reason: string }[] }
+  applied: { fields: string[], needs: string[], slots: string[], skipped: { target: string, reason: string }[] }
 }
 
 /** AI 原案を適用する。第1表は人が直した欄を上書きせず、第2表は同じ内容の行を増やさない */
@@ -1238,6 +1245,7 @@ export async function applyCarePlanAiDraft(
     }
     if (!draft) throw new NotFound(draftId)
     if (draft.status === 'failed') throw new BadRequest('失敗した AI 原案は適用できません')
+    if (draft.status !== 'proposed') return { plan: await getCarePlan(c, staff.officeId, plan.id), applied: { fields: [], needs: [], slots: [], skipped: [{ target: 'draft', reason: 'already_applied' }] } }
 
     const view = await getCarePlan(c, staff.officeId, plan.id)
     const doc1 = view.documents.find((d) => d.formNo === 1)
@@ -1261,6 +1269,10 @@ export async function applyCarePlanAiDraft(
         skipped.push({ target: key, reason: 'human_value' })
         continue
       }
+      if (current[key]?.value != null && current[key].value !== '') {
+        skipped.push({ target: key, reason: 'existing' })
+        continue
+      }
       await writeField(c, staff.officeId, plan.clientId, doc1.documentId, key, value, 'ai', staff.id, {
         aiValue: value, cite: { kind: 'care-plan-ai-draft', draftId },
       })
@@ -1271,6 +1283,7 @@ export async function applyCarePlanAiDraft(
     const existingNeeds = new Set(structure.needs.map((n) => n.need))
     const rawNeeds = Array.isArray(proposal.needs) ? proposal.needs : []
     const appliedNeeds: string[] = []
+    const createdServices = new Map<string, string>()
     for (let i = 0; i < rawNeeds.length; i++) {
       const n = asRecord(rawNeeds[i])
       const needText = typeof n?.need === 'string' ? n.need.trim() : ''
@@ -1316,7 +1329,8 @@ export async function applyCarePlanAiDraft(
           const sv = asRecord(services[k])
           const content = typeof sv?.content === 'string' ? sv.content.trim() : ''
           if (!sv || !content) continue
-          await insertService(c, plan.id, randomUUID(), needId, goalId, k + 1, {
+          const serviceId = randomUUID()
+          await insertService(c, plan.id, serviceId, needId, goalId, k + 1, {
             content,
             insured: typeof sv.insured === 'boolean' ? sv.insured : true,
             kind: typeof sv.kind === 'string' ? sv.kind : null,
@@ -1326,27 +1340,51 @@ export async function applyCarePlanAiDraft(
             periodFrom: typeof sv.periodFrom === 'string' ? sv.periodFrom : plan.effectiveFrom,
             periodTo: typeof sv.periodTo === 'string' ? sv.periodTo : plan.effectiveTo,
           })
+          createdServices.set(`${i}:${j}:${k}`, serviceId)
         }
       }
       existingNeeds.add(needText)
       appliedNeeds.push(needId)
     }
-    if (Array.isArray(proposal.slots) && proposal.slots.length) skipped.push({ target: 'slots', reason: 'unknown_target' })
+    const appliedSlots: string[] = []
+    const schedule = await getCarePlan(c, staff.officeId, plan.id)
+    const rawSlots = Array.isArray(proposal.slots) ? proposal.slots : []
+    for (const [index, raw] of rawSlots.entries()) {
+      const target = `slots[${index}]`
+      const parsed = AiPlanSlotSchema.safeParse(raw)
+      if (!parsed.success) { skipped.push({ target, reason: 'invalid_value' }); continue }
+      const { serviceRef, ...input } = parsed.data
+      const serviceId = createdServices.get(`${serviceRef.need}:${serviceRef.shortGoal}:${serviceRef.service}`)
+      if (!serviceId) { skipped.push({ target, reason: 'service_not_created' }); continue }
+      let slot: SlotView
+      try {
+        slot = validatedSlots(schedule, [...schedule.slots, { ...input, serviceId }]).at(-1)!
+      } catch (error) {
+        if (!(error instanceof PlanValidationFailed)) throw error
+        skipped.push({ target, reason: error.problems[0]?.reason ?? 'invalid_value' }); continue
+      }
+      await c.query(`INSERT INTO care_plan_service_slots
+        (id, plan_id, service_id, schedule_type, weekday, start_time, end_time, ends_next_day, note, period_from, period_to, ordinal)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [slot.id, plan.id, slot.serviceId, slot.scheduleType, slot.weekday, slot.start, slot.end, slot.endsNextDay, slot.note, slot.periodFrom, slot.periodTo, schedule.slots.length + 1])
+      schedule.slots.push(slot)
+      appliedSlots.push(slot.id)
+    }
 
-    const status = appliedFields.length || appliedNeeds.length ? (skipped.length ? 'partially_applied' : 'applied') : 'partially_applied'
+    const status = appliedFields.length || appliedNeeds.length || appliedSlots.length ? (skipped.length ? 'partially_applied' : 'applied') : 'partially_applied'
     await c.query(
       `UPDATE care_plan_ai_drafts
        SET status = $2, applied = $3, applied_by = $4, applied_at = now()
        WHERE id = $1`,
-      [draft.id, status, JSON.stringify({ fields: appliedFields, needs: appliedNeeds, skipped }), staff.id],
+      [draft.id, status, JSON.stringify({ fields: appliedFields, needs: appliedNeeds, slots: appliedSlots, skipped }), staff.id],
     )
     await bumpPlan(c, plan.id)
     await audit(c, staff, staff.officeId, 'care_plan.ai_apply', { clientId: plan.clientId }, {
-      planId: plan.id, draftId: draft.id, fields: appliedFields.length, needs: appliedNeeds.length, skipped: skipped.length,
+      planId: plan.id, draftId: draft.id, fields: appliedFields.length, needs: appliedNeeds.length, slots: appliedSlots.length, skipped: skipped.length,
     })
     return {
       plan: await getCarePlan(c, staff.officeId, plan.id),
-      applied: { fields: appliedFields, needs: appliedNeeds, skipped },
+      applied: { fields: appliedFields, needs: appliedNeeds, slots: appliedSlots, skipped },
     }
   })
 }

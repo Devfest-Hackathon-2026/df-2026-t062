@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { PDFDocument } from '@pdfme/pdf-lib'
-import { test, expect, createPlan, openPlan, getPlan, save, table, addNeed, addSchedule } from './support/fixtures.ts'
+import { test, expect, headers, createPlan, openPlan, getPlan, save, table, addNeed, addSchedule } from './support/fixtures.ts'
 
 test('3表を作成・編集・一括保存し、再表示・PDF・確定・改定まで進める', async ({ page, clientId, ui, clientName }) => {
   await createPlan(page, ui)
@@ -8,7 +8,9 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   await policy.fill('地域で安全に暮らせるよう支援する。')
   await policy.blur()
   await save(page)
-  expect((await getPlan(page, clientId)).status).toBe('draft')
+  const initiallySaved = await getPlan(page, clientId)
+  expect(initiallySaved.status).toBe('draft')
+  expect(initiallySaved.plan1['plan.overallPolicy']).toBe('地域で安全に暮らせるよう支援する。')
   await addNeed(page)
   await addSchedule(page)
   // 第2・3表の氏名は第1表から独立し、生活リズムも保存される。
@@ -181,4 +183,58 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
   await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
+})
+
+
+test('候補ありAI原案を再開し、サービスと週間予定を対応付けて適用・保存する', async ({ page, clientId, ui }) => {
+  let generations = 0
+  page.on('request', (request) => { if (request.method() === 'POST' && /\/ai-drafts$/.test(request.url())) generations++ })
+  const client = await (await page.request.get(`/api/clients/${clientId}`, { headers })).json()
+  const documentId = client.client.documents.find((d: { kind: string }) => d.kind === 'assessment').id
+  const saved = await page.request.post(`/api/documents/${documentId}/save`, { headers, data: { scope: 'document' } })
+  expect(saved.ok()).toBeTruthy()
+  await createPlan(page, ui)
+  await save(page)
+  await page.getByRole('button', { name: 'AI原案を作る', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '保存済みアセスメントからAI原案を作る', exact: true })
+  await dialog.getByLabel('参照するアセスメント').selectOption({ index: 1 })
+  await dialog.getByRole('button', { name: '原案を作る', exact: true }).click()
+  await expect(dialog).toContainText('第3表の候補：架空の入浴介助')
+  await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.getByRole('button', { name: '前回のAI原案を開く', exact: true }).click()
+  await expect(dialog).toContainText('架空の方針：自宅で安全に暮らす')
+  expect(generations).toBe(1)
+  await dialog.getByRole('button', { name: 'この原案を入力する', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'AI原案を3項目入力しました' })).toBeVisible()
+  let plan = await getPlan(page, clientId)
+  expect(plan.slots).toHaveLength(1)
+  expect(plan.slots[0].serviceId).toBe(plan.needs[0].shortGoals[0].services[0].id)
+  expect(plan.status).toBe('draft')
+  await save(page)
+  await page.reload()
+  await openPlan(page, ui)
+  await table(page, 3)
+  plan = await getPlan(page, clientId)
+  expect(plan.slots[0].start).toBe('09:00')
+  expect(plan.hasUnsavedChanges).toBe(false)
+})
+
+test('ケアプランとの往復で相談履歴と参照元を保つ', async ({ page, clientId, ui }) => {
+  test.skip(ui !== 'pc', '右側の既存相談パネルはPCの導線')
+  const assistant = page.locator('aside.assistant-panel')
+  await assistant.getByRole('button', { name: '書き方を相談する', exact: true }).click()
+  await assistant.getByRole('textbox', { name: '相談内容' }).fill('文章について相談します')
+  await assistant.getByRole('button', { name: '送る', exact: true }).click()
+  await expect(assistant.locator('.assistant-chat-user')).toContainText('文章について相談します')
+  await expect(assistant.locator('.assistant-chat-thinking')).toHaveCount(0)
+  await createPlan(page, ui)
+  await expect(assistant.locator('.assistant-chat-user')).toContainText('文章について相談します')
+  const plan = await getPlan(page, clientId)
+  await page.getByRole('tab', { name: 'アセスメント', exact: true }).click()
+  await expect(assistant.locator('.assistant-chat-user')).toContainText('文章について相談します')
+  const current = await getPlan(page, clientId)
+  expect(current.plan1).toEqual(plan.plan1)
+  expect(current.needs).toEqual(plan.needs)
+  expect(current.slots).toEqual(plan.slots)
 })
