@@ -14,6 +14,7 @@ export function checkDraftVersion(v: Pick<DraftVersion, 'schemas' | 'bindings' |
   const names = new Set(v.schemas.flat().map((s) => s.name))
   for (const n of names) if (!v.bindings[n]) errors.push(`${n}: 印字欄に対応がない`)
   for (const n of Object.keys(v.bindings)) if (!names.has(n)) errors.push(`${n}: 対応があるのに印字欄がない`)
+  for (const slot of v.schemas.flat()) if (v.bindings[slot.name]?.op === 'diagram@1' && slot.type !== 'image') errors.push(`${slot.name}: 図の印字欄はimage型が必要です`)
   const localKeys = new Set(v.localFields.map((f) => f.key))
   const shared: Bindings = {}
   for (const [n, b] of Object.entries(v.bindings)) {

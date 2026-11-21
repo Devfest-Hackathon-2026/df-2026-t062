@@ -255,6 +255,7 @@
     {"key": "household.daytimeAlone", "label": "日中独居", "type": "bool", "source": ["talk"], "forms": {"adm": "2. 世帯構成 ＊日中独居"}},
     {"key": "watchMethod", "label": "緊急連絡・見守りの方法", "type": "text", "source": ["talk"], "forms": {"assess": "p.8 緊急連絡・見守りの方法"}},
 
+
     {"group": "今利用しているサービス・支援"},
     {"key": "services.asOf", "label": "サービス利用状況の時点", "type": "date", "source": ["talk"], "forms": {"assess": "p.2 （　年　月　日時点）"}},
     {"key": "services.used", "label": "利用しているサービス", "type": "list", "source": ["talk"], "forms": {"assess": "p.2〜3 サービス利用状況（在宅利用）のチェックと回数"}, "rowKey": "kind", "note": "入院時情報提供書には書かず、ケアプラン第 1〜3 表を同封して伝える（admission.enclosedCarePlan）。「その他」の行は 2 つまで（その他どうしは行の並びの順で見分ける）", "fields": [
@@ -298,16 +299,17 @@
     {"key": "housing.cookingEquipment", "label": "調理器具", "type": "enum", "choices": ["ガス", "IH"], "source": ["talk"], "forms": {"assess": "p.3 諸設備 調理器具"}},
     {"key": "housing.heatingEquipment", "label": "暖房器具", "type": "multi", "choices": ["ガス", "電気", "灯油", "その他"], "source": ["talk"], "forms": {"assess": "p.3 諸設備 暖房器具"}},
     {"key": "housing.notes", "label": "周辺環境・立地環境・その他住居に関する特記事項", "type": "longtext", "source": ["talk"], "forms": {"assess": "p.3 周辺環境・立地環境・その他住居に関する特記事項", "adm": "1. 住環境 特記事項（　）"}, "note": "入院時は 1 行に要約して出す"},
-    {"key": "housing.floorPlan", "label": "家屋（居室を含む）見取図", "type": "image", "source": ["talk"], "forms": {"assess": "p.3 家屋見取図"}, "note": "人が描く。デモでは扱わない"},
+    {"key": "housing.floorPlan", "label": "家屋（居室を含む）見取図", "type": "image", "source": ["talk"], "forms": {"assess": "p.3 家屋見取図"}, "note": "版付き構造化図。AI提案の反映は人が操作する"},
 
     {"group": "健康状態・受診"},
     {"key": "health.history", "label": "既往歴・現症", "type": "longtext", "source": ["doc:主治医意見書", "talk"], "forms": {"assess": "p.4 既往歴・現症"}},
     {"key": "health.height", "label": "身長（cm）", "type": "number", "source": ["talk"], "forms": {"assess": "p.4 身長"}},
     {"key": "health.weight", "label": "体重（kg）", "type": "number", "source": ["talk"], "forms": {"assess": "p.4 体重"}},
     {"key": "health.teeth", "label": "歯の状況", "type": "multi", "choices": ["歯あり", "歯なし", "総入れ歯", "局部義歯"], "source": ["talk"], "forms": {"assess": "p.4 歯の状況"}},
-    {"key": "health.bodyMap", "label": "障害等の部位（人体図）", "type": "image", "source": ["talk"], "forms": {"assess": "p.4 障害等の部位（△障害部位 ×欠損部位 ●褥瘡部位）"}, "note": "人が描く。デモでは扱わない"},
+    {"key": "health.bodyMap", "label": "障害等の部位（人体図）", "type": "image", "source": ["talk"], "forms": {"assess": "p.4 障害等の部位（△障害部位 ×欠損部位 ●褥瘡部位）"}, "note": "版付き構造化図。AI提案の反映は人が操作する"},
     {"key": "health.notes", "label": "健康の特記事項（病気やけが、障害等に関わる事項。改善の可能性等）", "type": "longtext", "source": ["talk", "doc:主治医意見書"], "forms": {"assess": "p.4 特記事項"}, "note": "用紙の記入の目安: 主治医からの指導・助言事項。視力障害、聴力障害、麻痺、関節の動き、褥瘡、その他皮膚疾患、外傷、内部障害、言語障害、動悸・息切れ、便秘、尿失禁、便失禁、摂食嚥下障害、口腔（炎症・痛み・出血・口臭・虫歯・不良義歯等）について留意すること。病名の一覧は health.history、病気やけがの経過は health.lifeNotes に書く"},
     {"key": "health.visits", "label": "現在の受診状況（病気ごと）", "type": "list", "source": ["talk", "doc:主治医意見書"], "forms": {"assess": "p.4 現在の受診状況（4 列）"}, "rowKey": "order", "note": "アセスメント用紙は 4 列まで", "fields": [
+
       {"key": "disease", "label": "病名", "type": "text"},
       {"key": "medication", "label": "薬の有無", "type": "bool"},
       {"key": "onset", "label": "発症時期", "type": "text"},

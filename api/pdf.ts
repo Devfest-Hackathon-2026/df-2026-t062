@@ -1,3 +1,4 @@
+import { diagramSchema } from '../core/diagram/fields.ts'
 // 保存した版から、様式の PDF を作る（pdfme）。AI が書いただけで保存していない値は出ない。
 // 元の PDF は、その版が指す PDF（非公開の置き場 forms の pdf/<sha256>/base.pdf。npm run forms:assets が入れる）。
 import { createHash } from 'node:crypto'
@@ -21,7 +22,7 @@ async function loadBase(storage: Storage, v: FormVersion): Promise<Uint8Array<Ar
 }
 
 export async function makePdf(storage: Storage, v: FormVersion, values: Record<string, unknown>): Promise<Uint8Array<ArrayBuffer>> {
-  const [{ generate }, { text, circleMark }] = await Promise.all([import('@pdfme/generator'), import('@pdfme/schemas')])
+  const [{ generate }, { text, circleMark, image }] = await Promise.all([import('@pdfme/generator'), import('@pdfme/schemas')])
   font ??= readFile(FONT).then(own)
   if (!bases.has(v.id)) {
     const p = loadBase(storage, v)
@@ -39,16 +40,29 @@ export async function makePdf(storage: Storage, v: FormVersion, values: Record<s
   }
   // 各ページの入力名を独立させ、継続ページが前ページの値で置き換わらないようにする。
   const input: Record<string, string> = {}
-  const schemas = pages.map((page, pageIndex) => page.schemas.map((slot) => {
-    const name = `page${pageIndex}__${slot.name}`
-    input[name] = page.input[slot.name] ?? ''
-    return { ...slot, name }
+  const schemas = await Promise.all(pages.map(async (page, pageIndex) => {
+    const slots = await Promise.all(page.schemas.map(async (slot) => {
+      const name = `page${pageIndex}__${slot.name}`
+      const binding = v.bindings[slot.name]
+      if (binding?.op === 'diagram@1') {
+        const parsed = diagramSchema.safeParse(values[binding.ref.key])
+        if (!parsed.success) {
+          if (values[binding.ref.key] != null) throw new Error('保存した図のデータが不正です')
+          return null
+        }
+        const { diagramImage } = await import('./diagram-image.ts')
+        input[name] = await diagramImage(parsed.data, slot.width, slot.height)
+      } else input[name] = page.input[slot.name] ?? ''
+      return { ...slot, name }
+    }))
+    return slots.filter((slot) => slot !== null)
   }))
   const template = { basePdf, schemas }
   const pdf = await generate({
     template: template as never,
     inputs: [input],
-    plugins: { text, circleMark } as never,
+    plugins: { text, circleMark, image } as never,
+
     options: { font: { BIZUDPGothic: { data: await font, fallback: true, subset: true } } },
   })
   return pdf as Uint8Array<ArrayBuffer>

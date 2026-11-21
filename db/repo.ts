@@ -1,3 +1,4 @@
+import { validDiagramUpdate } from '../core/diagram/fields.ts'
 // DB の読み書き。api と worker が共通に使う。どの関数も office_id で絞る。
 import { planBatch, sameValue, type BatchPlan, type Cite, type CurrentField } from '../core/apply-batch.ts'
 import { saveOneHunk } from '../core/diff.ts'
@@ -213,13 +214,13 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
 }
 
 /** 利用者の録音の文字起こし（古い順）。チャットの根拠に使う */
-export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
+export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ id: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
   const r = await db.query(
-    `SELECT r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
+    `SELECT r.id, r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
      WHERE t.office_id = $1 AND t.client_id = $2 ORDER BY r.recorded_at`,
     [officeId, clientId],
   )
-  return r.rows.map((x) => ({ recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
+  return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
 }
 
 /** 同じ利用者のほかの書類（書き方の相談で AI が読む）。同じ事業所の、同じ利用者のものだけ */
@@ -311,6 +312,7 @@ export async function patchFields(db: Db, staff: Staff, documentId: string, chan
       if (!allowed.has(ch.key)) throw new BadRequest(`この書類にない欄です: ${ch.key}`)
       if (!validValue(ch.key, ch.value ?? null, {}, dict)) throw new BadRequest(`値の形が違います: ${ch.key}`)
       if (!sameValue(fields[ch.key]?.value ?? null, ch.base ?? null)) throw new Conflict(ch.key)
+      if (!validDiagramUpdate(ch.key, ch.value, fields[ch.key]?.value ?? null)) throw new BadRequest('図の版または内容が正しくありません')
       if (ch.surveySource && sameValue(ch.base, null) && !sameValue(saved[ch.key]?.value, null)) throw new Conflict(ch.key)
     }
     for (const ch of changes) {

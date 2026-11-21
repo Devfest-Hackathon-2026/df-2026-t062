@@ -20,7 +20,7 @@ export interface ReviewItem {
 /** pdfme のテンプレートの欄（core/form.ts の TemplateSlot に、描くための属性を足したもの） */
 export interface PdfmeSlot {
   name: string
-  type: 'text' | 'circleMark'
+  type: 'text' | 'circleMark' | 'image'
   content: string
   position: { x: number, y: number }
   width: number

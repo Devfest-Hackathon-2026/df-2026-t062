@@ -29,6 +29,7 @@ export function renderSlot(b: Binding, values: Values): string {
   if ('when' in b && b.when && !holdsCond(values, b.when, b.ref)) return off
   if (b.op !== 'option@1' && b.op !== 'join@1' && conflicts(values, b.ref).length) return off
   switch (b.op) {
+    case 'diagram@1': return isEmpty(getRef(values, b.ref)) ? '' : JSON.stringify(getRef(values, b.ref))
     case 'text@1': {
       const spec = specOf(b.ref)
       let t = ''

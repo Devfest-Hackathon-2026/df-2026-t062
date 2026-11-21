@@ -11,7 +11,7 @@ export type FormKind = string
 
 export interface TemplateSlot {
   name: string
-  type: 'text' | 'circleMark'
+  type: 'text' | 'circleMark' | 'image'
   position: { x: number, y: number }
   width: number
   height: number

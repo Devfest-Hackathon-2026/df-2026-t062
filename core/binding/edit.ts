@@ -261,6 +261,7 @@ export function editSlot(bindings: Bindings, values: Values, slot: string, text:
 function editBy(b: Binding, values: Values, text: string, dict: FieldDict): EditResult {
   const on = text === 'true' || text === '✓'
   switch (b.op) {
+    case 'diagram@1': return { reason: '図の編集画面を使ってください' }
     case 'text@1': return editText(b, values, text, dict)
     case 'option@1': return editOption(b, values, on, dict)
     case 'symbol@1': return editSymbol(b, values, text, dict)

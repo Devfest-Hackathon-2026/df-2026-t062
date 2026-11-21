@@ -78,6 +78,7 @@ for (const id of IDS) {
 /** 印字欄に打つ見本の文字（その欄で持てる値になるもの）。表示が打った文字と違う欄は [打つ文字, 表示] */
 function sampleText(b: Binding): string | [string, string] | null {
   switch (b.op) {
+    case 'diagram@1': return null
     case 'option@1': return b.ui === 'circle' ? 'true' : '✓'
     case 'era@1': return 'true'
     case 'symbol@1': return b.options[0].text

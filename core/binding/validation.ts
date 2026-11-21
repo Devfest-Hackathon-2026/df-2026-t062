@@ -1,3 +1,4 @@
+import { diagramKinds } from '../diagram/fields.ts'
 import { GLOBAL_DICT, type FieldDict } from '../dictionary.ts'
 import type { Cond, Ref, Binding, Bindings } from './types.ts'
 import { specsAlong } from './conditions.ts'
@@ -47,6 +48,7 @@ export function checkBindings(bindings: Bindings, dict: FieldDict = GLOBAL_DICT)
   }
   for (const [slot, b] of Object.entries(bindings)) {
     refOk(slot, b.ref)
+    if (b.op === 'diagram@1' && (!diagramKinds[b.ref.key] || b.ref.path?.length || b.ui !== 'diagram')) errors.push(`${slot}: 図の欄または参照が正しくありません`)
     if (b.op === 'option@1' && !b.edit && !canToggle(b.is)) errors.push(`${slot}: 丸・✓ を付け外ししたときの動き（edit）が決まっていない`)
     if (b.op === 'option@1' && !b.is && !b.if) errors.push(`${slot}: 丸・✓ を付ける条件がない`)
     if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) refOk(slot, r)

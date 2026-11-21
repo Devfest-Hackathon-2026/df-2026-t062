@@ -1,6 +1,7 @@
 // 書き方の相談の答え（1 行 1 つの JSON。api/app.ts の POST /api/documents/:id/chat）を読む。
 // {type:'step'} は届いたらすぐ知らせ（作業ログを少しずつ出す）、{type:'done'} で答えを返す。
 import type { ChatReply } from '../../api/chat.ts'
+import { ChatError, chatErrorFromCode } from '../../core/chat-error.ts'
 
 export async function readChatStream(body: ReadableStream<Uint8Array>, onStep: (step: string) => void): Promise<ChatReply> {
   const reader = body.getReader()
@@ -15,12 +16,12 @@ export async function readChatStream(body: ReadableStream<Uint8Array>, onStep: (
         const line = buf.slice(0, i).trim()
         buf = buf.slice(i + 1)
         if (!line) continue
-        const ev = JSON.parse(line) as { type: string, text?: string } & Partial<ChatReply>
+        const ev = JSON.parse(line) as { type: string, text?: string, code?: unknown } & Partial<ChatReply>
         if (ev.type === 'step') onStep(String(ev.text ?? ''))
         else if (ev.type === 'done') return { reply: ev.reply ?? '', steps: ev.steps ?? [], proposals: ev.proposals ?? [] }
-        else if (ev.type === 'error') throw new Error('ペットの答えを作れませんでした')
+        else if (ev.type === 'error') throw chatErrorFromCode(ev.code)
       }
-      if (done) throw new Error('答えが途中で切れました')
+      if (done) throw new ChatError('interrupted')
     }
   } finally {
     reader.cancel().catch(() => {})
