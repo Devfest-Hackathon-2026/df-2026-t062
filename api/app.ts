@@ -19,6 +19,7 @@ import * as kinds from '../db/kinds.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
+import { PdfOverflow } from './pdf-layout.ts'
 import { previewPdf, publishProblems } from './form-check.ts'
 import { checkDraftVersion } from '../worker/form-import/check.ts'
 import { BindingSchema, FormPageSchema, LocalFieldSchema, PdfmeSlotSchema } from '../worker/form-import/contract.ts'
@@ -105,6 +106,21 @@ const PlanNeedsInput = z.object({
   needs: z.array(PlanNeedInput).max(50),
 })
 const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
+const PlanScheduleInput = z.object({
+  baseVersion: z.number().int().positive(),
+  slots: z.array(z.object({
+    id: z.string().uuid().optional(),
+    serviceId: z.string().uuid(),
+    scheduleType: z.enum(['weekly', 'other']),
+    weekday: z.number().int().nullish(),
+    start: z.string().max(20).nullish(),
+    end: z.string().max(20).nullish(),
+    endsNextDay: z.boolean().optional(),
+    note: z.string().max(1000).nullish(),
+    periodFrom: z.iso.date().nullish(),
+    periodTo: z.iso.date().nullish(),
+  })).max(500),
+})
 const PlanAiDraftInput = z.object({
   sourceDocumentId: z.string().uuid(),
   sourceRevisionId: z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)]),
@@ -281,6 +297,45 @@ export function createApp(deps: ApiDeps) {
     const input = await body(c, PlanNeedsInput)
     const plan = await carePlans.saveCarePlanNeeds(db, staff, c.req.param('planId')!, input.baseVersion, input.needs)
     return json(c, { plan })
+  }))
+
+  app.put('/api/care-plans/:planId/schedule', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanScheduleInput)
+    return c.json({ plan: await carePlans.saveCarePlanSchedule(db, staff, c.req.param('planId')!, input.baseVersion, input.slots) })
+  }))
+
+  app.post('/api/care-plans/:planId/confirm', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanSaveInput)
+    return c.json(await carePlans.confirmCarePlan(db, staff, c.req.param('planId')!, input.baseVersion))
+  }))
+
+  app.get('/api/care-plans/:planId/pdf', staffRoute('care.work', async (c, staff, db) => {
+    const { clientId, sources } = await carePlans.carePlanPdfSources(db, staff, c.req.param('planId')!)
+    const selection = c.req.query('form') ?? 'all'
+    if (!['all', '1', '2', '3'].includes(selection)) throw new repo.BadRequest('form は 1・2・3・all です')
+    const selected = sources.filter((s) => selection === 'all' || String(s.formNo) === selection)
+    const pdfs: Uint8Array[] = []
+    for (const source of selected) {
+      const version = await forms.loadVersion(db, source.formVersionId)
+      pdfs.push(await makePdf(deps.storage(), version, source.values))
+    }
+    const { PDFDocument } = await import('@pdfme/pdf-lib')
+    const combined = await PDFDocument.create({ updateMetadata: false })
+    for (const bytes of pdfs) {
+      const pdf = await PDFDocument.load(bytes)
+      for (const page of await combined.copyPages(pdf, pdf.getPageIndices())) combined.addPage(page)
+    }
+    const bytes = new Uint8Array(await combined.save())
+    await repo.audit(db, staff, staff.officeId, 'care_plan.pdf', { clientId }, {
+      planId: c.req.param('planId'), form: selection, revisions: selected.map((s) => ({ formNo: s.formNo, rev: s.rev })),
+    })
+    return new Response(new Blob([bytes], { type: 'application/pdf' }), {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="care-plan-${selection}.pdf"`,
+        'Cache-Control': 'no-store',
+      },
+    })
   }))
 
   app.post('/api/care-plans/:planId/save', staffRoute('care.work', async (c, staff, db) => {
@@ -629,6 +684,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof carePlans.UsePlanApi) return json(c, { error: 'use_plan_api', message: '第2表・第3表は計画版の API で直してください' }, 409)
     if (err instanceof repo.BadRequest) return json(c, { error: 'bad_request', message: err.message }, 400)
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)
+    if (err instanceof PdfOverflow) return json(c, { error: 'overflow', slots: err.slots, message: err.message }, 422)
     // ログには中身を出さない（種類と道だけ）
     console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: err.name }))
     return json(c, { error: 'internal' }, 500)

@@ -215,7 +215,35 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
   for (const n of names) if (!input.bindings[n]) errors.push(`対応のない印字欄: ${n}`)
   for (const n of Object.keys(input.bindings)) if (!names.includes(n)) errors.push(`印字欄のない対応: ${n}`)
   errors.push(...checkBindings(input.bindings, fieldDict(input.localFields)))
-  for (const p of input.pages) if (!input.schemas[p.pdfIndex]) errors.push(`ページ ${p.no} の pdfIndex ${p.pdfIndex} に欄がない`)
+  for (const p of input.pages) {
+    const slots = input.schemas[p.pdfIndex]
+    if (!slots) {
+      errors.push(`ページ ${p.no} の pdfIndex ${p.pdfIndex} に欄がない`)
+      continue
+    }
+    const print = p.print
+    if (!print) continue
+    const namesOnPage = new Set(slots.map((s) => s.name))
+    if (!['text', 'table', 'timeline'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
+    if (print.type === 'table') {
+      if (!Number.isInteger(print.rowsPerPage) || print.rowsPerPage < 1 || print.rowsPerPage > 100 ||
+          !Number.isFinite(print.rowHeight) || print.rowHeight <= 0 ||
+          !Array.isArray(print.nested) || print.nested.length > 3 ||
+          !Array.isArray(print.slots) || !print.slots.length || print.slots.some((s) => !namesOnPage.has(s))) {
+        errors.push(`ページ ${p.no} の表の印字設定が不正`)
+      }
+      if (!formKeys(input.bindings).includes(print.key)) errors.push(`ページ ${p.no} の表が対応のないkeyを読む`)
+    }
+    if (print.type === 'timeline') {
+      if (!namesOnPage.has(print.slot) || !Array.isArray(print.days) || !print.days.length ||
+          print.days.length > 7 || print.days.some((s) => typeof s !== 'string' || !s.length) || new Set(print.days).size !== print.days.length ||
+          ![print.dayField, print.startField, print.endField, print.labelField].every((s) => typeof s === 'string' && s.length > 0) ||
+          !formKeys(input.bindings).includes(print.key) ||
+          (print.activity && (!namesOnPage.has(print.activity.slot) || !formKeys(input.bindings).includes(print.activity.key)))) {
+        errors.push(`ページ ${p.no} の時間軸の印字設定が不正`)
+      }
+    }
+  }
   return errors
 }
 

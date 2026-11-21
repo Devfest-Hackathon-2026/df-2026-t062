@@ -1,0 +1,195 @@
+{
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "作成年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "作成年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "作成年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "ニーズ": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "need"
+      ]
+    }
+  },
+  "長期目標": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "longGoal"
+      ]
+    }
+  },
+  "長期期間": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "longGoalPeriod"
+      ]
+    }
+  },
+  "短期目標": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "goal"
+      ]
+    }
+  },
+  "短期期間": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "period"
+      ]
+    }
+  },
+  "サービス内容": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "content"
+      ]
+    }
+  },
+  "保険給付": {
+    "op": "symbol@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "insured"
+      ]
+    },
+    "options": [
+      {
+        "value": true,
+        "text": "○"
+      },
+      {
+        "value": false,
+        "text": ""
+      }
+    ]
+  },
+  "サービス種別": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "kind"
+      ]
+    }
+  },
+  "提供事業所": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "provider"
+      ]
+    }
+  },
+  "頻度": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "frequency"
+      ]
+    }
+  },
+  "サービス期間": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "plan.needs",
+      "path": [
+        0,
+        "shortGoals",
+        0,
+        "services",
+        0,
+        "period"
+      ]
+    }
+  }
+}

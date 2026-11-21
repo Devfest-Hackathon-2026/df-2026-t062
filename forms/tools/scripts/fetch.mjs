@@ -7,8 +7,9 @@
 //
 //   npm run forms:fetch
 import { ensurePdf } from '../../admin/pdf.ts'
+import { seedKinds } from '../../admin/files.ts'
 
-for (const kind of ['assessment', 'admission']) {
+for (const kind of seedKinds()) {
   const r = await ensurePdf(kind)
   console.log(`${kind}: ${r.message}`)
 }
