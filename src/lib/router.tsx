@@ -1,15 +1,28 @@
-// 小さな道の切り替え（3 つしかないので、ライブラリを使わない）
+// 小さな道の切り替え（数が少ないので、ライブラリを使わない）
 import { useEffect, useState } from 'react'
 
 export type Route =
   | { name: 'list' }
   | { name: 'client', id: string, doc?: string }
   | { name: 'login' }
+  // 責任者の書類の設定（#102）。kind は書類の種類の key
+  | { name: 'office' }
+  | { name: 'officeKind', kind: string }
+  | { name: 'officeUpload', kind: string }
+  | { name: 'officeReview', kind: string, versionId: string }
 
 export function parse(path: string, search = ''): Route {
   const m = /^\/clients\/([0-9a-f-]{36})\/?$/.exec(path)
   if (m) return { name: 'client', id: m[1], doc: new URLSearchParams(search).get('doc') ?? undefined }
   if (path === '/login') return { name: 'login' }
+  if (path === '/office' || path === '/office/') return { name: 'office' }
+  const o = /^\/office\/forms\/([^/]+)(?:\/(upload|review\/([0-9a-f-]{36})))?\/?$/.exec(path)
+  if (o) {
+    const kind = decodeURIComponent(o[1])
+    if (o[2] === 'upload') return { name: 'officeUpload', kind }
+    if (o[3]) return { name: 'officeReview', kind, versionId: o[3] }
+    return { name: 'officeKind', kind }
+  }
   return { name: 'list' }
 }
 

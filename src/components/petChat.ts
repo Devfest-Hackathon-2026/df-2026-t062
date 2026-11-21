@@ -2,7 +2,8 @@
 // やり取りは画面の中だけで持つ（開き直すと消える）。書き換えの案は、ケアマネが押したときだけ用紙に入れる。
 import type { ChatMessage, ChatProposal } from '../../api/chat.ts'
 import { splitSentences } from '../../core/diff.ts'
-import { BY_KEY, subFieldsOf, type FieldSpec } from '../../core/fields.ts'
+import { GLOBAL_DICT, type FieldDict } from '../../core/dictionary.ts'
+import { subFieldsOf, type FieldSpec } from '../../core/fields.ts'
 import { sameValue } from '../../core/apply-batch.ts'
 
 /** ready: まだ入れていない／applied: 用紙に入れた（「戻す」ができる） */
@@ -59,8 +60,8 @@ function lines(f: FieldSpec, v: unknown): string[] {
 }
 
 /** 案のカードに出す差分。文章の欄は文ごと、ほかの欄は「項目の名前：値」の行ごとに、消えるものと足すものを出す */
-export function proposalChanges(key: string, before: unknown, after: unknown): { del: string[], ins: string[] } {
-  const f = BY_KEY.get(key)
+export function proposalChanges(key: string, before: unknown, after: unknown, dict: FieldDict = GLOBAL_DICT): { del: string[], ins: string[] } {
+  const f = dict.get(key)
   if (!f || f.type === 'text' || f.type === 'longtext') return sentenceChanges(typeof before === 'string' ? before : null, typeof after === 'string' ? after : '')
   const b = lines(f, before)
   const a = lines(f, after)

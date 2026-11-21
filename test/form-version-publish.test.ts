@@ -99,7 +99,7 @@ before(async () => {
   storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-fpublish-')))
   const { createApiServer } = await import('../api/server.ts')
   const { DevVerifier } = await import('../api/auth.ts')
-  const server = createApiServer({ db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {}, async enqueueFormImport() {} }), devAuth: true })
+  const server = createApiServer({ db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
