@@ -10,6 +10,7 @@ import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
 import type { ChatMessage, ChatReply } from '../../api/chat.ts'
 import type { InspectionSummary, InspectionView } from '../../db/inspections.ts'
 import { readChatStream } from './chatStream.ts'
+import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail } from '../../db/care-plans.ts'
 import type { KindFormState } from '../../db/forms.ts'
 import type { FormImportView } from '../../db/form-imports.ts'
 import type { SlotMeaning } from '../../core/slot-meaning.ts'
@@ -39,10 +40,14 @@ export interface ClientDetail {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code: string
+  constructor(status: number, message: string, code = '', details?: unknown) {
     super(message)
     this.status = status
+    this.code = code
+    this.details = details
   }
+  details?: unknown
 }
 
 let tokenSource: () => Promise<string | null> = async () => null
@@ -64,13 +69,37 @@ async function req<T>(method: string, path: string, body?: unknown, cache: Reque
 
 async function fail(res: Response): Promise<never> {
   const j = await res.json().catch(() => ({}))
-  throw new ApiError(res.status, j.message ?? j.error ?? `HTTP ${res.status}`)
+  throw new ApiError(res.status, j.message ?? j.error ?? `HTTP ${res.status}`, j.error ?? '', j)
 }
 
 /** 様式の版は中身が変わらないので、開いている間は覚えておく（ブラウザも覚える） */
 const versions = new Map<string, Promise<FormVersionView>>()
 
 export const api = {
+  carePlans: (clientId: string) => req<{ plans: CarePlanSummary[] }>('GET', `/api/clients/${clientId}/care-plans`),
+  carePlan: (id: string) => req<{ plan: CarePlanView }>('GET', `/api/care-plans/${id}`),
+  createCarePlan: (clientId: string, input: { effectiveFrom: string, effectiveTo?: string | null, copyFromPlanId?: string }) =>
+    req<{ plan: CarePlanView }>('POST', `/api/clients/${clientId}/care-plans`, input),
+  carePlanNeeds: (id: string, baseVersion: number, needs: NeedInput[]) =>
+    req<{ plan: CarePlanView }>('PUT', `/api/care-plans/${id}/needs`, { baseVersion, needs }),
+  carePlanSchedule: (id: string, baseVersion: number, slots: SlotInput[]) =>
+    req<{ plan: CarePlanView }>('PUT', `/api/care-plans/${id}/schedule`, { baseVersion, slots }),
+  saveCarePlan: (id: string, baseVersion: number) =>
+    req<{ plan: CarePlanView }>('POST', `/api/care-plans/${id}/save`, { baseVersion }),
+  confirmCarePlan: (id: string, baseVersion: number) =>
+    req<{ plan: CarePlanView }>('POST', `/api/care-plans/${id}/confirm`, { baseVersion }),
+  carePlanAi: (id: string, sourceDocumentId: string, sourceRevisionId: number) =>
+    req<{ draft: AiDraftDetail }>('POST', `/api/care-plans/${id}/ai-drafts`, { sourceDocumentId, sourceRevisionId }),
+  carePlanAiDraft: (id: string, draftId: string) =>
+    req<{ draft: AiDraftDetail }>('GET', `/api/care-plans/${id}/ai-drafts/${draftId}`),
+  applyCarePlanAi: (id: string, draftId: string, baseVersion: number) =>
+    req<{ plan: CarePlanView, applied: { fields: string[], needs: string[], slots: string[], skipped: { target: string, reason: string }[] } }>('POST', `/api/care-plans/${id}/ai-drafts/${draftId}/apply`, { baseVersion }),
+  async carePlanPdf(id: string, form: 'all' | '1' | '2' | '3'): Promise<Blob> {
+    const token = await tokenSource()
+    const response = await fetch(`/api/care-plans/${id}/pdf?form=${form}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!response.ok) await fail(response)
+    return response.blob()
+  },
   documentInputs: (id: string) => req<{ inputs: DocumentInputView[] }>('GET', `/api/documents/${id}/inputs`),
   startDocumentInput: (id: string, body: { fileName: string, sha256: string, bytes: number, mime: DocumentMime, expiredUploadUrl?: string }) =>
     req<{ input: DocumentInputView, uploadUrl: string | null }>('POST', `/api/documents/${id}/inputs`, body),
@@ -101,6 +130,7 @@ export const api = {
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
   document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
+  revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
     req<{ document: DocumentView }>('PATCH', `/api/documents/${id}/fields`, { changes }),
   /** 書き方の相談。ペットが道具を使うたびに onStep（作業ログの 1 行）を呼び、最後に答えを返す */

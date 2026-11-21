@@ -1,3 +1,4 @@
+import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
 import { chatError } from '../core/chat-error.ts'
@@ -114,18 +115,7 @@ const PlanNeedsInput = z.object({
 const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
 const PlanScheduleInput = z.object({
   baseVersion: z.number().int().positive(),
-  slots: z.array(z.object({
-    id: z.string().uuid().optional(),
-    serviceId: z.string().uuid(),
-    scheduleType: z.enum(['weekly', 'other']),
-    weekday: z.number().int().nullish(),
-    start: z.string().max(20).nullish(),
-    end: z.string().max(20).nullish(),
-    endsNextDay: z.boolean().optional(),
-    note: z.string().max(1000).nullish(),
-    periodFrom: z.iso.date().nullish(),
-    periodTo: z.iso.date().nullish(),
-  })).max(500),
+  slots: z.array(PlanSlotSchema).max(500),
 })
 const PlanAiDraftInput = z.object({
   sourceDocumentId: z.string().uuid(),
@@ -358,6 +348,9 @@ export function createApp(deps: ApiDeps) {
     return json(c, { draft }, 201)
   }))
 
+  app.get('/api/care-plans/:planId/ai-drafts/:draftId', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { draft: await carePlans.getCarePlanAiDraft(db, staff.officeId, c.req.param('planId')!, c.req.param('draftId')!) })))
+
   app.post('/api/care-plans/:planId/ai-drafts/:draftId/apply', staffRoute('care.work', async (c, staff, db) => {
     const { baseVersion } = await body(c, PlanAiApplyInput)
     return json(c, await carePlans.applyCarePlanAiDraft(db, staff, c.req.param('planId')!, c.req.param('draftId')!, baseVersion))
@@ -395,6 +388,12 @@ export function createApp(deps: ApiDeps) {
     json(c, await assetsOf(await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)))))
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
+
+  app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
+    const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
+    const rows = await db.query('SELECT id, rev, saved_at FROM revisions WHERE document_id = $1 ORDER BY rev DESC', [document.id])
+    return json(c, { revisions: rows.rows.map((r) => ({ id: Number(r.id), rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString() })) })
+  }))
 
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)
@@ -494,9 +493,10 @@ export function createApp(deps: ApiDeps) {
 
   // 用紙の印字欄の直し。サーバーがその時点の値に当てる（当てられない直しは理由を返す）
   app.post('/api/documents/:id/edits', staffRoute('care.work', async (c, staff, db) => {
-    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const { formVersionId, edits } = await body(c, EditsInput)
-    const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits)
+    // 氏名・作成日などは各表で独立して編集できる。構造の射影だけは計画APIに限定する。
+    const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits,
+      (locked, keys) => carePlans.assertGenericDocumentEdits(locked, staff.officeId, c.req.param('id')!, keys))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
 

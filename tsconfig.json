@@ -32,6 +32,8 @@
     "src",
     "test",
     "worker",
-    "vite.config.ts"
+    "vite.config.ts",
+    "e2e",
+    "playwright.config.ts"
   ]
 }

@@ -34,6 +34,9 @@ const PROMPT = `あなたは日本の居宅介護支援のケアマネジャー�
   "slots": [],
   "conflicts": [ { "target": "…", "reason": "根拠が食い違う点" } ]
 }
+第3表の候補は、保存済みアセスメントに曜日・開始時刻・終了時刻や週単位以外の予定が明記されている場合だけ slots に含めてください。不明な日時を推測しないでください。
+slots の例：{"serviceRef":{"need":0,"shortGoal":0,"service":0},"scheduleType":"weekly","weekday":1,"start":"09:00","end":"10:00","endsNextDay":false}
+serviceRef はこの原案の needs/shortGoals/services の0始まりの添字です。既存IDやサービス名による対応付けはしません。曜日は月1〜日7。週単位以外は scheduleType:"other" と note を使い、曜日・時刻は付けません。
 アセスメント: `
 
 export function geminiCarePlanDrafter(env: NodeJS.ProcessEnv): CarePlanDrafter {

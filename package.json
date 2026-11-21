@@ -22,9 +22,11 @@
     "forms:fetch": "node forms/tools/scripts/fetch.mjs",
     "forms:seed": "node --env-file-if-exists=.env forms/admin/seed.ts",
     "forms:assets": "node --env-file-if-exists=.env forms/admin/assets.ts",
-    "forms:rebase": "node --env-file-if-exists=.env forms/admin/rebase.ts"
+    "forms:rebase": "node --env-file-if-exists=.env forms/admin/rebase.ts",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",

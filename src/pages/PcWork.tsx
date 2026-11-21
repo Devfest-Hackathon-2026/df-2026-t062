@@ -7,6 +7,8 @@ import { H, W } from '../form/layout.ts'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { availableTopics, fieldTargets, mergeSurveyDrafts, reviewItems, stageSurvey, surveyOverlays, type SurveyDraft } from '../components/petAssessment.ts'
 import { FormPage } from '../form/FormPage.tsx'
+import { DocumentOutput } from '../form/DocumentOutput.tsx'
+import { SheetToolbar } from '../form/SheetToolbar.tsx'
 import { useClient } from '../form/useClient.ts'
 import { pickDocument, useFormKinds } from '../form/useFormKinds.ts'
 import { useDocument } from '../form/useDocument.ts'
@@ -15,10 +17,15 @@ import { linkProps } from '../lib/router.tsx'
 import { COMING_SOON_LABEL, newDocMenu } from '../lib/docMenu.ts'
 import { PetHelper } from '../components/PetHelper.tsx'
 import { countText, downloadBlob } from '../components/Chrome.tsx'
+import { CarePlanWork, isPlanKind } from '../care-plan/CarePlanWork.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
+  const [carePlanOpen, setCarePlanOpen] = useState(false)
+  const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
+  const [planDirty, setPlanDirty] = useState(false)
+  const [planBusy, setPlanBusy] = useState(false)
   const diagramRequestId = useRef(0)
   const [diagramChatRequest, setDiagramChatRequest] = useState<{ key: string, id: number }>()
   const reloadDoc = useRef<() => void>(() => {})
@@ -48,13 +55,15 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
 
   // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
   const openKind = useCallback(async (key: string) => {
+    if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
+    setCarePlanOpen(false); setPlanDirty(false)
     setNewOpen(false)
     if (!client?.documents.some((d) => d.kind === key)) {
       await api.createDocument(clientId, key)
       await reloadClient()
     }
     setTab(key)
-  }, [client, clientId, reloadClient])
+  }, [client, clientId, reloadClient, carePlanOpen, planDirty, planBusy])
   // 何通も作れる種類は、押すたびに新しい書類を作る
   const createKind = useCallback(async (key: string) => {
     setNewOpen(false)
@@ -79,6 +88,16 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   useEffect(() => () => clearTimeout(highlightTimer.current), [])
 
   const jumpToField = (key: string) => {
+    if (carePlanOpen) {
+      if (planBusy || (planDirty && !window.confirm('ケアプランの未保存の入力を破棄し、参照元の入力欄に移動しますか？'))) return false
+      setCarePlanOpen(false); setPlanDirty(false)
+      // 用紙が戻った次の描画で、保持していた参照元の入力欄へ移動する。
+      requestAnimationFrame(() => jumpToFieldInAssessment(key))
+      return targets.has(key)
+    }
+    return jumpToFieldInAssessment(key)
+  }
+  const jumpToFieldInAssessment = (key: string) => {
     const el = scroller.current
     const target = assessmentReady ? targets.get(key) : undefined
     const sheet = target && pageRefs.current[target.pageIndex]?.querySelector('.pg')
@@ -194,22 +213,25 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     <div className="pc pc-work" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', fontSize: 14, lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>
 
       <div className="pc-work-client" style={{ flex: '0 0 auto', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', padding: '10px 28px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 24px' }}>
-        <a {...linkProps('/')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, textDecoration: 'none' }}>
+        <a {...linkProps('/')} onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+          if (planBusy || (carePlanOpen && planDirty && !window.confirm('ケアプランの未保存の入力を破棄して利用者一覧に移動しますか？'))) { e.preventDefault(); return }
+          linkProps('/').onClick(e)
+        }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, textDecoration: 'none' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者一覧
         </a>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{client ? `${client.name} さん` : ' '}</h1>
-          <span style={{ fontSize: 13, color: '#5A6270' }}>{kindName}</span>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
-          {(kinds ?? []).filter((k) => k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
-            <button key={k.key} className={`dtab${k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={k.key === open.key} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
+          {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+            <button key={k.key} className={`dtab${!carePlanOpen && k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={!carePlanOpen && k.key === open.key} disabled={planBusy} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
-          <button className="dtab dtab-add" type="button" aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
+          <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>{client?.name}さんの今の情報から、AI が書き込みます</div>
-              {(kinds ?? []).filter((k) => k.available && k.perClient === 'many').map((k) => (
+              {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
                 <button key={k.key} className="mi" role="menuitem" type="button" onClick={() => void createKind(k.key)}><span>{k.name}</span></button>
               ))}
               {newDocMenu.map((d) => (
@@ -218,18 +240,15 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             </div>
           )}
         </div>
-        <div style={{ flex: '1 1 360px', display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '0 1 334px', minWidth: 220 }}>
-            <div style={{ fontSize: 12, color: '#5A6270' }}>必須 {required.total} 欄のうち {required.filled} 欄が入っています</div>
-            <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: '#DCE0E6', marginTop: 4 }}>{required.filled > 0 && <div style={{ height: 8, background: '#2F5FD0', width: `${(required.filled / required.total * 100).toFixed(1)}%` }} />}</div>
-          </div>
-          <button className="btn" type="button" onClick={() => void exportPdf()} disabled={!docId}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4v11" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></svg>書類を出力
-          </button>
-        </div>
+        {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`care-plan-entry${carePlanOpen ? ' care-plan-entry-on' : ''}`} aria-pressed={carePlanOpen} type="button" disabled={planBusy} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
+        {carePlanOpen ? <div className="pc-work-output" ref={setPlanOutputTarget} /> : <DocumentOutput
+          status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
+          progress={required} disabled={!docId} onExport={() => void exportPdf()} />}
       </div>
 
       <div className="pc-work-layout">
+        {carePlanOpen ? <CarePlanWork embedded outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
+          onDirtyChange={setPlanDirty} onBusyChange={setPlanBusy} onBack={() => { setCarePlanOpen(false); setPlanDirty(false) }} /> : <>
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
           {pages.map((p, i) => {
@@ -244,26 +263,11 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </nav>
 
         <section aria-label="書類" style={{ minWidth: 0, minHeight: 0, background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-          <div style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px', padding: '9px 17px 6px', borderBottom: '1px solid #EEF0F3' }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{paged ? pages[cur]?.title : kindName}{' '}<span style={{ fontWeight: 400, color: '#5A6270', marginLeft: 4, fontSize: 12 }}>{paged ? `${cur + 1} / ${pages.length || 11} ページ` : '1 / 1 ページ'}</span></h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <span className="lg"><span aria-hidden="true" style={{ width: 14, height: 10, borderRadius: 2, background: 'rgba(36,83,196,0.1)', border: '1px solid rgba(36,83,196,0.45)' }} />入力できる欄</span>
-              <span className="lg"><span aria-hidden="true" style={{ width: 14, height: 10, borderRadius: 2, background: 'rgba(240,160,64,0.3)', border: '1px solid rgba(232,145,45,0.7)' }} />今回の録音から</span>
-              {hasUpdates
-                ? <span className="lg"><span aria-hidden="true" style={{ width: 16, height: 10, background: '#DCF2E4', borderBottom: '2px solid #17703F' }} />変わったところ（押すと前の文）</span>
-                : <span className="lg"><span aria-hidden="true" style={{ width: 14, height: 10, borderRadius: 2, background: 'rgba(255,196,0,0.5)', outline: '1.5px solid #E0A000' }} />直したところ</span>}
-            </div>
-            <div style={{ flex: '1 0 100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}>
-              <div role="group" aria-label="拡大" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button className="btn btn-i" type="button" aria-label="小さくする" onClick={() => setZoom(Math.max(80, zoom - 20))}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M5 12h14" /></svg></button>
-                <span style={{ fontSize: 12, color: '#3F4652', minWidth: 40, textAlign: 'center' }}>{zoom}%</span>
-                <button className="btn btn-i" type="button" aria-label="大きくする" onClick={() => setZoom(Math.min(160, zoom + 20))}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14" /><path d="M5 12h14" /></svg></button>
-              </div>
-              <span style={{ fontSize: 12, color: '#5B6672' }}>{empty ? 'まだ何も書かれていません' : countText(state.total) || 'すべて保存済み'}</span>
-              {docSaved && <span role="status" style={{ fontSize: 13, fontWeight: 500, color: '#1F49B0' }}>保存しました</span>}
-              <button type="button" className="savebtn pc-work-save" aria-label="書類を保存" onClick={async () => { const ok = await canSave() && await state.saveDocument(); setDocSaved(ok); if (ok) setSavedPages(new Set(pages.map((p) => p.no))) }}>保存</button>
-            </div>
-          </div>
+          <SheetToolbar title={paged ? pages[cur]?.title ?? kindName : kindName}
+            page={paged ? `${cur + 1} / ${pages.length || 11} ページ` : '1 / 1 ページ'}
+            zoom={zoom} onZoom={setZoom} hasUpdates={hasUpdates}
+            status={empty ? 'まだ何も書かれていません' : countText(state.total) || 'すべて保存済み'} saved={docSaved}
+            onSave={() => void (async () => { const ok = await canSave() && await state.saveDocument(); setDocSaved(ok); if (ok) setSavedPages(new Set(pages.map((p) => p.no))) })()} />
 
           <FieldConflicts state={state} />
           <div ref={scroller} onScroll={onScroll} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', background: '#E9EBEF', padding: '10px 21px 20px' }}>
@@ -296,8 +300,9 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             </div>
           )}
         </section>
+        </>}
 
-        <PetHelper clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram, dict: fieldDict(state.form?.localFields) }}
 

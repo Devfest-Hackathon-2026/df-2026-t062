@@ -1,0 +1,105 @@
+.cp-work {height:100dvh; overflow:auto; background:#f4f5f7; color:#1f2430; font:14px/1.6 'Noto Sans JP',system-ui,sans-serif}
+.cp-header,.cp-planbar {display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 24px; background:#fff; border-bottom:1px solid #e1e4ea}
+.cp-header h1 {font-size:20px; margin:0 auto 0 0}
+.cp-header {font-size:13px}
+.cp-header label {margin-left:auto}
+.cp-header small {font-size:14px; font-weight:400; color:#5a6270}
+.cp-work label,.cp-dialog label {display:flex; flex-direction:column; gap:5px; font-weight:500}
+.cp-work input:not(.fx):not(.diff-input),.cp-work select,.cp-work textarea:not(.fx):not(.diff-input),.cp-dialog input,.cp-dialog select,.cp-dialog textarea {font:inherit; color:inherit; border:1px solid #aab4c3; border-radius:7px; padding:8px 10px; background:#fff; min-width:0; box-sizing:border-box}
+.cp-dialog textarea {min-height:76px; resize:vertical}
+.cp-work button,.cp-dialog button {cursor:pointer}
+.cp-work button:disabled,.cp-dialog button:disabled {cursor:default; opacity:.5}
+.cp-status {border-radius:20px; padding:2px 12px; font-weight:700; background:#e8eefc; color:#2453c4}
+.cp-confirmed {background:#dcf2e4; color:#17703f}
+.cp-superseded {background:#e9ebef; color:#5a6270}
+.cp-info,.cp-notice,.cp-error {margin:12px 24px; padding:10px 14px; border-radius:8px; background:#e8eefc}
+.cp-notice {background:#dcf2e4; color:#145b34}
+.cp-error {background:#fde8e7; color:#a3261c}
+.cp-layout {display:grid; grid-template-columns:220px minmax(0,1fr); gap:20px; padding:20px 24px}
+.cp-nav {align-self:stretch; min-height:0; overflow:auto; background:#fff; border:1px solid #e1e4ea; border-radius:12px; padding:12px 8px; display:flex; flex-direction:column; gap:2px; box-sizing:border-box}
+.cp-nav .nav-i {width:100%; text-align:left}
+.cp-legend {color:#5a6270; font-size:12px; padding:16px 10px}
+.cp-canvas {min-width:0; min-height:0; background:#fff; border:1px solid #E1E4EA; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; position:relative}
+.cp-sheet-scroll {flex:1 1 auto; min-height:0; overflow:auto; background:#E9EBEF; padding:10px 21px 20px}
+.cp-save {display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; padding:10px 0}
+.cp-save span {font-size:12px; color:#5a6270}
+.cp-paper {background:#fff; padding:24px; border:1px solid #e1e4ea; box-shadow:0 3px 12px #1420300d}
+.cp-paper>header {display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+.cp-paper h2 {font-size:20px; margin:0}
+.cp-paper-actions {display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0 12px}
+.cp-paper-actions small {color:#5a6270}
+.cp-paper-field {position:absolute; display:block; box-sizing:border-box; border:0; border-radius:0; padding:0; text-align:left; white-space:pre-wrap; overflow:auto; color:inherit; font-family:inherit; background:rgba(36,83,196,.07); box-shadow:inset 0 0 0 1px rgba(36,83,196,.3)}
+.cp-hand {background:#fff6d8!important; box-shadow:inset 3px 0 #b77900}
+.cp-ai {background:#fff0db!important; box-shadow:inset 3px 0 #e8912d}
+.cp-other {margin:0 8px 8px 0}
+.cp-dialog {width:min(850px,90vw); max-height:88dvh; padding:24px; border:1px solid #cbd1da; border-radius:16px; box-shadow:0 16px 64px #14203040; color:#1f2430; font:14px/1.6 'Noto Sans JP',system-ui,sans-serif}
+.cp-dialog::backdrop {background:#14203066}
+.cp-dialog>header {display:flex; gap:12px; justify-content:space-between; align-items:center; position:sticky; top:-24px; background:#fff; z-index:1; padding:8px 0}
+.cp-dialog h2 {font-size:20px; margin:0}
+.cp-dialog label {margin:10px 0}
+.cp-dialog fieldset {border:0; padding:0; min-width:0}
+.cp-fields {display:flex; gap:12px; flex-wrap:wrap}
+.cp-fields>label {flex:1 1 150px}
+.cp-goal {padding:16px; margin:18px 0; border:1px solid #cbd1da; border-radius:10px; background:#f8f9fc}
+.cp-service {background:#fff; border:1px solid #dce1e9; padding:14px; border-radius:8px; margin:12px 0}
+.cp-danger {color:#a3261c!important; margin:6px}
+.cp-check {flex-direction:row!important; align-items:center}
+.cp-loading {padding:40px}
+.cp-touch .btn,.cp-touch select,.cp-touch input:not(.fx):not(.diff-input) {min-height:46px}
+.cp-touch .btn {font-size:16px}
+.cp-touch {font-size:16px}
+.cp-first {background:#fff; margin:0 auto 24px}
+.cp-first-scroll {overflow:auto; max-width:100%; padding:4px 0 12px}
+.cp-zoom {display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:8px 0}
+.cp-zoom small {color:#5a6270}
+.cp-meta,.cp-activities {border:1px solid #dce1e9; border-radius:8px; padding:14px; margin:16px 0; min-width:0}
+.cp-meta {display:flex; gap:12px; flex-wrap:wrap}
+.cp-meta label {flex:1 1 200px}
+.cp-meta small {width:100%; color:#5a6270}
+@media(max-width:1100px) {
+  .cp-layout {grid-template-columns:minmax(0,1fr); padding:12px}
+  .cp-nav {position:static; display:flex; flex-direction:row; flex-wrap:wrap; gap:4px}
+  .cp-nav .nav-i {width:auto; flex:1 1 180px}
+  .cp-legend {width:100%; padding:6px 10px}
+  .cp-header,.cp-planbar {padding:12px}
+  .cp-paper {padding:14px}
+}
+.cp-embedded {grid-column:1 / 3; height:auto; min-height:0; display:flex; flex-direction:column; overflow:hidden; font:inherit}
+.cp-embedded .cp-header {padding:8px 0; background:transparent; border:0}
+.cp-embedded .cp-planbar {padding:8px 12px; border:1px solid #E1E4EA; border-radius:12px; gap:8px; font-size:12px}
+.cp-embedded .cp-info,.cp-embedded .cp-error,.cp-embedded .cp-notice {margin:8px 0; font-size:13px}
+.cp-embedded .cp-layout {grid-template-columns:clamp(160px,14.7vw,233px) minmax(0,1fr); gap:17px; padding:0; flex:1 1 auto; min-height:0}
+.cp-embedded .cp-nav {flex-direction:column; flex-wrap:nowrap}
+.cp-embedded .cp-nav .nav-i {width:100%; flex:0 0 auto}
+@media(max-width:620px) {
+  .cp-embedded {grid-column:1}
+  .cp-embedded .cp-layout {grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr)}
+  .cp-embedded .cp-nav {flex-direction:row; flex-wrap:wrap}
+  .cp-embedded .cp-nav .nav-i {width:auto}
+}
+
+.cp-nav-title {font-size:13px; font-weight:700; color:#5A6270; padding:0 8px 6px}
+.cp-controls {margin-top:16px; padding:12px 4px 0; border-top:1px solid #E1E4EA}
+.cp-controls .cp-header,.cp-controls .cp-planbar {display:flex; flex-direction:column; align-items:stretch; gap:10px; padding:0; border:0; background:transparent; font-size:12px}
+.cp-controls .cp-header {margin-bottom:16px}
+.cp-controls .cp-header label {margin:0; min-width:0}
+.cp-controls .cp-header h1 {font-size:16px}
+.cp-controls .btn {white-space:normal; text-align:left; justify-content:flex-start; width:100%; box-sizing:border-box}
+.cp-controls .cp-status {align-self:flex-start}
+.cp-controls select {width:100%}
+.cp-sheet-scroll>.document-output {margin-bottom:12px}
+@media(max-width:1100px) {
+  .cp-work:not(.cp-embedded) .cp-controls {width:100%; margin-top:8px}
+}
+@media(max-width:620px) {
+  .cp-embedded .cp-nav {max-height:240px}
+  .cp-embedded .cp-controls {width:100%}
+}
+/* iPad縦向きでは計画操作を折り返し、用紙が最初の画面から見える高さに収める。 */
+@media(max-width:1100px) {
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header,
+  .cp-work:not(.cp-embedded) .cp-controls .cp-planbar {flex-direction:row; flex-wrap:wrap; align-items:center}
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header h1 {flex:1 1 auto; margin:0; font-size:18px}
+  .cp-work:not(.cp-embedded) .cp-controls .cp-header label {flex:1 1 240px}
+  .cp-work:not(.cp-embedded) .cp-controls .btn {width:auto}
+}

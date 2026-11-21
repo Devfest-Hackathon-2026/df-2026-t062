@@ -1,10 +1,10 @@
 // 用紙の 1 ページ。ページの画像の上に、欄（文字・丸・✓・表のマス・差分の欄）を重ねる（キャンバスの Main・PadWork と同じ作り）。
 //   橙: 今回 AI が書いて未保存　黄: 直して未保存　青: 入力できる欄
-import { Fragment, lazy, Suspense, memo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, lazy, Suspense, memo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { scaled, useFitScale } from './fit.ts'
 import { DiffField } from '../components/DiffField.tsx'
 import type { DocState } from './useDocument.ts'
-import { fsz, pc, pos, W, H, type PageLayout, type SlotView } from './layout.ts'
+import { pc, type PageLayout, type SlotView } from './layout.ts'
 
 const DiagramSlot = lazy(() => import('../diagram/DiagramSlot.tsx'))
 
@@ -43,9 +43,15 @@ interface Props {
   onAdopt?: (slot: string) => void
   onDiagramChat?: (key: string) => void
   onEditChoice?: (field: string) => void
+  /** 計画版をまとめて保存する画面では、文単位の保存を出さない */
+  combinedSave?: boolean
+  children?: ReactNode
 }
 
-function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, onDiagramChat }: Props) {
+function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, petFocus, provisional, adoptingKey, onAdopt, onEditChoice, combinedSave, children, onDiagramChat }: Props) {
+  const W = page.width, H = page.height
+  const pos = (x: number, y: number, w: number, h: number): CSSProperties => ({ left: pc(x, W), top: pc(y, H), width: pc(w, W), height: pc(h, H) })
+  const fsz = (pt: number) => `${(pt * 0.3528 / W * 100).toFixed(3)}cqw`
   const [open, setOpen] = useState('')
   const [diffOpen, setDiffOpen] = useState('')
   // 様式の画像は非公開の置き場にある（期限つきの URL）。読めなければ 1 回だけ URL を取り直し、それでもだめなら白い紙に欄だけを出す
@@ -122,7 +128,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
             fontSize={fsz(s.pt)} lineHeight={multi ? s.lh : 1.15} padding={multi ? '0.4cqw 0.3cqw 0' : '0 0.3cqw'} fill touch={touch} disabled={disabled} singleLine={!multi} textAlign={s.align}
             onChange={(t) => state.setValue(d.key, t === '' ? null : t)}
             onRevert={(t) => state.setValue(d.key, t === '' ? null : t, 'revert')}
-            onSaveHunk={(i) => void state.saveHunk(d.key, i)}
+            onSaveHunk={(i) => void state.saveHunk(d.key, i)} allowHunkSave={!combinedSave}
             onOpenChange={(o) => setDiffOpen(o ? s.name : '')}
           />
         </div>
@@ -164,11 +170,12 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
   }
 
   return (
-    <div className="pg">
+    <div className="pg" style={{ aspectRatio: `${W} / ${H}` }}>
       {noImage || !image
-        ? <div className="pimg" role="img" aria-label={page.title} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
-        : <img className="pimg" src={image} alt={`${page.title}`} style={dim ? { opacity: 0.55 } : undefined} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
+        ? <div className="pimg" role="img" aria-label={page.title} style={{ aspectRatio: `${W} / ${H}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
+        : <img className="pimg" src={image} alt={`${page.title}`} style={{ aspectRatio: `${W} / ${H}`, ...(dim ? { opacity: 0.55 } : {}) }} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
       {page.slots.map((s) => (s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} onChat={onDiagramChat} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
+      {children}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (
         <div role="dialog" aria-label={cell.label} style={{
@@ -199,7 +206,11 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
 function FitTextarea({ label, value, disabled, onChange, onBlur, style, base }: { label: string, value: string, disabled: boolean, onChange: (t: string) => void, onBlur: () => void, style: CSSProperties, base: string }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const s = useFitScale(ref, base, value)
-  return <textarea ref={ref} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} style={{ ...style, fontSize: scaled(base, s) }} />
+  return <textarea ref={ref} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={(e) => {
+    // 貼り付け等の直後に離れても、Reactへの反映前の表示値を保存から落とさない。
+    if (e.currentTarget.value !== value) onChange(e.currentTarget.value)
+    onBlur()
+  }} style={{ ...style, fontSize: scaled(base, s) }} />
 }
 
 export const FormPage = memo(FormPageInner)
