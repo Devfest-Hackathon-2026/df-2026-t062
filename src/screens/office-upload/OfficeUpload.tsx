@@ -51,7 +51,7 @@ export function OfficeUpload({ staffName, kind }: { staffName: string, kind: str
         <div className="of-conds">
           <div className="of-cond"><h3>何も書き込んでいない書式</h3><p>記入済みのものを上げると、利用者の情報がこのサービスに残ってしまいます。</p></div>
           <div className="of-cond"><h3>Word や Excel から PDF に書き出したもの</h3><p>紙をスキャンしたものや写真は、線や □ を正しく読み取れないことがあります。</p></div>
-          <div className="of-cond"><h3>全部のページ</h3><p>上げなかったページは印刷されません。1 つの PDF にまとめて上げてください。</p></div>
+          <div className="of-cond"><h3>全部のページ</h3><p>上げなかったページは、作る書類に入りません。1 つの PDF にまとめて上げてください。</p></div>
         </div>
         <div
           className={`of-drop${over ? ' over' : ''}`}
