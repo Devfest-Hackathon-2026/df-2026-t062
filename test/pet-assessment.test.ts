@@ -4,10 +4,12 @@ import { missingRequiredKeys } from '../core/required.ts'
 import { REQUIRED_ASSESS } from '../core/fields.ts'
 import { toFormDef } from '../core/form.ts'
 import { readSeed } from '../forms/admin/files.ts'
-import { availableTopics, fieldTargets, mergeSurveyDrafts, reviewItems, stageSurvey, surveyOverlays } from '../src/components/petAssessment.ts'
-import { pagesOf } from '../src/form/layout.ts'
+import { availableTopics, reviewItems } from '../src/components/assistant/topics.ts'
+import { fieldTargets } from '../src/components/document/fields.ts'
+import { mergeSurveyDrafts, stageSurvey, surveyOverlays } from '../src/components/survey/stage.ts'
+import { pagesOf } from '../src/components/document/layout.ts'
 import type { DocumentView } from '../src/lib/api.ts'
-import type { SurveyPreview } from '../src/survey/readSurvey.ts'
+import type { SurveyPreview } from '../src/components/survey/readSurvey.ts'
 
 const targets = fieldTargets(pagesOf(toFormDef({ ...readSeed('assessment'), id: 'test-assessment', version: 1, contentSha: 'test' })))
 const preview: SurveyPreview = {

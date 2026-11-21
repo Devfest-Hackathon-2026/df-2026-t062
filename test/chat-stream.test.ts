@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { readChatStream } from '../src/lib/chatStream.ts'
 import { ChatError, chatError } from '../core/chat-error.ts'
 import { api } from '../src/lib/api.ts'
-import { restoreChatText } from '../src/diagram/chatEntry.ts'
+import { restoreChatText } from '../src/components/assistant/chatEntry.ts'
 
 const body = (chunks: string[]) => new ReadableStream<Uint8Array>({
   start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode(x)); c.close() },

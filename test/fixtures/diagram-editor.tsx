@@ -1,8 +1,8 @@
 // Isolated manual QA harness. Uses memory only; never represents database persistence.
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import Editor from '../../src/diagram/DiagramFieldEditor.tsx'
-import Preview from '../../src/diagram/Preview.tsx'
+import Editor from '../../src/components/diagram/DiagramFieldEditor.tsx'
+import Preview from '../../src/components/diagram/Preview.tsx'
 import { diagramKinds, diagramDocument, type DiagramField, type DiagramValue } from '../../core/diagram/fields.ts'
 function Harness() {
   const [values, setValues] = useState<Record<string, DiagramValue>>({})

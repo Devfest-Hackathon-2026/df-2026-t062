@@ -385,7 +385,7 @@ PR と `main` で、型チェック、様式の確かめ、テスト（PostgreSQ
 ## リポジトリ構成
 
 ```
-src/        画面（React）。pages/ が画面、form/ が用紙の部品（ページの描画・値の持ち方・録音）、survey/ が認定調査票の取り込み
+src/        画面（React）。screens/ が 1 画面 1 フォルダ、components/ が 1 機能 1 フォルダ。置き場所の決まりは src/README.md
 api/        api（Hono）。ログインの確かめ、置き場（Cloud Storage／ローカル）、ジョブの積み方（Cloud Tasks／同じプロセス）、PDF
 worker/     録音 1 本の処理。vertex/ が本物の AI（STT・Gemini・要約から書く流れ）、fake.ts が費用のかからない見せかけ
 core/       画面・api・worker で共通のもの。fields.json（欄の一覧の本体）、型の確かめ、印字欄と欄の値の変換、文ごとの差分、書き換えの決まり

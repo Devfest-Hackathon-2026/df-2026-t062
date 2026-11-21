@@ -7,7 +7,7 @@ import { createServer } from 'vite'
 test('アセスメントと計画は同じ用紙ツールバーの凡例・拡大操作・保存を使う', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
-    const { SheetToolbar } = await server.ssrLoadModule('/src/form/SheetToolbar.tsx')
+    const { SheetToolbar } = await server.ssrLoadModule('/src/components/document/SheetToolbar.tsx')
     const common = { zoom: 100, onZoom: () => {}, onSave: () => {} }
     const assessment = renderToStaticMarkup(createElement(SheetToolbar, { ...common, title: 'フェースシート', page: '1 / 11 ページ' }))
     const plan = renderToStaticMarkup(createElement(SheetToolbar, {

@@ -1,7 +1,7 @@
 // 点検の画面の決まり（src/components/petInspection.ts）。決定版: https://claude.ai/artifact/La1RqwX2TgoBN8eyRtfyPi
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { catMessage, fmtWhen, historyRows, itemNote, menuStatus, monthGroups, radar } from '../src/components/petInspection.ts'
+import { catMessage, fmtWhen, historyRows, itemNote, menuStatus, monthGroups, radar } from '../src/components/inspection/petInspection.ts'
 import type { InspectionSummary, InspectionView } from '../db/inspections.ts'
 
 const summary = (id: string, createdAt: string, missingCount: number, status: InspectionSummary['status'] = 'succeeded'): InspectionSummary => ({

@@ -1,19 +1,19 @@
-import { PetHelper } from '../../src/components/PetHelper.tsx'
+import { PetHelper } from '../../src/components/assistant/PetHelper.tsx'
 // UI-only harness: synthetic proposals, memory-only apply, explicit failure injection. No real patient or AI calls.
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { PetChat } from '../../src/components/PetChat.tsx'
-import type { ChatEntry } from '../../src/components/petChat.ts'
-import DiagramSlot from '../../src/diagram/DiagramSlot.tsx'
-import type { DocState } from '../../src/form/useDocument.ts'
-import type { SlotView } from '../../src/form/layout.ts'
+import { PetChat } from '../../src/components/assistant/PetChat.tsx'
+import type { ChatEntry } from '../../src/components/assistant/petChat.ts'
+import DiagramSlot from '../../src/components/document/DiagramSlot.tsx'
+import type { DocState } from '../../src/components/document/useDocument.ts'
+import type { SlotView } from '../../src/components/document/layout.ts'
 import { blank } from '../../core/diagram/model.ts'
 import { diagramSchema, nextDiagram, validDiagramUpdate } from '../../core/diagram/fields.ts'
 import { sameValue } from '../../core/apply-batch.ts'
 import { normalizeBodyProposal } from '../../core/diagram/body.ts'
 import { api } from '../../src/lib/api.ts'
 import { readChatStream } from '../../src/lib/chatStream.ts'
-import '../../src/components/PetHelper.css'
+import '../../src/components/assistant/PetHelper.css'
 // The fixture must never fall through to a real API, even when Send is pressed.
 api.chat = async (_id, _messages, onStep) => {
   const status = new URLSearchParams(location.search).get('chatError')

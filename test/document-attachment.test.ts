@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { attachDocumentInput } from '../src/document-input/attachDocumentInput.ts'
+import { attachDocumentInput } from '../src/components/document-input/attachDocumentInput.ts'
 import { api } from '../src/lib/api.ts'
 
 test('画像の選択だけで添付を完了し、期限切れの送信先を一度更新する', async (t) => {

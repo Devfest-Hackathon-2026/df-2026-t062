@@ -1,7 +1,8 @@
 // 画面の「書き方を相談する」の決めごと（src/components/petChat.ts）。
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { cardAction, historyFor, MAX_HISTORY, proposalChanges, sentenceChanges, type ChatEntry, type ProposalCard } from '../src/components/petChat.ts'
+import { cardAction, historyFor, MAX_HISTORY, type ChatEntry, type ProposalCard } from '../src/components/assistant/petChat.ts'
+import { proposalChanges, sentenceChanges } from '../src/components/document/changes.ts'
 
 const card = (over: Partial<ProposalCard> = {}): ProposalCard => ({ key: 'complaint.person', label: '相談内容（本人）', before: '前の文。', after: '新しい文。', state: 'ready', ...over })
 

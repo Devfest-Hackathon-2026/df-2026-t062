@@ -9,7 +9,7 @@ import { anatomySchema, bodyAnchor, normalizeBodyProposal, tapPosition, BODY_VIE
 import { familyLayout } from '../core/diagram/family-layout.ts'
 import { diagramSvg } from '../core/diagram/svg.ts'
 import { diagramChanges } from '../core/diagram/changes.ts'
-import { cardAction, pendingDiagramDraft, diagramCardStatus, type ProposalCard } from '../src/components/petChat.ts'
+import { cardAction, pendingDiagramDraft, diagramCardStatus, type ProposalCard } from '../src/components/assistant/petChat.ts'
 const doc: ChatDocument = { id: 'doc-a', kind: 'assessment', name: 'アセスメント', form: seedFormDef('assessment'), fields: { 'family.members': { value: [{ name: '一郎', relationship: '子' }], by: 'cm' } }, saved: { 'family.members': { value: [{ name: '一郎', relationship: '子' }] } } }
 const context = (text: string, recordings: ChatRecording[] = []) => makeDiagramContext([doc], recordings, [{ role: 'user', text }])
 const userSource = (c: ReturnType<typeof context>) => [...c.sources.values()].find((s) => s.type === 'message')!.id
@@ -259,7 +259,7 @@ test('broad back pain is displayed as an area; anatomy and view mismatches are r
 })
 
 test('diagram entry names the selected figure and preserves its context when the opening text is replaced', async () => {
-  const { diagramChatTitle, diagramChatQuestion } = await import('../src/diagram/chatEntry.ts')
+  const { diagramChatTitle, diagramChatQuestion } = await import('../src/components/assistant/chatEntry.ts')
   assert.equal(diagramChatTitle('family.genogram'), '家族構成図の書き方を相談する')
   assert.equal(diagramChatTitle('health.bodyMap'), '身体図の書き方を相談する')
   assert.equal(diagramChatTitle(), '書き方を相談する')

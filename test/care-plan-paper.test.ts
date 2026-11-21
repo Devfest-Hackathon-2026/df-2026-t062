@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { officialPlanPages } from '../src/care-plan/paper.ts'
+import { officialPlanPages } from '../src/components/care-plan/paper.ts'
 import type { FormDef } from '../core/form.ts'
-import { pagesOf } from '../src/form/layout.ts'
+import { pagesOf } from '../src/components/document/layout.ts'
 import { createServer } from 'vite'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -25,7 +25,7 @@ test('第2表は公式様式の行座標を使い、続きも同じ原紙を使�
 test('第2・3表の画面は公式原紙画像を使い、独自の表や週間グリッドを作らない', async () => {
   const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
   try {
-    const { OfficialPlanSheet } = await server.ssrLoadModule('/src/care-plan/OfficialPlanSheet.tsx')
+    const { OfficialPlanSheet } = await server.ssrLoadModule('/src/components/care-plan/OfficialPlanSheet.tsx')
     for (const no of [2, 3]) {
       const definition = form(no)
       const image = `https://example.invalid/official-care-plan-${no}.png`

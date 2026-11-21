@@ -27,7 +27,6 @@
     "api",
     "core",
     "db",
-    "forms/index.ts",
     "forms/tools/import",
     "src",
     "test",

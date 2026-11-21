@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { savePlanEdits, documentDirty } from '../src/care-plan/save.ts'
+import { savePlanEdits, documentDirty } from '../src/components/care-plan/save.ts'
 
 test('入力送信済みでも、保存値と違う手入力があれば未保存を維持する', () => {
   assert.equal(documentDirty({ hasLocalEdits: false, current: { 'person.name': '直した氏名' }, saved: { 'person.name': '前の氏名' } }), true)

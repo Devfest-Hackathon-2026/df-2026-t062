@@ -10,7 +10,7 @@ import { checkVersion } from '../db/forms.ts'
 import { readSeed } from '../forms/admin/files.ts'
 import { diagramImage } from '../api/diagram-image.ts'
 import { checkProposal, type ChatDocument } from '../api/chat.ts'
-import { cardAction, type ProposalCard } from '../src/components/petChat.ts'
+import { cardAction, type ProposalCard } from '../src/components/assistant/petChat.ts'
 const item = (id: string, kind: Item['kind'] = 'bed'): Item => ({ id, kind, label: 'ベッド', x: 30, y: 40, width: 120, height: 70, rotation: 0 })
 const house = () => { const doc = blank(); doc.house.items.push(item('bed')); return nextDiagram('house', doc, 0) }
 
