@@ -76,7 +76,7 @@ export const api = {
     req<{ input: DocumentInputView, uploadUrl: string | null }>('POST', `/api/documents/${id}/inputs`, body),
   retryDocumentInput: (id: string) => req<{ input: DocumentInputView }>('POST', `/api/document-inputs/${id}/retry`, {}),
   completeDocumentInput: (id: string) => req<{ input: DocumentInputView }>('POST', `/api/document-inputs/${id}/complete`, {}),
-  adoptDocumentInput: (id: string, changes: { key: string, value: unknown, base: unknown }[]) =>
+  adoptDocumentInput: (id: string, changes: { key: string, base: unknown }[]) =>
     req<{ document: DocumentView }>('POST', `/api/document-inputs/${id}/adopt`, { targetConfirmed: true, changes }),
   async documentOriginal(id: string): Promise<Blob> {
     const token = await tokenSource()

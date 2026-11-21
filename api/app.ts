@@ -467,14 +467,14 @@ export function createApp(deps: ApiDeps) {
   }))
   app.get('/api/document-inputs/:id/original', staffRoute('care.work', async (c, staff, db) => {
     const r = await documentInputs.getInput(db, staff.officeId, c.req.param('id')!)
-    const data = await deps.storage().read('source', documentInputPath(staff.officeId, r.client_id, r.id))
+    const data = await deps.storage().read('source', documentInputPath(staff.officeId, r.client_id, r.id, r.upload_generation))
     return new Response(new Blob([new Uint8Array(data)], { type: r.mime }), { headers: {
       'Content-Type': r.mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(r.file_name)}`,
       'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox",
     } })
   }))
   app.post('/api/document-inputs/:id/adopt', staffRoute('care.work', async (c, staff, db) => {
-    const input = await body(c, z.object({ targetConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown(), base: z.unknown() })).min(1).max(200) }))
+    const input = await body(c, z.object({ targetConfirmed: z.literal(true), changes: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown().optional(), base: z.unknown() })).min(1).max(200) }))
     if (new Set(input.changes.map((ch) => ch.key)).size !== input.changes.length) throw new repo.BadRequest('同じ欄が重複しています')
     const document = await documentInputs.adoptInput(db, staff, c.req.param('id')!, input.changes)
     return json(c, { document })
