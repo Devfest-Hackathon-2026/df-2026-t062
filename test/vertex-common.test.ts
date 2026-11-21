@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { acceptUpdate, atoms, candidateFields, dropAtoms, needsDocument, sentences, validateValue, valueSchema, type Spec } from '../worker/vertex/common.ts'
+import { atoms, candidateFields, dropAtoms, needsDocument, sentences, validateValue, valueSchema, type Spec } from '../worker/vertex/common.ts'
 import { seedFormDef } from '../forms/admin/files.ts'
 
 const specs = candidateFields(seedFormDef('assessment'))
-const longtext = specs.find((s) => s.type === 'longtext' && s.item23 && !needsDocument(s))!
+const longtext = specs.find((s) => s.type === 'longtext' && !needsDocument(s))!
 const enumSpec = specs.find((s) => s.type === 'enum' && s.choices?.length)!
 const listSpec: Spec = {
-  key: 'family.members', label: '家族', type: 'list', item23: 21, choices: null, note: null, where: '', source: ['talk'],
+  key: 'family.members', label: '家族', type: 'list', choices: null, note: null, where: '', source: ['talk'],
   subs: [{ key: 'relationship', label: '続柄', type: 'enum', choices: ['長男', '長男の妻'] }, { key: 'health', label: '健康状態', type: 'text', choices: null }],
 }
 
@@ -15,7 +15,7 @@ test('文を分けるとき、かっこの中の「。」では分けない', ()
   assert.deepEqual(sentences('左側に残渣あり（ST。目視）。本人は気にならない。'), ['左側に残渣あり（ST。目視）。', '本人は気にならない。'])
 })
 
-test('読み直しの単位を落として値を組み直す（文章は文ごと、表は行の項目ごと、全部落ちたら null）', () => {
+test('最後のチェックの単位を落として値を組み直す（文章は文ごと、表は行の項目ごと、全部落ちたら null）', () => {
   assert.deepEqual(atoms(longtext, 'あ。い。').map((a) => a.path), ['#0', '#1'])
   assert.equal(dropAtoms(longtext, 'あ。い。', new Set(['#1'])), 'あ。')
   assert.equal(dropAtoms(longtext, 'あ。い。', new Set(['#0', '#1'])), null)
@@ -48,14 +48,4 @@ test('書類だけが出どころの欄は、会話からは書かない欄と�
   assert.equal(needsDocument({ ...longtext, source: ['doc:主治医意見書'] }), true)
   assert.equal(needsDocument({ ...longtext, source: ['doc:主治医意見書', 'talk'] }), false)
   assert.equal(needsDocument({ ...longtext, source: [] }), false)
-})
-
-test('2 回目の直しは、新しい記録を根拠に挙げたものだけ入れる', () => {
-  const known = new Set(['r1-1', 'r2-1'])
-  const news = new Set(['r2-1'])
-  const text = (v: string, from: string[], changed = true) => acceptUpdate(longtext, { changed, value: v, from }, 'あ。', news, known)
-  assert.deepEqual(text('あ。い。', ['r1-1', 'r2-1', 'zzz']), ['あ。い。', ['r1-1', 'r2-1'], null])
-  assert.equal(text('あ。い。', ['r1-1'])[2], '新しい記録を根拠に挙げていない')
-  assert.deepEqual(text('あ。', ['r2-1']), [null, [], null])           // 今の値と同じ
-  assert.deepEqual(text('あ。い。', ['r2-1'], false), [null, [], null]) // changed に入っていない
 })

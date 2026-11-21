@@ -2,6 +2,7 @@ import { createAdaptorServer } from '@hono/node-server'
 import { createApp, type ApiDeps } from './app.ts'
 import { defaultAccounts, defaultVerifier, type Accounts, type Verifier } from './auth.ts'
 import type { ChatModel } from './chat.ts'
+import type { FieldMatcher } from '../core/slot-meaning.ts'
 import { CloudTasksQueue, LocalQueue, type Queue } from './queue.ts'
 import { defaultStorage, type Storage } from './storage.ts'
 
@@ -12,6 +13,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
   let storage: Storage | undefined
   let queue: Queue | undefined
   let chat: Promise<ChatModel> | undefined
+  let matcher: Promise<FieldMatcher> | undefined
   const getStorage = () => (storage ??= defaultStorage(env))
   return {
     db: async () => (await import('../db/pool.ts')).getDb(),
@@ -28,9 +30,11 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
       return (queue = new LocalQueue(
         async (jobId) => (await import('../worker/jobs.ts')).runJob(await workerDeps(), jobId),
         async (importId) => (await import('../worker/form-import/job.ts')).runFormImport(await workerDeps(), importId),
+        async (inspectionId) => (await import('../worker/inspect/job.ts')).runInspection(await workerDeps(), inspectionId),
       ))
     },
     chat: () => (chat ??= defaultChat(env)),
+    fieldMatcher: () => (matcher ??= defaultFieldMatcher(env)),
     devAuth: env.AUTH_MODE === 'dev',
     accounts: () => (accounts ??= defaultAccounts(env)),
   }
@@ -40,6 +44,12 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
 async function defaultChat(env: NodeJS.ProcessEnv): Promise<ChatModel> {
   if (env.AI_PROVIDER !== 'vertex') return (await import('./chat.ts')).fakeModel
   return (await import('./gemini-chat.ts')).geminiChatModel(env)
+}
+
+/** 責任者の言葉を欄に当てはめる。AI_PROVIDER=vertex なら Gemini。既定は試しの当てはめ（欄の名前が言葉に入っているか。費用なし） */
+async function defaultFieldMatcher(env: NodeJS.ProcessEnv): Promise<FieldMatcher> {
+  if (env.AI_PROVIDER !== 'vertex') return (await import('../core/slot-meaning.ts')).fakeFieldMatcher
+  return (await import('./field-match.ts')).geminiFieldMatcher(env)
 }
 
 export function createApiServer(deps: ApiDeps = defaultApiDeps()) {

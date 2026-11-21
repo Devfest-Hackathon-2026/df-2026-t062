@@ -99,12 +99,12 @@ test('録音から AI が書いてよい欄: 版が読む欄のうち、出ど�
     '事業所の設定（office.name）と、note のない欄（local.visitCount）は入らない。fields.json の順、その様式だけの欄は local_fields の順')
 })
 
-test('全体のアセスメントの様式では、録音から書く欄（2 層改の欄の候補）は今と同じ。指示文の「用紙の場所」も変わらない（今の動きの固定）', () => {
+test('全体のアセスメントの様式では、録音から書く欄の候補は今と同じ。指示文の「用紙の場所」も変わらない（今の動きの固定）', () => {
   // 今まで: fields.json で「アセスメント用紙にある」とした欄のうち、出どころに会話・書類・案がある欄（図は除く）
   const legacy = FIELD_LIST.filter((f) => f.forms && 'assess' in f.forms && f.type !== 'image' && (f.source ?? []).some((s) => ['talk', 'doc', 'draft'].includes(s.split(':')[0])))
   const sub = (s: (typeof FIELD_LIST)[number]) => ({ key: s.key, label: s.label ?? s.key, type: s.type, choices: s.choices ? choicesOf(s) : null })
   const expected = legacy.map((f) => ({
-    key: f.key, label: f.label, type: f.type, item23: f.item23 ?? null,
+    key: f.key, label: f.label, type: f.type,
     choices: f.choices ? choicesOf(f) : null,
     subs: f.type === 'object' || f.type === 'list' ? subFieldsOf(f).map(sub) : null,
     note: f.note ?? null, where: f.forms!.assess, source: f.source ?? [],
@@ -113,10 +113,10 @@ test('全体のアセスメントの様式では、録音から書く欄（2 層
   assert.deepEqual(candidateFields(seedFormDef('assessment')), expected)
 })
 
-test('2 層改の欄の候補: 事業所の様式では、その様式だけの欄（note あり）も入る。用紙の場所は版のページから', () => {
+test('録音から書く欄の候補: 事業所の様式では、その様式だけの欄（note あり）も入る。用紙の場所は版のページから', () => {
   const specs = candidateFields(OFFICE_FORM)
   const mood = specs.find((s) => s.key === 'local.mood')!
-  assert.deepEqual([mood.label, mood.type, mood.choices, mood.note, mood.item23, mood.source], ['きょうの様子', 'enum', ['良い', '普通', '悪い'], '面談のときの本人の様子', null, []])
+  assert.deepEqual([mood.label, mood.type, mood.choices, mood.note, mood.source], ['きょうの様子', 'enum', ['良い', '普通', '悪い'], '面談のときの本人の様子', []])
   assert.match(mood.where, /p\.1 面談票/)
   assert.equal(specs.some((s) => s.key === 'local.visitCount'), false)
   assert.equal(specs.some((s) => s.key === 'intake.method'), false, '版が読まない欄は入らない')
@@ -194,7 +194,9 @@ before(async () => {
   await (await import('../db/migrate.ts')).migrate(db)
   const a = await (await import('../db/seed.ts')).seed(db)
   Object.assign(ids, { clientA: a.clients.sato, staffA: a.staff })
-  await db.query("INSERT INTO form_kinds (key, name, per_client) VALUES ('kinddict', '事業所の面談票', 'many')")
+  // 録音から書くには、まとめる項目が要る（docs/再設計/17）
+  const topics = [{ id: 'talk', name: '面談の話', guide: '面談で話したこと', by: 'ai', last: false }]
+  await db.query("INSERT INTO form_kinds (key, name, per_client, topics, summary_mode) VALUES ('kinddict', '事業所の面談票', 'many', $1, 'single')", [JSON.stringify(topics)])
   const { registerVersion } = await import('../db/forms.ts')
   await registerVersion(db, {
     kind: 'kinddict', name: '事業所の面談票', title: '面談票', officeId: null, basePdfSha256: 'b'.repeat(64),
@@ -205,7 +207,7 @@ before(async () => {
   const { DevVerifier, DevAccounts } = await import('../api/auth.ts')
   const { LocalStorage } = await import('../api/storage.ts')
   const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-dict-')))
-  const server = createApiServer({ db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {}, async enqueueFormImport() {} }), devAuth: true, accounts: () => new DevAccounts() })
+  const server = createApiServer({ db: async () => db, verifier: () => new DevVerifier(), storage: () => storage, queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true, accounts: () => new DevAccounts() })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -249,7 +251,7 @@ test('worker: 録音から書く欄は、録音がつながった書類の版か
   const { tx } = await import('../db/pool.ts')
   const repo = await import('../db/repo.ts')
   const { runJob } = await import('../worker/jobs.ts')
-  const { FakeSpeakers, FakeStt, fakeFormImport } = await import('../worker/fake.ts')
+  const { FakeSpeakers, FakeStt, FakeSummarizer, fakeFormImport } = await import('../worker/fake.ts')
   const { ZERO_USAGE } = await import('../worker/types.ts')
   const { LocalStorage } = await import('../api/storage.ts')
   const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-dict-worker-')))
@@ -269,7 +271,7 @@ test('worker: 録音から書く欄は、録音がつながった書類の版か
       usage: ZERO_USAGE, failed: [] as string[], incompleteFields: [] as string[],
     }
   }
-  const providers = { stt: new FakeStt(), speakers: new FakeSpeakers(), writer: { write }, formImport: fakeFormImport }
+  const providers = { stt: new FakeStt(), speakers: new FakeSpeakers(), formImport: fakeFormImport, recording: { summarizer: new FakeSummarizer(), writer: { write } } }
   await runJob({ db: async () => db, storage: () => storage, providers: async () => providers as never }, jobId!)
 
   assert.equal(seenForm?.id, doc.formVersionId, '書き手には、録音がつながった書類の版を渡す')

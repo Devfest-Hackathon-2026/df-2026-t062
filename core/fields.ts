@@ -11,7 +11,6 @@ export interface FieldSpec {
   choices?: string[] | string
   of?: string
   fields?: FieldSpec[]
-  item23?: number | null
   source?: string[]
   forms?: Record<string, string>
   note?: string
@@ -27,7 +26,6 @@ export interface FieldSpec {
 
 interface FieldsFile {
   meta: unknown
-  item23: unknown
   forms: unknown
   required: { assess: { keys: (string | string[])[] } }
   choiceSets: Record<string, string[]>

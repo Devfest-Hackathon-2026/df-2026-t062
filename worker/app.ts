@@ -2,10 +2,12 @@
 import { Hono } from 'hono'
 import { reconcile, runJob, type WorkerDeps } from './jobs.ts'
 import { reconcileFormImports, runFormImport } from './form-import/job.ts'
+import { reconcileInspections, runInspection } from './inspect/job.ts'
 
 export interface WorkerQueue {
   enqueue(jobId: string): Promise<void>
   enqueueFormImport(importId: string): Promise<void>
+  enqueueInspection(inspectionId: string): Promise<void>
 }
 
 export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
@@ -21,9 +23,15 @@ export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
     await runFormImport(deps, c.req.param('id'))
     return c.json({ ok: true })
   })
+  // AI 点検（#113）
+  app.post('/tasks/inspections/:id/run', async (c) => {
+    await runInspection(deps, c.req.param('id'))
+    return c.json({ ok: true })
+  })
   app.post('/tasks/reconcile', async (c) => c.json({
     requeued: await reconcile(deps, (id) => queue.enqueue(id)),
     formImports: await reconcileFormImports(deps, (id) => queue.enqueueFormImport(id)),
+    inspections: await reconcileInspections(deps, (id) => queue.enqueueInspection(id)),
   }))
   app.notFound((c) => c.json({ error: 'not_found' }, 404))
   app.onError((err, c) => {
