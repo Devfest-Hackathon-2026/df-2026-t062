@@ -49,7 +49,7 @@ export async function staffByAuth(db: Q, authUid: string, email?: string, allowE
   return s ? { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name } : null
 }
 
-async function audit(db: Q, staff: Staff | null, officeId: string, action: string, ids: { clientId?: string, documentId?: string }, detail: Record<string, unknown> = {}) {
+export async function audit(db: Q, staff: Staff | null, officeId: string, action: string, ids: { clientId?: string, documentId?: string }, detail: Record<string, unknown> = {}) {
   await db.query(
     'INSERT INTO audit_events (office_id, staff_id, client_id, document_id, action, detail) VALUES ($1,$2,$3,$4,$5,$6)',
     [officeId, staff?.id ?? null, ids.clientId ?? null, ids.documentId ?? null, action, JSON.stringify(detail)],
@@ -171,7 +171,7 @@ async function lockDocument(c: Tx, officeId: string, documentId: string) {
 }
 
 /** 書類の今の値（どの値も、どれか 1 つの書類に属する） */
-async function readFields(db: Q, documentId: string): Promise<Record<string, FieldRow>> {
+export async function readFields(db: Q, documentId: string): Promise<Record<string, FieldRow>> {
   const r = await db.query(
     'SELECT key, value, ai_value, by, batch_id, updated_at, cite FROM field_values WHERE document_id = $1',
     [documentId],
@@ -226,7 +226,12 @@ export async function otherDocuments(db: Q, officeId: string, clientId: string, 
   return Promise.all(r.rows.map((x) => getDocument(db, officeId, x.id as string)))
 }
 
-async function writeField(c: Tx, officeId: string, clientId: string, documentId: string, key: string, value: unknown, by: Who, staffId: string | null, extra: { aiValue?: unknown, batchId?: string, cite?: unknown } = {}) {
+/** 書類の欄として持てる key（その書類の様式の版の印字欄が読む key） */
+async function allowedKeys(db: Q, versionId: string): Promise<Set<string>> {
+  return new Set((await loadFormDef(db, versionId)).keys)
+}
+
+export async function writeField(c: Tx, officeId: string, clientId: string, documentId: string, key: string, value: unknown, by: Who, staffId: string | null, extra: { aiValue?: unknown, batchId?: string, cite?: unknown } = {}) {
   const docId = documentId
   const prev = (await c.query(
     'SELECT value, by, batch_id FROM field_values WHERE document_id = $1 AND key = $2',
@@ -354,55 +359,58 @@ export type SaveRequest =
 
 /** 保存の 3 段。保存した値（document_saved）を更新し、保存した値の全部を版として残す */
 export async function saveDocument(db: Db, staff: Staff, documentId: string, req: SaveRequest) {
-  return tx(db, async (c) => {
-    const d = await lockDocument(c, staff.officeId, documentId)
-    const fields = await readFields(c, d.id)
-    const saved = await readSaved(c, d.id)
-    const form = await loadFormDef(c, d.versionId)
-    const next = new Map<string, SavedRow | null>()
+  return tx(db, (c) => saveDocumentInTx(c, staff, documentId, req))
+}
 
-    if (req.scope === 'hunk') {
-      const cur = fields[req.key]
-      if (!cur || typeof cur.value !== 'string') throw new BadRequest('文章の欄ではありません')
-      const before = typeof saved[req.key]?.value === 'string' ? (saved[req.key].value as string) : ''
-      next.set(req.key, { value: saveOneHunk(before, cur.value, req.hunkIndex), by: cur.by })
-    } else {
-      let keys: Set<string>
-      if (req.scope === 'document') keys = new Set([...Object.keys(fields), ...Object.keys(saved)])
-      else {
-        // そのページの印字欄が読む key
-        const pages = slotPages(form)
-        keys = new Set<string>()
-        for (const [slot, p] of pages) {
-          if (p !== req.page) continue
-          for (const k of slotKeys(form, slot)) keys.add(k)
-        }
-      }
-      for (const k of keys) {
-        if (!fields[k] && !saved[k]) continue
-        next.set(k, fields[k] ? { value: fields[k].value, by: fields[k].by } : null)
+/** 計画版の保存など、ほかの書き込みと同じトランザクションで保存するとき（saveDocument の中身） */
+export async function saveDocumentInTx(c: Tx, staff: Staff, documentId: string, req: SaveRequest) {
+  const d = await lockDocument(c, staff.officeId, documentId)
+  const fields = await readFields(c, d.id)
+  const saved = await readSaved(c, d.id)
+  const form = await loadFormDef(c, d.versionId)
+  const next = new Map<string, SavedRow | null>()
+
+  if (req.scope === 'hunk') {
+    const cur = fields[req.key]
+    if (!cur || typeof cur.value !== 'string') throw new BadRequest('文章の欄ではありません')
+    const before = typeof saved[req.key]?.value === 'string' ? (saved[req.key].value as string) : ''
+    next.set(req.key, { value: saveOneHunk(before, cur.value, req.hunkIndex), by: cur.by })
+  } else {
+    let keys: Set<string>
+    if (req.scope === 'document') keys = new Set([...Object.keys(fields), ...Object.keys(saved)])
+    else {
+      // そのページの印字欄が読む key
+      const pages = slotPages(form)
+      keys = new Set<string>()
+      for (const [slot, p] of pages) {
+        if (p !== req.page) continue
+        for (const k of slotKeys(form, slot)) keys.add(k)
       }
     }
-
-    for (const [k, v] of next) {
-      if (v === null) await c.query('DELETE FROM document_saved WHERE document_id = $1 AND key = $2', [d.id, k])
-      else {
-        await c.query(
-          `INSERT INTO document_saved (document_id, key, value, by, saved_at) VALUES ($1,$2,$3,$4,now())
-           ON CONFLICT (document_id, key) DO UPDATE SET value = EXCLUDED.value, by = EXCLUDED.by, saved_at = now()`,
-          [d.id, k, JSON.stringify(v.value), v.by],
-        )
-      }
+    for (const k of keys) {
+      if (!fields[k] && !saved[k]) continue
+      next.set(k, fields[k] ? { value: fields[k].value, by: fields[k].by } : null)
     }
-    const all = await readSaved(c, d.id)
-    const rev = Number((await c.query('SELECT coalesce(max(rev), 0) + 1 AS rev FROM revisions WHERE document_id = $1', [d.id])).rows[0].rev)
-    await c.query(
-      'INSERT INTO revisions (office_id, document_id, rev, scope, "values", template_version_id, saved_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [staff.officeId, d.id, rev, req.scope, JSON.stringify(Object.fromEntries(Object.entries(all).map(([k, v]) => [k, v.value]))), d.versionId, staff.id],
-    )
-    await audit(c, staff, staff.officeId, 'document.save', { clientId: d.clientId, documentId: d.id }, { scope: req.scope, rev, fields: next.size })
-    return { rev, savedKeys: next.size }
-  })
+  }
+
+  for (const [k, v] of next) {
+    if (v === null) await c.query('DELETE FROM document_saved WHERE document_id = $1 AND key = $2', [d.id, k])
+    else {
+      await c.query(
+        `INSERT INTO document_saved (document_id, key, value, by, saved_at) VALUES ($1,$2,$3,$4,now())
+         ON CONFLICT (document_id, key) DO UPDATE SET value = EXCLUDED.value, by = EXCLUDED.by, saved_at = now()`,
+        [d.id, k, JSON.stringify(v.value), v.by],
+      )
+    }
+  }
+  const all = await readSaved(c, d.id)
+  const rev = Number((await c.query('SELECT coalesce(max(rev), 0) + 1 AS rev FROM revisions WHERE document_id = $1', [d.id])).rows[0].rev)
+  await c.query(
+    'INSERT INTO revisions (office_id, document_id, rev, scope, "values", template_version_id, saved_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [staff.officeId, d.id, rev, req.scope, JSON.stringify(Object.fromEntries(Object.entries(all).map(([k, v]) => [k, v.value]))), d.versionId, staff.id],
+  )
+  await audit(c, staff, staff.officeId, 'document.save', { clientId: d.clientId, documentId: d.id }, { scope: req.scope, rev, fields: next.size })
+  return { rev, savedKeys: next.size }
 }
 
 /** 最新の版（PDF を作る元）と、保存したときの様式の版。版がなければ空の値と、書類の今の様式の版 */
@@ -502,43 +510,46 @@ const settingsOf = (office: { name?: string, phone?: string | null, fax?: string
  * 写した値と設定は AI の値として入る（書き込みの記録は copy）。1 人 1 通の種類で、もう書類があれば作らずに返す（created: false）
  */
 export async function createDocument(db: Db, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
-  return tx(db, async (c) => {
-    const kind = await kindOf(c, kindKey)
-    if (!kind) throw new BadRequest('書類の種類がありません')
-    // 同じ利用者の書類づくりを 1 つずつにする（何通目か・1 通だけかを決めるため）
-    const client = (await c.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2 AND archived_at IS NULL FOR UPDATE', [clientId, staff.officeId])).rows[0]
-    if (!client) throw new NotFound()
-    const existing = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC LIMIT 1', [clientId, kind.key])).rows[0]
-    if (existing && kind.perClient === 'one') return { id: existing.id as string, kind: kind.key, created: false }
-    const version = await publishedVersionId(c, staff.officeId, kind.key)
-    const seq = Number((await c.query('SELECT coalesce(max(seq), 0) + 1 AS n FROM documents WHERE client_id = $1 AND kind = $2', [clientId, kind.key])).rows[0].n)
-    const doc = (await c.query(
-      'INSERT INTO documents (office_id, client_id, kind, seq, template_version_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [staff.officeId, clientId, kind.key, seq, version, staff.id],
+  return tx(db, (c) => createDocumentInTx(c, staff, clientId, kindKey))
+}
+
+/** 計画版の作成など、ほかの書き込みと同じトランザクションで書類を作るとき（createDocument の中身） */
+export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
+  const kind = await kindOf(c, kindKey)
+  if (!kind) throw new BadRequest('書類の種類がありません')
+  // 同じ利用者の書類づくりを 1 つずつにする（何通目か・1 通だけかを決めるため）
+  const client = (await c.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2 AND archived_at IS NULL FOR UPDATE', [clientId, staff.officeId])).rows[0]
+  if (!client) throw new NotFound()
+  const existing = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC LIMIT 1', [clientId, kind.key])).rows[0]
+  if (existing && kind.perClient === 'one') return { id: existing.id as string, kind: kind.key, created: false }
+  const version = await publishedVersionId(c, staff.officeId, kind.key)
+  const seq = Number((await c.query('SELECT coalesce(max(seq), 0) + 1 AS n FROM documents WHERE client_id = $1 AND kind = $2', [clientId, kind.key])).rows[0].n)
+  const doc = (await c.query(
+    'INSERT INTO documents (office_id, client_id, kind, seq, template_version_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+    [staff.officeId, clientId, kind.key, seq, version, staff.id],
+  )).rows[0]
+  const keys = new Set((await loadFormDef(c, version)).keys.filter((k) => !k.startsWith('local.')))
+  const values: Record<string, unknown> = {}
+  let from: string | null = null
+  if (kind.createFrom) {
+    const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom])).rows[0]
+    if (src) {
+      from = (await kindOf(c, kind.createFrom))?.name ?? kind.createFrom
+      for (const [key, f] of Object.entries(await readFields(c, src.id))) if (keys.has(key)) values[key] = f.value
+    }
+  }
+  const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
+  for (const [key, value] of Object.entries(settingsOf(office, staff))) if (keys.has(key)) values[key] = value
+  const changes = Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  if (changes.length) {
+    const batch = (await c.query(
+      "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
+      [staff.officeId, clientId, doc.id, from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
     )).rows[0]
-    const keys = new Set((await loadFormDef(c, version)).keys.filter((k) => !k.startsWith('local.')))
-    const values: Record<string, unknown> = {}
-    let from: string | null = null
-    if (kind.createFrom) {
-      const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom])).rows[0]
-      if (src) {
-        from = (await kindOf(c, kind.createFrom))?.name ?? kind.createFrom
-        for (const [key, f] of Object.entries(await readFields(c, src.id))) if (keys.has(key)) values[key] = f.value
-      }
-    }
-    const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
-    for (const [key, value] of Object.entries(settingsOf(office, staff))) if (keys.has(key)) values[key] = value
-    const changes = Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== '')
-    if (changes.length) {
-      const batch = (await c.query(
-        "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
-        [staff.officeId, clientId, doc.id, from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
-      )).rows[0]
-      for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
-    }
-    await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied: changes.length })
-    return { id: doc.id as string, kind: kind.key, created: true }
-  })
+    for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
+  }
+  await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied: changes.length })
+  return { id: doc.id as string, kind: kind.key, created: true }
 }
 
 // ---------- 録音とジョブ ----------

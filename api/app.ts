@@ -11,6 +11,7 @@ import * as importsDb from '../db/form-imports.ts'
 import * as inspections from '../db/inspections.ts'
 import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
+import * as carePlans from '../db/care-plans.ts'
 import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
@@ -36,6 +37,8 @@ export interface ApiDeps {
   queue: () => Queue
   /** 書き方の相談のエージェントが使う Gemini。なければ試しの答え（fake） */
   chat?: () => Promise<ChatModel>
+  /** ケアプランの AI 原案。なければ試しの原案（fake） */
+  carePlanAi?: () => Promise<carePlans.CarePlanDrafter>
   /** 責任者の言葉を欄に当てはめる（様式の下書きを直す）。なければ試しの当てはめ（fake） */
   fieldMatcher?: () => Promise<FieldMatcher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
@@ -61,6 +64,55 @@ const SaveInput = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('page'), page: z.number().int().min(1).max(20) }),
   z.object({ scope: z.literal('hunk'), key: z.string().min(1), hunkIndex: z.number().int().min(0) }),
 ])
+// ケアプラン（#90）。日付は YYYY-MM-DD、期間の前後はリポジトリで確かめる
+const CarePlanInput = z.object({
+  effectiveFrom: z.iso.date(),
+  effectiveTo: z.iso.date().nullish(),
+  copyFromPlanId: z.string().uuid().nullish(),
+})
+const PlanPeriod = {
+  periodText: z.string().trim().max(200).nullish(),
+  periodFrom: z.iso.date().nullish(),
+  periodTo: z.iso.date().nullish(),
+}
+const PlanServiceInput = z.object({
+  id: z.string().uuid().optional(),
+  content: z.string().trim().min(1).max(500),
+  insured: z.boolean().optional(),
+  kind: z.string().trim().max(100).nullish(),
+  provider: z.string().trim().max(200).nullish(),
+  frequency: z.string().trim().max(100).nullish(),
+  ...PlanPeriod,
+})
+const PlanShortGoalInput = z.object({
+  id: z.string().uuid().optional(),
+  goal: z.string().trim().min(1).max(500),
+  ...PlanPeriod,
+  services: z.array(PlanServiceInput).max(50).optional(),
+})
+const PlanNeedInput = z.object({
+  id: z.string().uuid().optional(),
+  need: z.string().trim().min(1).max(1000),
+  longGoal: z.object({
+    id: z.string().uuid().optional(),
+    goal: z.string().trim().min(1).max(1000),
+    ...PlanPeriod,
+  }),
+  shortGoals: z.array(PlanShortGoalInput).max(50).optional(),
+})
+const PlanNeedsInput = z.object({
+  baseVersion: z.number().int().positive(),
+  needs: z.array(PlanNeedInput).max(50),
+})
+const PlanSaveInput = z.object({ baseVersion: z.number().int().positive() })
+const PlanAiDraftInput = z.object({
+  sourceDocumentId: z.string().uuid(),
+  sourceRevisionId: z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)]),
+})
+const PlanAiApplyInput = z.object({
+  baseVersion: z.number().int().positive(),
+  acceptedProposalIds: z.array(z.string().max(200)).max(200).optional(),
+})
 const RecordingInput = z.object({
   mime: z.string().min(1).max(100),
   // 録音を始めた書類。省いたときは主な書類
@@ -207,6 +259,47 @@ export function createApp(deps: ApiDeps) {
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
 
+  // ---------- ケアプラン（#90）----------
+
+  app.get('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { plans: await carePlans.listClientCarePlans(db, staff.officeId, c.req.param('clientId')!) })))
+
+  app.post('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CarePlanInput)
+    const plan = await carePlans.createCarePlan(db, staff, c.req.param('clientId')!, {
+      effectiveFrom: input.effectiveFrom,
+      effectiveTo: input.effectiveTo ?? null,
+      copyFromPlanId: input.copyFromPlanId ?? null,
+    })
+    return json(c, { plan }, 201)
+  }))
+
+  app.get('/api/care-plans/:planId', staffRoute('care.work', async (c, staff, db) =>
+    json(c, { plan: await carePlans.getCarePlan(db, staff.officeId, c.req.param('planId')!) })))
+
+  app.put('/api/care-plans/:planId/needs', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, PlanNeedsInput)
+    const plan = await carePlans.saveCarePlanNeeds(db, staff, c.req.param('planId')!, input.baseVersion, input.needs)
+    return json(c, { plan })
+  }))
+
+  app.post('/api/care-plans/:planId/save', staffRoute('care.work', async (c, staff, db) => {
+    const { baseVersion } = await body(c, PlanSaveInput)
+    return json(c, await carePlans.saveCarePlan(db, staff, c.req.param('planId')!, baseVersion))
+  }))
+
+  app.post('/api/care-plans/:planId/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const { sourceDocumentId, sourceRevisionId } = await body(c, PlanAiDraftInput)
+    const drafter = deps.carePlanAi ? await deps.carePlanAi() : (await import('./care-plan-ai.ts')).fakeCarePlanDrafter
+    const draft = await carePlans.createCarePlanAiDraft(db, staff, c.req.param('planId')!, sourceDocumentId, sourceRevisionId, drafter)
+    return json(c, { draft }, 201)
+  }))
+
+  app.post('/api/care-plans/:planId/ai-drafts/:draftId/apply', staffRoute('care.work', async (c, staff, db) => {
+    const { baseVersion } = await body(c, PlanAiApplyInput)
+    return json(c, await carePlans.applyCarePlanAiDraft(db, staff, c.req.param('planId')!, c.req.param('draftId')!, baseVersion))
+  }))
+
   // 書類を作る（どの種類も同じ流れ。db/repo.ts の createDocument）。1 人 1 通の種類で、もうあれば今の書類を返す（200）
   app.post('/api/clients/:id/documents', staffRoute('care.work', async (c, staff, db) => {
     const { kind } = await body(c, z.object({ kind: z.string().trim().min(1).max(100) }))
@@ -243,6 +336,7 @@ export function createApp(deps: ApiDeps) {
   app.patch('/api/documents/:id/fields', staffRoute('care.work', async (c, staff, db) => {
     const { changes } = await body(c, PatchInput)
     // 欄と値の型は、書類の様式の版の欄の辞書で確かめる（repo.patchFields）
+    await carePlans.assertGenericDocumentEdits(db, staff.officeId, c.req.param('id')!, changes.map((ch) => ch.key))
     const r = await repo.patchFields(db, staff, c.req.param('id')!, changes.map((ch) => ({ key: ch.key, value: ch.value ?? null, base: ch.base ?? null, mode: ch.mode })))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
@@ -292,12 +386,14 @@ export function createApp(deps: ApiDeps) {
 
   // 用紙の印字欄の直し。サーバーがその時点の値に当てる（当てられない直しは理由を返す）
   app.post('/api/documents/:id/edits', staffRoute('care.work', async (c, staff, db) => {
+    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const { formVersionId, edits } = await body(c, EditsInput)
     const r = await repo.applySlotEdits(db, staff, c.req.param('id')!, formVersionId, edits)
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
 
   app.post('/api/documents/:id/save', staffRoute('care.work', async (c, staff, db) => {
+    await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const r = await repo.saveDocument(db, staff, c.req.param('id')!, await body(c, SaveInput))
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
@@ -527,6 +623,10 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
     if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
+    if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
+    if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)
+    if (err instanceof carePlans.UsePlanApi) return json(c, { error: 'use_plan_api', message: '第2表・第3表は計画版の API で直してください' }, 409)
     if (err instanceof repo.BadRequest) return json(c, { error: 'bad_request', message: err.message }, 400)
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)
     // ログには中身を出さない（種類と道だけ）
