@@ -53,6 +53,7 @@ export function previewPdf(storage: Storage, v: FormVersion): Promise<Uint8Array
 export async function publishProblems(storage: Storage, v: FormVersion): Promise<string[]> {
   const problems = checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] })
   if (!v.pages.length) problems.push('ページがない')
+  if (!v.schemas.flat().length) problems.push('印字欄がない')
   for (const p of v.pages) if (!v.schemas[p.pdfIndex]) problems.push(`${p.no} ページ: PDF の ${p.pdfIndex + 1} ページ目に印字欄の並びがない`)
   if (problems.length) return problems
   try {

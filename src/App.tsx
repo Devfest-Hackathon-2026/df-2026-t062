@@ -7,6 +7,8 @@ import { PcList } from './pages/PcList.tsx'
 import { PcWork } from './pages/PcWork.tsx'
 import { PadList } from './pages/PadList.tsx'
 import { PadWork } from './pages/PadWork.tsx'
+import { OfficeForms, OfficeKind, OfficeShell, OfficeUpload } from './office/OfficePages.tsx'
+import { OfficeReview } from './office/OfficeReview.tsx'
 
 function Shell() {
   const auth = useAuth()
@@ -59,6 +61,15 @@ function Shell() {
     )
   }
   if (!staff) return null
+  // 責任者の書類の設定（PC だけ。#111 で PC だけと決めた）
+  const admin = staff.role === 'admin'
+  if (admin && device === 'pc') {
+    if (route.name === 'office') return <OfficeForms staffName={staff.name} />
+    if (route.name === 'officeKind') return <OfficeKind key={route.kind} staffName={staff.name} kind={route.kind} />
+    if (route.name === 'officeUpload') return <OfficeUpload staffName={staff.name} kind={route.kind} />
+    if (route.name === 'officeReview') return <OfficeReview key={route.versionId} staffName={staff.name} kind={route.kind} versionId={route.versionId} fix={new URLSearchParams(location.search).get('fix') === '1'} />
+    if (route.name === 'list') return <OfficeShell staffName={staff.name} active="clients"><PcList staffName={staff.name} embedded /></OfficeShell>
+  }
   if (route.name === 'client') return device === 'pad' ? <PadWork clientId={route.id} /> : <PcWork key={route.id} clientId={route.id} staffName={staff.name} />
   return device === 'pad' ? <PadList staffName={staff.name} /> : <PcList staffName={staff.name} />
 }

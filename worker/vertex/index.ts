@@ -6,7 +6,8 @@ import type { Providers } from '../types.ts'
 import { geminiFactory } from './gemini.ts'
 import { speakerAssigner } from './speakers.ts'
 import { vertexStt } from './stt.ts'
-import { sheetWriter } from './writer.ts'
+import { summarizer } from './summarizer.ts'
+import { topicWriter } from './topic-writer.ts'
 
 export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
   if (!env.GOOGLE_CLOUD_PROJECT) throw new Error('GOOGLE_CLOUD_PROJECT が未設定です')
@@ -14,7 +15,8 @@ export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
   return {
     stt: vertexStt(env),
     speakers: speakerAssigner(newLlm),
-    writer: sheetWriter(newLlm, { concurrency: Number(env.GEMINI_CONCURRENCY) || 4 }),
+    recording: { summarizer: summarizer(newLlm), writer: topicWriter(newLlm, { concurrency: Number(env.GEMINI_CONCURRENCY) || 4 }) },
     formImport: newLlm,
+    inspect: newLlm,
   }
 }

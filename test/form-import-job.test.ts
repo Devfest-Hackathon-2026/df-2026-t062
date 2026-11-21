@@ -83,7 +83,7 @@ before(async () => {
   const { LocalStorage } = await import('../api/storage.ts')
   storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-fimport-')))
   const f = await import('../worker/fake.ts')
-  workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter(), formImport: fakeLlm }) }
+  workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: fakeLlm, recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } }) }
   const { LocalQueue } = await import('../api/queue.ts')
   const { runFormImport } = await import('../worker/form-import/job.ts')
   const queue = new LocalQueue(async () => {}, (id) => runFormImport(workerDeps, id))
