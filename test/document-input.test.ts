@@ -343,7 +343,12 @@ test('別の原本と記載が食い違うと、読取時の値と元の出典�
   const client = await repo.createClient(db, staff, { name: '架空 出典' })
   const first = await uploaded(client.documentId)
   await call(`/api/document-inputs/${first}/complete`, 'POST', {})
-  await runDocumentInput(deps, first)
+  const previous: Providers = { ...providers, documentWrite: { ...providers.documentWrite!, writer: { async write(input) {
+    const written = await providers.documentWrite!.writer.write(input)
+    written.values['survey.2_2'].value = '見守り等'
+    return written
+  } } } }
+  await runDocumentInput({ ...deps, providers: async () => previous }, first)
   assert.equal((await call(`/api/document-inputs/${first}/adopt`, 'POST', {
     targetConfirmed: true, changes: [{ key: 'survey.2_2', base: null }],
   })).status, 200)
@@ -354,13 +359,51 @@ test('別の原本と記載が食い違うと、読取時の値と元の出典�
   await runDocumentInput(deps, id)
   const result = (await call(`/api/document-inputs/${id}`)).body.input.result
   const candidate = result.candidates.find((candidate: { key: string }) => candidate.key === 'survey.2_2')
-  assert.equal(candidate.base, '一部介助')
+  assert.equal(candidate.base, '見守り等')
   assert.equal(candidate.value, '一部介助')
   assert.equal(candidate.baseSource.fileName, '架空の記入済み書類.png')
   assert.deepEqual(candidate.baseSource.recordedOn, ['2026-11-01'])
   assert.equal(candidate.baseSource.inputId, first)
   const original = await call(`/api/document-inputs/${candidate.baseSource.inputId}/original`)
   assert.equal(original.status, 200)
+})
+
+test('期限切れURLの同時更新と遅着した旧送信が、新しい送信・原本を壊さない', { skip }, async () => {
+  const client = await repo.createClient(db, staff, { name: '架空 遅着送信' })
+  const first = await start(client.documentId)
+  const body = { fileName: '架空.png', mime: 'image/png', bytes: data.length, sha256: sha(data), expiredUploadUrl: first.uploadUrl }
+  const renew = () => call(`/api/documents/${client.documentId}/inputs`, 'POST', body)
+  const [a, b] = await Promise.all([renew(), renew()])
+  assert.deepEqual([a.status, b.status], [201, 201])
+  assert.equal(a.body.uploadUrl, b.body.uploadUrl)
+  assert.notEqual(a.body.uploadUrl, first.uploadUrl)
+  const corrupted = Buffer.from(data)
+  corrupted[corrupted.length - 1] ^= 1
+  assert.equal((await storage.receive(first.uploadUrl!.split('/').at(-1)!, undefined, corrupted)).status, 200)
+  assert.equal((await storage.receive(a.body.uploadUrl.split('/').at(-1)!, undefined, data)).status, 200)
+  const complete = () => call(`/api/document-inputs/${first.input.id}/complete`, 'POST', {})
+  assert.deepEqual((await Promise.all([complete(), complete()])).map((r) => r.status), [202, 202])
+  assert.deepEqual(Buffer.from(await storage.read('source', await pathOf(first.input.id))), data)
+  assert.equal((await start(client.documentId)).uploadUrl, null)
+})
+
+test('保存候補でも型不正・根拠IDの欠落・不確実な根拠は採用しない', { skip }, async () => {
+  const client = await repo.createClient(db, staff, { name: '架空 候補検証' })
+  const id = await uploaded(client.documentId)
+  await call(`/api/document-inputs/${id}/complete`, 'POST', {})
+  await runDocumentInput(deps, id)
+  const original = (await call(`/api/document-inputs/${id}`)).body.input.result
+  for (const mode of ['invalid_type', 'unknown_cite', 'uncertain'] as const) {
+    const result = structuredClone(original)
+    if (mode === 'invalid_type') result.candidates[0].value = 123
+    if (mode === 'unknown_cite') result.candidates[0].cite.push('unknown-id')
+    if (mode === 'uncertain') result.evidence[0].uncertain = true
+    await db.query('UPDATE document_inputs SET result=$2 WHERE id=$1', [id, JSON.stringify(result)])
+    const response = await call(`/api/document-inputs/${id}/adopt`, 'POST', { targetConfirmed: true, changes: [{ key: 'survey.2_2', base: null }] })
+    assert.equal(response.status, 400, mode)
+    assert.equal((await repo.getDocument(db, staff.officeId, client.documentId)).fields['survey.2_2'], undefined)
+    assert.deepEqual((await call(`/api/document-inputs/${id}`)).body.input.adopted, [])
+  }
 })
 
 test('読取後に様式の版が変わった候補は採用せず、同じ原本を今の版で読み取り直せる', { skip }, async () => {
