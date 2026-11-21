@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type DocumentInputView } from '../../core/document-input.ts'
 import type { FieldDict } from '../../core/dictionary.ts'
-import { CandidateEditor } from './CandidateEditor.tsx'
+import { subFieldsOf, type FieldSpec } from '../../core/fields.ts'
 import { attachDocumentInput } from './attachDocumentInput.ts'
 import { api, ApiError } from '../lib/api.ts'
 import { fieldLabel } from '../components/petAssessment.ts'
@@ -15,7 +15,19 @@ interface Props {
   beforeAdopt: () => Promise<boolean>
   onApplied: () => void
 }
-const show = (value: unknown) => value == null ? '空欄' : typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+function show(value: unknown, field?: FieldSpec): string {
+  if (value == null || value === '') return '空欄'
+  if (typeof value === 'boolean') return value ? 'はい' : 'いいえ'
+  if (field?.type === 'object' || field?.type === 'list') {
+    const rows = field.type === 'list' && Array.isArray(value) ? value : [value]
+    return rows.map((row, index) => {
+      const text = subFieldsOf(field).map((sub) => `${sub.label}：${show((row as Record<string, unknown>)?.[sub.key], sub)}`).join('\n')
+      return field.type === 'list' ? `${index + 1}行目\n${text}` : text
+    }).join('\n\n') || '空欄'
+  }
+  if (Array.isArray(value)) return value.map((item) => show(item)).join('、') || '空欄'
+  return typeof value === 'object' ? Object.values(value).map((item) => show(item)).join('、') : String(value)
+}
 const stateLabel = { uploading: '送信待ち', queued: '読み取り待ち', processing: '読み取り中', review: '確認できます', failed: '読み取れませんでした' }
 const errors: Record<string, string> = {
   location_not_approved: '書類を処理する地域の確認が必要です。管理者にお問い合わせください。',
@@ -78,7 +90,6 @@ export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApp
 
 function InputReview({ input, dict, clientName, retry, beforeAdopt, onApplied }: { input: DocumentInputView, dict: FieldDict, clientName: string,
   retry: () => Promise<void>, beforeAdopt: Props['beforeAdopt'], onApplied: () => Promise<void> }) {
-  const [edits, setEdits] = useState<Record<string, unknown>>({})
   const [excluded, setExcluded] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -90,7 +101,7 @@ function InputReview({ input, dict, clientName, retry, beforeAdopt, onApplied }:
     setBusy(true); setError('')
     try {
       if (!await beforeAdopt()) throw new Error('用紙の編集内容を保存してからお試しください。')
-      await api.adoptDocumentInput(input.id, selected.map((c) => ({ key: c.key, value: Object.hasOwn(edits, c.key) ? edits[c.key] : c.value, base: c.base })))
+      await api.adoptDocumentInput(input.id, selected.map((c) => ({ key: c.key, value: c.value, base: c.base })))
       await onApplied()
     } catch (e) {
       setError(e instanceof ApiError && e.status === 409
@@ -101,18 +112,17 @@ function InputReview({ input, dict, clientName, retry, beforeAdopt, onApplied }:
   return <section className="document-input-source" aria-label={input.fileName}>
     <header><PetIcon name="file-earmark-arrow-down" /><div><strong>{input.fileName}</strong><small>{stateLabel[input.status]}</small></div></header>
     {input.status === 'review' && <>
-      {pending.length > 0 && <p className="document-input-guidance">内容を確認し、反映する項目を選んでください。</p>}
+      {pending.length > 0 && <p className="document-input-guidance">AIの判定を確認し、反映する項目だけにチェックを付けてください。</p>}
       {candidates.map((candidate) => {
         const field = dict.get(candidate.key)
         const adopted = input.adopted.includes(candidate.key)
         const label = field?.label ?? fieldLabel(candidate.key)
         return <div key={candidate.key} className="document-input-candidate">
           {adopted ? <strong className="document-input-done"><PetIcon name="check2" />{label} · 反映済み</strong> :
-            <label className="document-input-choice"><input type="checkbox" checked={!excluded.includes(candidate.key) && !!field} disabled={busy || !field}
+            <label className="document-input-choice"><input type="checkbox" aria-label={`${label}を反映`} checked={!excluded.includes(candidate.key) && !!field} disabled={busy || !field}
               onChange={(e) => setExcluded((keys) => e.target.checked ? keys.filter((key) => key !== candidate.key) : [...keys, candidate.key])} />{label}</label>}
-          {candidate.base != null && !adopted && <p className="document-input-current">現在の記載：{show(candidate.base)}</p>}
-          {field && <CandidateEditor hideLabel field={field} value={adopted ? input.adoptedValues[candidate.key] : Object.hasOwn(edits, candidate.key) ? edits[candidate.key] : candidate.value}
-            disabled={busy || adopted || excluded.includes(candidate.key)} onChange={(value) => setEdits((values) => ({ ...values, [candidate.key]: value }))} />}
+          {candidate.base != null && !adopted && <p className="document-input-current">現在の記載：{show(candidate.base, field)}</p>}
+          <p className="document-input-value"><small>{adopted ? '反映した内容' : 'AIの判定'}</small>{show(adopted ? input.adoptedValues[candidate.key] : candidate.value, field)}</p>
         </div>
       })}
       {!!input.result?.issues.length && <details className="document-input-warnings"><summary>読み取りにくかった箇所（{input.result.issues.length}件）</summary>
