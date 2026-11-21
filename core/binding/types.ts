@@ -24,6 +24,7 @@ export type Action = { set: { ref?: Ref, value: unknown }[] } | { refuse: string
 export type EraShort = 'M' | 'T' | 'S' | 'H' | 'R'
 
 export type Binding =
+  | { op: 'diagram@1', ui: 'diagram', ref: Ref }
   | { op: 'text@1', ui: 'text' | 'area', ref: Ref, or?: (Ref | { concat: Ref[] })[], prefix?: { text: string, flag: string }, when?: Cond }
   | { op: 'option@1', ui: 'circle' | 'check', ref: Ref, is?: Test, if?: Cond, when?: Cond, edit?: { on: Action, off: Action } }
   | { op: 'symbol@1', ui: 'cell' | 'text', ref: Ref, options: { text: string, value: Scalar }[], when?: Cond }

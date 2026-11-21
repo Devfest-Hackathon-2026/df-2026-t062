@@ -131,8 +131,8 @@ test('点検: 32 項目すべての段階。段階 1 には足りない情報、
   assert.equal(item('2').fieldKey, 'health.visits')
   assert.equal(item('2').documentId, ids.kaiDoc)
 
-  // 31 家族構成図もプログラムで判定（演習シナリオの 1 回目に図はない）。今の版は図を印字欄に結んでいないので、用紙に欄なし
-  assert.deepEqual(item('31'), { id: '31', name: '家族関係や周辺の社会資源との状況', category: '生活の全体像の把握', level: '1', missing: '家族構成図がない', fieldKey: null, documentId: null })
+  // 31 家族構成図もプログラムで判定（演習シナリオの 1 回目に図はない）。図欄を結んだ版では点検結果から家族図へ移動できる
+  assert.deepEqual(item('31'), { id: '31', name: '家族関係や周辺の社会資源との状況', category: '生活の全体像の把握', level: '1', missing: '家族構成図がない', fieldKey: 'family.genogram', documentId: ids.kaiDoc })
 
   assert.equal(r.verdict, '要確認')
   assert.equal(r.missingCount, 3)

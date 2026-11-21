@@ -34,4 +34,3 @@ export type { Values, Change, Scalar, Step, Ref, Test, Cond, Action, EraShort, B
 
 import { isEmpty, str, toHalf, same, getRef, Misplaced, Draft } from './binding/values.ts'
 export { isEmpty, getRef } from './binding/values.ts'
-

@@ -11,7 +11,7 @@ export const pos = (x: number, y: number, w: number, h: number): React.CSSProper
 /** pt の文字の大きさを、用紙の幅に対する cqw にする（キャンバスの fsz と同じ） */
 export const fsz = (pt: number) => `${(pt * PT / W * 100).toFixed(3)}cqw`
 
-export type SlotKind = 'text' | 'area' | 'circle' | 'check' | 'cell'
+export type SlotKind = 'text' | 'area' | 'circle' | 'check' | 'cell' | 'diagram'
 
 export interface SlotView {
   name: string
@@ -40,6 +40,7 @@ const LABELS: Record<string, string> = {
 /** 印字欄の見せ方は、対応の ui で決める（丸・✓・表のマス・1 行の文字・文章） */
 function classify(binding: Binding | undefined): Omit<SlotView, 'name' | 'x' | 'y' | 'w' | 'h' | 'pt' | 'lh' | 'align' | 'label'> {
   if (!binding) return { kind: 'text' }
+  if (binding.op === 'diagram@1') return { kind: 'diagram', binding }
   if (binding.ui === 'circle' || binding.ui === 'check') return { kind: binding.ui, binding }
   if (binding.op === 'symbol@1' && binding.ui === 'cell') {
     const opts = binding.options.map((o) => ({

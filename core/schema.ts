@@ -1,4 +1,6 @@
 // 版の欄の辞書（fields.json と、その版の local_fields）から作る値の型の確かめ（zod）。AI が書いた値と、画面からの直しの両方に使う。
+import { diagramSchema, diagramKinds } from './diagram/fields.ts'
+
 import { z } from 'zod'
 import { GLOBAL_DICT, type FieldDict } from './dictionary.ts'
 import { choicesOf, subFieldsOf, type FieldSpec } from './fields.ts'
@@ -33,6 +35,7 @@ function scalar(f: FieldSpec, o: SchemaOptions = {}): z.ZodType {
       const c = choicesOf(f)
       return z.array(c.length ? z.enum(c as [string, ...string[]]) : z.string())
     }
+    case 'image': return diagramKinds[f.key] ? diagramSchema.refine((v) => v.kind === diagramKinds[f.key]) : z.never()
     case 'bool': return z.boolean()
     case 'number': return z.number()
     case 'date': return z.string().regex(o.strictDates ? DATE : PARTIAL_DATE).refine(onCalendar, '暦にない日付です')
