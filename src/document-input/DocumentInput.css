@@ -9,10 +9,9 @@
 .document-input-source > header small { display: block; margin-top: 4px; color: #656174; font-size: 12px; }
 .document-input-guidance, .document-input-source footer p { font-size: 12px; line-height: 1.7; color: #656174; }
 .document-input-source label { display: block; font-size: 13px; line-height: 1.7; }
-.document-input-candidate { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e7e4ee; }
+.document-input-candidate { margin-top: 12px; }
 .document-input-candidate .document-input-choice { display: flex; gap: 8px; align-items: baseline; font-weight: 700; margin-bottom: 8px; }
 .document-input input[type=checkbox] { accent-color: #6024df; }
-.document-input-current { font-size: 12px; color: #656174; white-space: pre-wrap; }
 .document-input-source button:not(.assistant-primary) { border: 1px solid #cac2e5; border-radius: 7px; background: #fff; color: #34215d; padding: 7px 10px; cursor: pointer; }
 .document-input-source button:disabled { opacity: .5; cursor: default; }
 .document-input-source footer { margin-top: 16px; }
@@ -24,6 +23,3 @@
 
 .document-input-source + .document-input-source { margin-top: 16px; }
 .document-input-attach > span:not(.assistant-icon) { border: 0; background: transparent; font-size: 15px; }
-
-.document-input-value { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: #f7f4fc; color: #251a3c; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
-.document-input-value small { display: block; margin-bottom: 3px; font-size: 11px; color: #656174; }
