@@ -639,6 +639,11 @@
     {"key": "conference.inHospital", "label": "「院内の多職種カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 院内の多職種カンファレンスへの参加"}},
     {"key": "conference.preDischarge", "label": "「退院前カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前カンファレンスへの参加"}},
     {"key": "conference.preDischargeRequest", "label": "退院前カンファレンスへの具体的な要望", "type": "text", "source": ["judge"], "forms": {"adm": "6. ・具体的な要望（　）"}},
-    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}}
+    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}},
+    {"group": "居宅介護支援経過 第5表"},
+    {"key": "progress.date", "label": "記録年月日", "type": "date", "source": ["talk"], "note": "実際の対応日。不明な日を推測しない"},
+    {"key": "progress.time", "label": "記録時刻", "type": "text", "source": ["talk"], "note": "24時間のHH:mm。実際の対応時刻。不明は空欄"},
+    {"key": "progress.category", "label": "項目・連絡方法", "type": "text", "source": ["talk"], "note": "訪問先、電話の発着信など、確認できた方法と項目"},
+    {"key": "progress.content", "label": "支援経過の内容", "type": "longtext", "source": ["talk"], "note": "発言、支援内容、判断の根拠、持ち越し課題。未実施の行為や未確認の発言者を創作しない"}
   ]
 }

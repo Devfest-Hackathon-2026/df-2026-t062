@@ -16,7 +16,7 @@ export function OfficialPlanSheet({ state, needs, slots, touch, busy, readOnly, 
   return <div className="cp-first-scroll">{pages.map((printed, index) => {
     const page = state.pages.find((p) => p.pdfIndex === printed.sourceIndex)!
     const layout = page.print
-    if (!layout || layout.type === 'text') return null
+    if (!layout || layout.type === 'text' || layout.type === 'flow') return null
     const structural = new Set(layout.type === 'table' ? layout.slots : [layout.slot, layout.activity?.slot, '週単位以外'])
     const rowsPerPage = layout.type === 'table' ? layout.rowsPerPage : 0
     const fields = printed.schemas.filter((s) =>

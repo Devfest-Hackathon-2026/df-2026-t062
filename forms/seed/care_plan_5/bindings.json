@@ -1,0 +1,99 @@
+{
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "作成者氏名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.careManagerName"
+    }
+  },
+  "作成日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "y",
+    "year": "number"
+  },
+  "作成日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "m",
+    "year": "number"
+  },
+  "作成日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "d",
+    "year": "number"
+  },
+  "年月日_左": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.date"
+    }
+  },
+  "時刻_左": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "progress.time"
+    }
+  },
+  "項目_左": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.category"
+    }
+  },
+  "内容_左": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.content"
+    }
+  },
+  "年月日_右": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.date"
+    }
+  },
+  "時刻_右": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "progress.time"
+    }
+  },
+  "項目_右": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.category"
+    }
+  },
+  "内容_右": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "progress.content"
+    }
+  }
+}

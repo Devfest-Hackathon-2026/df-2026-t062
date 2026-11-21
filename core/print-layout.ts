@@ -36,6 +36,16 @@ export function expandPrintLayout(
   const expanded = form.schemas.flatMap((schemas, sourceIndex): PrintPage[] => {
     const layout = form.pages.find((p) => p.pdfIndex === sourceIndex)?.print
     if (!layout || layout.type === 'text') return [{ sourceIndex, schemas, input: rendered }]
+    if (layout.type === 'flow') {
+      const regions = layout.slots.map(name => schemas.find(s => s.name === name))
+      if (!regions.length || regions.some(s => !s || s.type !== 'text')) throw new Error('文章の継続領域が不正です')
+      const first = regions[0]!
+      if (regions.some(s => s!.width !== first.width || s!.height !== first.height || s!.fontSize !== first.fontSize || s!.lineHeight !== first.lineHeight || s!.dynamicFontSize?.min !== first.dynamicFontSize?.min)) throw new Error('文章の継続領域の寸法が一致しません')
+      const parts = textChunks(rendered[first.name] ?? '', first)
+      return Array.from({ length: Math.ceil(parts.length / regions.length) }, (_, n) => ({
+        sourceIndex, schemas, input: { ...rendered, ...Object.fromEntries(regions.map((s, i) => [s!.name, parts[n * regions.length + i] ?? ''])) },
+      }))
+    }
     if (layout.type === 'table') {
       const rows = leaves(values[layout.key], layout.nested)
       const names = new Set(layout.slots)
