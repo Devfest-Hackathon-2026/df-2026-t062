@@ -222,7 +222,6 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </a>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{client ? `${client.name} さん` : ' '}</h1>
-          <span style={{ fontSize: 13, color: '#5A6270' }}>{carePlanOpen ? 'ケアプラン' : kindName}</span>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
           {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
