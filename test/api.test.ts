@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { AddressInfo } from 'node:net'
+import type { Db } from '../db/pool.ts'
 
 const url = process.env.DATABASE_URL
 const skip = url ? false : 'DATABASE_URL がないので飛ばします'
@@ -14,6 +15,7 @@ const schema = `t_api_${process.pid}`
 
 let origin = ''
 let close = async () => {}
+let dbForTests: Db | null = null
 let ids: { kai: string, sato: string } = { kai: '', sato: '' }
 /** ほかの事業所だけの様式の版（加藤さんの事業所からは見えない） */
 let otherVersion = ''
@@ -34,7 +36,7 @@ const call = async (path: string, init: RequestInit & { token?: string } = {}) =
     headers: { Authorization: init.token ?? TOKEN, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
   })
   const type = res.headers.get('content-type') ?? ''
-  return { status: res.status, body: type.includes('json') ? await res.json() : await res.arrayBuffer() }
+  return { status: res.status, headers: res.headers, body: type.includes('json') ? await res.json() : await res.arrayBuffer() }
 }
 
 before(async () => {
@@ -44,6 +46,7 @@ before(async () => {
   await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE; CREATE SCHEMA ${schema}`)
   await admin.end()
   const db = await createPool({ DATABASE_URL: url, DB_SCHEMA: schema })
+  dbForTests = db
   const { migrate } = await import('../db/migrate.ts')
   await migrate(db)
   const { seed } = await import('../db/seed.ts')
@@ -143,6 +146,41 @@ test('ログインしていないと 401、ほかの事業所の利用者は見�
   const list = (await call('/api/clients', { token: OTHER })).body as { clients: { name: string }[] }
   assert.ok(!list.clients.some((c) => c.name === '甲斐' && false))
   assert.equal(list.clients.length, 4)
+})
+
+test('更新監査のrequest_idが応答のX-Request-Idと一致する', { skip }, async () => {
+  const created = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '監査相関の見本' }) })
+  assert.equal(created.status, 201)
+  const requestId = created.headers.get('x-request-id')
+  assert.match(requestId ?? '', /^[0-9a-f-]{36}$/)
+  const clientId = (created.body as { id: string }).id
+  const audit = await dbForTests!.query<{ request_id: string, correlation_id: string, source: string, route: string }>(
+    `SELECT request_id, correlation_id, source, route
+       FROM audit_events
+      WHERE action = 'client.create' AND client_id = $1
+      ORDER BY id DESC LIMIT 1`,
+    [clientId],
+  )
+  assert.equal(audit.rows[0].request_id, requestId)
+  assert.notEqual(audit.rows[0].correlation_id, requestId)
+  assert.equal(audit.rows[0].source, 'api')
+  assert.equal(audit.rows[0].route, '/api/clients')
+})
+
+test('監査OutcomeのDB制約はnot_foundを許可し、不正値を拒否する', { skip }, async () => {
+  const office = (await dbForTests!.query<{ office_id: string }>('SELECT office_id FROM clients WHERE id = $1', [ids.kai])).rows[0].office_id
+  const security = await dbForTests!.query<{ outcome: string }>(
+    `INSERT INTO security_audit_events (action, outcome, source) VALUES ('staff.lookup', 'not_found', 'test') RETURNING outcome`,
+  )
+  assert.equal(security.rows[0].outcome, 'not_found')
+  await assert.rejects(dbForTests!.query(
+    `INSERT INTO access_audit_events (office_id, resource_type, access_mode, action, outcome, source, route)
+     VALUES ($1, 'client', 'view', 'client.view', 'invalid', 'test', '/test')`,
+    [office],
+  ))
+  await assert.rejects(dbForTests!.query(
+    `INSERT INTO security_audit_events (action, outcome, source) VALUES ('staff.lookup', 'invalid', 'test')`,
+  ))
 })
 
 type Doc = { document: { formVersionId: string, kind: string, fields: Record<string, { value: unknown, by: string }>, saved: Record<string, { value: unknown }> } }
