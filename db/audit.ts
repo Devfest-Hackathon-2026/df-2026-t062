@@ -25,10 +25,12 @@ export interface AuditIds {
 }
 
 const forbiddenKeys = /authorization|token|password|secret|prompt|response|transcript|utterance|audio|url|name|address|phone|birth/i
+const safeMetadataString = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$/
 const MAX_DETAIL_BYTES = 4096
 
 function validateDetail(value: unknown, depth = 0, active = new Set<object>()): void {
   if (depth > 8) throw new Error('監査detailのネストが深すぎます')
+  if (typeof value === 'string' && !safeMetadataString.test(value)) throw new Error('監査detailに自由文字列は保存できません')
   if (!value || typeof value !== 'object') return
   if (active.has(value)) throw new Error('監査detailに循環参照があります')
   active.add(value)

@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import type { Storage } from '../../api/storage.ts'
 import { basePdfAssetPath, importPdfPath, pageImageAssetPath, type FormPage } from '../../core/form.ts'
 import * as imports from '../../db/form-imports.ts'
-import type { WorkerDeps } from '../jobs.ts'
+import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
 import { importPdf, type ImportLimits } from './index.ts'
 import { openPdf } from './pdf.ts'
 
@@ -17,7 +17,7 @@ const PAGE_DPI = 180
 /** 画像は 1 日ブラウザが覚えてよい（期限つきの URL も 1 日の区切りで同じ） */
 const IMAGE_CACHE = 'private, max-age=86400'
 
-const log = (rec: Record<string, unknown>) => console.log(JSON.stringify({ severity: 'INFO', ...rec }))
+const log = (rec: Record<string, unknown>, context?: WorkerContext) => console.log(JSON.stringify({ severity: 'INFO', ...contextFields(context), ...rec }))
 
 class LeaseLost extends Error { constructor() { super('form import lease lost') } }
 
@@ -41,14 +41,14 @@ export async function removeUpload(deps: Pick<WorkerDeps, 'db' | 'storage'>, id:
   await imports.markUploadDeleted(await deps.db(), id)
 }
 
-export async function runFormImport(deps: WorkerDeps, importId: string, opts: { limits?: ImportLimits } = {}): Promise<void> {
+export async function runFormImport(deps: WorkerDeps, importId: string, opts: { limits?: ImportLimits } = {}, context?: WorkerContext): Promise<void> {
   const db = await deps.db()
   const token = randomUUID()
   const claimed = await imports.claimImport(db, importId, token)
-  if (!claimed) return log({ msg: 'form import already taken or done', importId })
+  if (!claimed) return log({ msg: 'form import already taken or done', importId }, context)
   // 長い変換（AI を何回も呼ぶ）の間も印の期限を延ばす。古い実行の書き込みは token で断る
   const heartbeat = setInterval(() => {
-    void imports.extendImportLease(db, importId, token).catch((e) => log({ msg: 'form import lease heartbeat failed', importId, error: (e as Error).name }))
+    void imports.extendImportLease(db, importId, token).catch((e) => log({ msg: 'form import lease heartbeat failed', importId, error: (e as Error).name }, context))
   }, 60_000)
   heartbeat.unref()
   const t0 = Date.now()
@@ -77,10 +77,10 @@ export async function runFormImport(deps: WorkerDeps, importId: string, opts: { 
       await removeUpload(deps, importId, claimed.officeId).catch((e) => log({ msg: 'form import upload not removed', importId, error: (e as Error).name }))
     }
   } catch (e) {
-    if (e instanceof LeaseLost) return log({ msg: 'form import lease lost', importId })
+    if (e instanceof LeaseLost) return log({ msg: 'form import lease lost', importId }, context)
     const kind = (e as Error)?.name ?? 'Error'
     await imports.releaseImport(db, importId, token, claimed.attempts >= imports.MAX_IMPORT_ATTEMPTS)
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'form import failed', importId, error: kind }))
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'form import failed', importId, error: kind }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e

@@ -18,7 +18,19 @@ export interface WorkerDeps {
   providers: () => Promise<Providers>
 }
 
-const log = (rec: Record<string, unknown>) => console.log(JSON.stringify({ severity: 'INFO', ...rec }))
+export interface WorkerContext {
+  requestId: string
+  correlationId: string
+  traceId?: string
+}
+
+export const contextFields = (context?: WorkerContext) => context ? {
+  request_id: context.requestId,
+  correlation_id: context.correlationId,
+  trace_id: context.traceId ?? null,
+} : {}
+
+const log = (rec: Record<string, unknown>, context?: WorkerContext) => console.log(JSON.stringify({ severity: 'INFO', ...contextFields(context), ...rec }))
 
 const MAX_ATTEMPTS = 3
 class LeaseLost extends Error { constructor() { super('job lease lost') } }
@@ -35,7 +47,7 @@ const md = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`
 /** 日本の日付（YYYY-MM-DD） */
 const ymd = (d: Date) => new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 
-export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
+export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerContext): Promise<void> {
   const db = await deps.db()
   const token = randomUUID()
   // 始める印を付ける（期限つき）。同じジョブが 2 回届いても、2 つ目は何もしない
@@ -50,7 +62,7 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
     )).rows[0]
   } catch (e) {
     // 同じ書類で別のジョブが処理中（一意の索引）。見回りがあとで積み直す
-    if ((e as { code?: string }).code === '23505') return log({ msg: 'job waits for another job', jobId })
+    if ((e as { code?: string }).code === '23505') return log({ msg: 'job waits for another job', jobId }, context)
     throw e
   }
   if (!job) return log({ msg: 'job already taken or done', jobId })
@@ -59,7 +71,7 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
   // 長い STT・Gemini 呼び出し中にも lease を延長する。古い実行の更新は token で拒否する。
   const heartbeat = setInterval(() => {
     void db.query("UPDATE jobs SET lease_until = now() + interval '30 minutes' WHERE id = $1 AND run_token = $2 AND status = 'processing' AND lease_until > now()", [jobId, token])
-      .catch((e) => log({ msg: 'lease heartbeat failed', jobId, error: (e as Error).name }))
+      .catch((e) => log({ msg: 'lease heartbeat failed', jobId, error: (e as Error).name }, context))
   }, 60_000)
   heartbeat.unref()
   try {
@@ -127,14 +139,14 @@ export async function runJob(deps: WorkerDeps, jobId: string): Promise<void> {
       label: `AI 書き込み ${n}・${md(new Date(rec.recorded_at))} の録音`, proposed: made.proposed, system: made.system,
       completion: { token, status, steps: { totalSeconds: (Date.now() - t0) / 1000 } },
     })
-    log({ msg: 'job done', jobId, status, seconds: (Date.now() - t0) / 1000, changes: plan.changes.length, kept: plan.kept.length })
+    log({ msg: 'job done', jobId, status, seconds: (Date.now() - t0) / 1000, changes: plan.changes.length, kept: plan.kept.length }, context)
   } catch (e) {
     const kind = (e as Error)?.name ?? 'Error'
     // 誤りの番号（gRPC・HTTP の状態の番号）だけを足す。文面は中身が入りうるので出さない
     const code = typeof (e as { code?: unknown })?.code === 'number' ? (e as { code: number }).code : null
     const terminal = job.attempts >= MAX_ATTEMPTS
     await db.query("UPDATE jobs SET status = $3, error_kind = $4, lease_until = NULL, run_token = NULL, updated_at = now() WHERE id = $1 AND run_token = $2", [jobId, token, terminal ? 'failed' : 'queued', code === null ? kind : `${kind}:${code}`])
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'job failed', jobId, error: kind, code }))
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'job failed', jobId, error: kind, code }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e

@@ -86,6 +86,15 @@ test('audit detail rejects sensitive keys at any nesting level', async () => {
   assert.equal(db.calls.length, 0)
 })
 
+test('audit detail rejects free-form sensitive values', async () => {
+  const db = fakeDb()
+  await assert.rejects(
+    writeBusinessAudit(db, { officeId: 'office-1', action: 'document.save', detail: { memo: '利用者の病状' } }),
+    /自由文字列/,
+  )
+  assert.equal(db.calls.length, 0)
+})
+
 test('security audit accepts not_found as an internal audit outcome', async () => {
   const db = fakeDb()
   await writeSecurityAudit(db, { officeId: 'office-1', action: 'staff.lookup', outcome: 'not_found' })

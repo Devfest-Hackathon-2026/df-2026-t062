@@ -270,7 +270,7 @@ test('最初の書式に戻す・前の事業所の書式に戻す: 新しい書
   assert.equal((await post(`/api/office/form-versions/${back.body.formVersion.id}/reuse`, ADMIN_A)).status, 409, '使っている版は戻せない')
   assert.equal((await post(`/api/office/form-versions/${ids.globalAssessment}/reuse`, ADMIN_A)).status, 403)
 
-  const actions = (await db.query("SELECT action FROM audit_events WHERE office_id = $1 AND action LIKE 'form.%' ORDER BY at", [ids.officeA])).rows.map((x) => x.action)
+  const actions = (await db.query("SELECT action FROM audit_events WHERE office_id = $1 AND action LIKE 'form.%' ORDER BY occurred_at", [ids.officeA])).rows.map((x) => x.action)
   assert.deepEqual(actions.filter((x) => x === 'form.revert' || x === 'form.reuse'), ['form.revert', 'form.reuse'])
   // あと片づけ: 最初の書式に戻す（ほかのテストのため）
   await post('/api/office/forms/assessment/revert', ADMIN_A)
