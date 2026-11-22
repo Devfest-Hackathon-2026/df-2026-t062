@@ -40,6 +40,7 @@ test('第7表: 特定の第6表保存版・マスター・条件を固定し、�
  const input={masterId:FEE_MASTER.id,basis:'planned',region:'other',careLevel:'要介護1',copay:1,scopeConfirmed:true,codes:{[service]:'111111'},standardMinutes:{[service]:25},requestId:randomUUID(),sourceRevision:1,baseRevision:0}
  const first=await call(path,'POST',input);assert.equal(first.status,200,JSON.stringify(first.body));let calc=first.body.calculation
  assert.equal(calc.result.status,'calculated');assert.equal(calc.result.units,1220);assert.equal(calc.result.patient,1220);assert.equal(calc.sourceRevision,1);assert.equal(calc.revision,1)
+ assert.equal(calc.result.workbookCheck.status,'matched');assert.equal(calc.result.workbookCheck.outputs.patient,1220)
  assert.equal((await call(path,'POST',input)).body.calculation.id,calc.id)
  assert.equal((await call(path,'POST',{...input,copay:2})).status,409)
  assert.equal((await call(path,'POST',{...input,requestId:randomUUID()})).status,409)
@@ -51,6 +52,10 @@ test('第7表: 特定の第6表保存版・マスター・条件を固定し、�
  const changed=await call('/api/care-plan-months/'+month.id,'PUT',{requestId:randomUUID(),baseVersion:month.lockVersion,entries});assert.equal(changed.status,200)
  const unchanged=await call('/api/care-plan-fees/'+calc.groupId);assert.equal(unchanged.body.calculation.result.units,1220);assert.equal(unchanged.body.calculation.sourceHash,calc.sourceHash)
  const second=await call(path,'POST',{...input,requestId:randomUUID(),sourceRevision:2,baseRevision:1});assert.equal(second.status,200);assert.equal(second.body.calculation.revision,2);assert.equal(second.body.calculation.result.units,976);assert.equal(second.body.calculation.confirmedAt,null);assert.notEqual(second.body.calculation.sourceHash,calc.sourceHash)
+ // An unconfirmed calculation cannot be confirmed after its source acquires a newer saved revision.
+ const secondMonth=changed.body.month
+ assert.equal((await call('/api/care-plan-months/'+month.id,'PUT',{requestId:randomUUID(),baseVersion:secondMonth.lockVersion,entries:secondMonth.entries})).status,200)
+ assert.equal((await call('/api/care-plan-fees/'+calc.groupId+'/confirm','POST',{calculationId:second.body.calculation.id,baseRevision:2})).status,409)
  const old=await call(`/api/care-plan-fees/${calc.groupId}/calculations/${calc.id}`);assert.deepEqual(old.body.calculation,calc)
  assert.equal((await call('/api/care-plan-fees/'+calc.groupId+'/history')).body.history.length,2)
  const pdf=await call(`/api/documents/${calc.documentId}/pdf?rev=1`);assert.equal(pdf.status,200,JSON.stringify(pdf.body));const printed=await pdfText(pdf.body);assert.ok(printed.replace(/\s/g,'').includes('基本単位244×5回=1220単位'));assert.ok(!printed.replace(/\s/g,'').includes('基本単位244×4回=976単位'))

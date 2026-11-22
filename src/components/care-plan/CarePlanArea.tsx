@@ -4,6 +4,7 @@ import { CareRecordWork } from '../care-record/CareRecordWork.tsx'
 import { CareMonthWork } from '../care-month/CareMonthWork.tsx'
 import { CareFeeWork } from '../care-fee/CareFeeWork.tsx'
 import './care-plan-area.css'
+import type { CareFeeSourceSelection } from '../../../core/care-fee-api.ts'
 
 export const isCarePlanRelatedKind = (key: string) => /^care_plan_[1-7]$/.test(key)
 const sections = [
@@ -18,6 +19,7 @@ export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outp
   const [active, setActive] = useState<Section>('plans')
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(['plans']))
   const [status, setStatus] = useState(initialStatus)
+  const [feeSource, setFeeSource] = useState<CareFeeSourceSelection>()
   const id = useId()
   const callbacks = useMemo(() => Object.fromEntries(sections.map(([key]) => [key, {
     onDirtyChange: (dirty: boolean) => setStatus(old => old[key].dirty === dirty ? old : { ...old, [key]: { ...old[key], dirty } }),
@@ -35,8 +37,8 @@ export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outp
     {shown.filter(([key]) => visited.has(key)).map(([key]) => <div key={key} className="cp-area-panel" role="tabpanel" aria-labelledby={`${id}-${key}-tab`} hidden={key !== active}>
       {key === 'plans' ? <CarePlanWork {...props} active={active === 'plans'} onBack={() => { if (!Object.entries(status).some(([key, s]) => key !== 'plans' && s.dirty) || window.confirm('ケアプラン内に保存していない入力があります。入力を破棄して書類に戻りますか？')) props.onBack() }} {...callbacks.plans} historyRequest={historyRequest} outputTarget={active === 'plans' ? outputTarget : null} />
         : key === 'care_plan_4' || key === 'care_plan_5' ? <CareRecordWork {...callbacks[key]} clientId={props.clientId} clientName={props.clientName} kind={key} onBack={() => choose('plans')} />
-          : key === 'care_plan_6' ? <CareMonthWork {...callbacks[key]} clientId={props.clientId} clientName={props.clientName} onBack={() => choose('plans')} />
-            : <CareFeeWork {...callbacks[key]} clientId={props.clientId} clientName={props.clientName} onBack={() => choose('plans')} />}
+          : key === 'care_plan_6' ? <CareMonthWork visible={active === key} {...callbacks[key]} clientId={props.clientId} clientName={props.clientName} onBack={() => choose('plans')} onOpenFee={availableKinds.includes('care_plan_7') ? selection => { setFeeSource({...selection, requestId:crypto.randomUUID()}); choose('care_plan_7') } : undefined} />
+            : <CareFeeWork visible={active === key} {...callbacks[key]} selectedSource={feeSource} clientId={props.clientId} clientName={props.clientName} onBack={() => choose('plans')} />}
     </div>)}
   </div>
 }

@@ -5,6 +5,7 @@ import { careFeePrint } from '../core/care-fee-print.ts'
 import type { FeeCalculateInput,CareFeeCalculation,CareFeeSummary } from '../core/care-fee-api.ts'
 import { getCareMonth,careMonthSaved } from './care-months.ts'
 import { canonical } from './care-plans.ts'
+import { verifyFeeWorkbook } from './care-fee-workbook.ts'
 import { loadFormDef } from './forms.ts'
 import { tx,type Db,type Tx } from './pool.ts'
 import { audit,BadRequest,Conflict,NotFound,createDocumentInTx,writeField,saveDocumentInTx,type Staff } from './repo.ts'
@@ -46,7 +47,7 @@ export async function calculateCareFee(db:Db,staff:Staff,monthId:string,input:z.
   const latest=Number((await c.query('SELECT coalesce(max(rev),0) AS rev FROM revisions WHERE document_id=$1',[fee.document_id])).rows[0].rev)
   if(latest!==input.baseRevision)throw new Conflict('fee_version')
   const {requestId:_request,sourceRevision:_source,baseRevision:_base,...conditions}=input
-  const result=calculateFee(source,conditions)
+  const result=await verifyFeeWorkbook(source,conditions,calculateFee(source,conditions))
   const r6=(await c.query('SELECT id,"values" FROM revisions WHERE document_id=$1 AND rev=$2 AND office_id=$3',[month.documentId,input.sourceRevision,staff.officeId])).rows[0]
   const now=new Date(),date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}).format(now)
   const record:CareFeeCalculation={id:crypto.randomUUID(),groupId:fee.id,clientId:month.clientId,monthId,month:month.month,planId:month.planId,planVersion:month.planVersion,documentId:fee.document_id,revision:latest+1,sourceRevision:input.sourceRevision,sourceRevisionId:String(r6.id),sourceHash:hash(source),masterId:master.id,masterHash:master.hash,createdAt:now.toISOString(),createdBy:staff.id,confirmedAt:null,confirmedBy:null,input:conditions,result}
@@ -63,9 +64,12 @@ export async function calculateCareFee(db:Db,staff:Staff,monthId:string,input:z.
 export async function confirmCareFee(db:Db,staff:Staff,feeId:string,calculationId:string,baseRevision:number) {
  return tx(db,async c=>{
   const value=await careFeeCalculation(c,staff.officeId,feeId,calculationId)
+  const month=await getCareMonth(c,staff.officeId,value.monthId,true)
   await c.query('SELECT id FROM documents WHERE id=$1 AND office_id=$2 FOR UPDATE',[value.documentId,staff.officeId])
   const existing=(await c.query('SELECT calculation_id FROM care_fee_confirmations WHERE calculation_id=$1',[calculationId])).rows[0]
   if(existing)return careFeeCalculation(c,staff.officeId,feeId,calculationId)
+  if(value.sourceRevision!==month.revision)throw new Conflict('fee_source_updated')
+  if(value.result.workbookCheck?.status!=='matched')throw new Conflict('fee_workbook_unverified')
   const latest=Number((await c.query('SELECT coalesce(max(rev),0) AS rev FROM revisions WHERE document_id=$1',[value.documentId])).rows[0].rev)
   if(latest!==baseRevision || value.revision!==latest || value.result.status!=='calculated')throw new Conflict('fee_confirmation')
   await c.query('INSERT INTO care_fee_confirmations(calculation_id,office_id,client_id,confirmed_by) VALUES($1,$2,$3,$4)',[calculationId,staff.officeId,value.clientId,staff.id])

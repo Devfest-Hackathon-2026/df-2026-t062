@@ -12,6 +12,7 @@ import type { CarePlanSummary } from '../../../db/care-plans.ts'
 import { CareMonthEntry } from './CareMonthEntry.tsx'
 import '../care-record/CareRecordWork.css'
 import './CareMonthWork.css'
+import type { CareFeeSourceSelection } from '../../../core/care-fee-api.ts'
 function PreviewDialog({title,children,onCancel}:{title:string;children:ReactNode;onCancel:()=>void}) {
  const ref=useRef<HTMLDialogElement>(null)
  useEffect(()=>{const d=ref.current!;d.showModal();return()=>d.close()},[])
@@ -19,7 +20,7 @@ function PreviewDialog({title,children,onCancel}:{title:string;children:ReactNod
 }
 function monthBefore(month:string){const date=new Date(month+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()-1);return date.toISOString().slice(0,7)}
 type Preview={type:'create';data:Awaited<ReturnType<typeof api.previewCareMonth>>;planId:string;month:string}|{type:'change';entries:MonthEntry[];added:number;removed:number;skipped:number}
-export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyChange}:{clientId:string;clientName:string;onBack:()=>void;onDirtyChange?:(v:boolean)=>void;onBusyChange?:(v:boolean)=>void}) {
+export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyChange,onOpenFee,visible=true}:{clientId:string;clientName:string;onBack:()=>void;onDirtyChange?:(v:boolean)=>void;onBusyChange?:(v:boolean)=>void;visible?:boolean;onOpenFee?:(source:Omit<CareFeeSourceSelection,'requestId'>)=>void}) {
  const [list,setList]=useState<CareMonthSummary[]>([]),[plans,setPlans]=useState<CarePlanSummary[]>([]),[planId,setPlanId]=useState('')
  const [target,setTarget]=useState(()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit'}).format(new Date()))
  const [headers,setHeaders]=useState<MonthHeaderValues>(()=>MonthHeaders.parse({}))
@@ -32,7 +33,7 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
  useEffect(()=>{onBusyChange?.(busy)},[busy,onBusyChange])
  const confirmed=plans.filter(p=>p.status!=='draft'),counts=monthCounts(shown),overlaps=monthOverlaps(shown)
  const refresh=async()=>{const [months,p]=await Promise.all([api.careMonths(clientId),api.carePlans(clientId)]);if(!active.current)return;setList(months.months);setPlans(p.plans);setPlanId(old=>old||p.plans.find(v=>v.status==='confirmed')?.id||p.plans.find(v=>v.status==='superseded')?.id||'')}
- useEffect(()=>{active.current=true;void refresh().catch(e=>{if(active.current)setError(e instanceof Error?e.message:'一覧を読み込めませんでした')});return()=>{active.current=false}},[clientId])
+ useEffect(()=>{active.current=true;if(visible)void refresh().catch(e=>{if(active.current)setError(e instanceof Error?e.message:'一覧を読み込めませんでした')});return()=>{active.current=false}},[clientId,visible])
  useEffect(()=>{if(!dirty)return;const leave=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave)},[dirty])
  const run=async(fn:()=>Promise<void>)=>{if(acting.current)return;acting.current=true;setBusy(true);setError('');setNotice('');try{await fn()}catch(e){if(active.current)setError(e instanceof Error?e.message:'処理できませんでした。入力は保持しています。')}finally{acting.current=false;if(active.current)setBusy(false)}}
  const history=async(docId:string)=>{const r=await api.revisions(docId);if(active.current)setRevisions(r.revisions)}
@@ -67,7 +68,7 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
  const showRevision=(rev:string)=>void run(async()=>{if(!current||await preserve()===false)return;if(!rev){setPast(undefined);return}const r=await api.careMonthRevision(current.id,Number(rev));setPast(r.month)})
  const add=()=>{if(!current)return;const service=current.services.find(s=>s.id===serviceId);if(!service)return;setEntries(rows=>[...rows,{id:crypto.randomUUID(),sourceKey:null,serviceId:service.id,slotId:null,content:service.content,provider:service.provider,serviceKind:service.serviceKind,insured:service.insured,plan:{date:current.month+'-01',start:'09:00',end:'10:00',endDate:current.month+'-01',status:'scheduled',note:''},actual:null}])}
  return <main className="care-record-work care-month-work">
-  <header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>void run(async()=>{if(await preserve()!==false)onBack()})}>ケアプランに戻る</button><h1>{clientName} さんのサービス利用票</h1></header>
+  <header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>void run(async()=>{if(await preserve()!==false)onBack()})}>ケアプランに戻る</button><h1>{clientName} さんのサービス利用票</h1>{onOpenFee&&view&&<div role="group" aria-label="第7表へ引き継ぐ"><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'planned'})}>この保存版で第7表（予定）</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'actual'})}>この保存版で第7表（実績）</button></div>}</header>
   <div className="care-record-columns"><aside className="care-record-list" aria-label="第6表の月選択">
    <h2>第6表を作成</h2><label>確定済み計画版<select aria-label="確定済み計画版" value={planId} disabled={busy} onChange={e=>setPlanId(e.target.value)}><option value="">選択してください</option>{confirmed.map(p=><option key={p.id} value={p.id}>計画版 {p.version} ・ {p.effectiveFrom}～{p.effectiveTo??''}</option>)}</select></label>
    {!confirmed.length&&<p>確定済みの第3表が必要です。</p>}<label>対象年月<input type="month" value={target} onChange={e=>setTarget(e.target.value)} disabled={busy} /></label><button className="btn" disabled={busy||!planId||!target} onClick={generate}>週間計画から予定を確認</button>

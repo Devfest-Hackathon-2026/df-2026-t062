@@ -11,7 +11,8 @@ export const FEE_REASONS={
 } as const
 export type FeeReason=keyof typeof FEE_REASONS
 export interface FeeAmounts {gross:number;benefit:number;patient:number}
-interface FeeContext {masterId:string;basis:FeeInput['basis'];reasons:FeeReason[];entryIds:string[]}
+export interface FeeWorkbookCheck { templateId:string;templateHash:string;inputHash:string;engine:string;status:'matched';outputs:Record<string,number> }
+interface FeeContext {masterId:string;basis:FeeInput['basis'];reasons:FeeReason[];entryIds:string[];workbookCheck?:FeeWorkbookCheck}
 export type FeeResult=(FeeContext&{status:'needs_review';count:null;units:null;limit:null;remaining:null;priceHundredths:null;gross:null;benefit:null;patient:null})|(FeeContext&FeeAmounts&{status:'calculated';count:number;units:number;limit:number;remaining:number;priceHundredths:number})
 /** Integer arithmetic follows the two floor operations; not per-visit rounded payments. */
 export function amountsWithinLimit(units:number,priceHundredths:number,copay:number):FeeAmounts {
