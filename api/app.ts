@@ -38,7 +38,7 @@ import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-m
 import { fieldDict } from '../core/dictionary.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
-import { writeAccessAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
+import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -193,7 +193,7 @@ const accessAudit = async (c: Context, db: Db, staff: repo.Staff, input: Omit<Ac
     ...input,
     officeId: staff.officeId,
     actorStaffId: staff.id,
-    context: { ...context, source: 'api', route: c.req.path },
+    context: { ...context, source: 'api', route: c.req.routePath },
   })
 }
 
@@ -210,6 +210,7 @@ export function createApp(deps: ApiDeps) {
   const app = new Hono()
   const accounts = deps.accounts ?? (() => defaultAccounts())
   const auditContexts = new WeakMap<object, AuditContext>()
+  const securityScopes = new WeakMap<object, { db: Db, staff: repo.Staff, operation: Operation }>()
 
   const auditContextOf = (c: Context): AuditContext => auditContexts.get(c) ?? {
     requestId: randomUUID(),
@@ -265,7 +266,19 @@ export function createApp(deps: ApiDeps) {
       const db = await deps.db()
       const staff = await repo.staffByAuth(db, user.uid, user.email, deps.devAuth, auditContextOf(c))
       if (!staff) return unauthorized(c)
-      if (!allows(staff.role, op)) return forbidden(c)
+      securityScopes.set(c, { db, staff, operation: op })
+      if (!allows(staff.role, op)) {
+        await writeSecurityAudit(db, {
+          officeId: staff.officeId,
+          actorStaffId: staff.id,
+          action: 'auth.denied',
+          outcome: 'denied',
+          reasonCode: 'permission_denied',
+          permission: op,
+          context: { ...auditContextOf(c), route: c.req.routePath },
+        })
+        return forbidden(c)
+      }
       return handler(c, staff, db)
     })
 
@@ -305,6 +318,9 @@ export function createApp(deps: ApiDeps) {
     const jobs = await repo.activeJobs(db, staff.officeId, c.req.param('id')!)
     await accessAudit(c, db, staff, {
       clientId: client.id, resourceType: 'client', resourceId: client.id, accessMode: 'view', action: 'client.view',
+    })
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'job', accessMode: 'list', action: 'job.view', resultCount: jobs.length,
     })
     return json(c, { client, jobs })
   }))
@@ -489,6 +505,12 @@ export function createApp(deps: ApiDeps) {
 
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
     const others = await Promise.all((await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)).map(asChat))
+    for (const viewed of [document, ...others]) {
+      await accessAudit(c, db, staff, {
+        clientId: document.clientId, documentId: viewed.id, resourceType: 'document', resourceId: viewed.id,
+        accessMode: 'view', action: 'document.view',
+      })
+    }
     await accessAudit(c, db, staff, {
       clientId: document.clientId, documentId: document.id, resourceType: 'transcript',
       accessMode: 'view', action: 'transcript.view', resultCount: recordings.length,
@@ -603,6 +625,10 @@ export function createApp(deps: ApiDeps) {
     const rev = await repo.latestRevision(db, staff.officeId, doc.id)
     const version = await forms.loadVersion(db, rev.formVersionId)
     const pdf = await makePdf(deps.storage(), version, rev.values)
+    await accessAudit(c, db, staff, {
+      clientId: doc.clientId, documentId: doc.id, resourceType: 'document', resourceId: doc.id,
+      accessMode: 'export', action: 'document.export',
+    })
     const path = `exports/${staff.officeId}/${doc.id}/rev${rev.rev}-${Date.now()}.pdf`
     let stored: string | null = path
     try {
@@ -611,10 +637,6 @@ export function createApp(deps: ApiDeps) {
       stored = null // 出力の置き場に書けなくても、PDF は返す
     }
     await repo.recordExport(db, staff, doc.id, rev.rev, version.id, stored)
-    await accessAudit(c, db, staff, {
-      clientId: doc.clientId, documentId: doc.id, resourceType: 'document', resourceId: doc.id,
-      accessMode: 'export', action: 'document.export',
-    })
     return new Response(new Blob([pdf], { type: 'application/pdf' }), {
       headers: {
         'Content-Type': 'application/pdf',
@@ -842,9 +864,26 @@ export function createApp(deps: ApiDeps) {
   app.notFound((c) => json(c, { error: 'not_found' }, 404))
 
   app.onError((err, c) => {
-    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound) return json(c, { error: 'not_found' }, 404)
+    const scope = securityScopes.get(c)
+    const recordNotFound = async () => {
+      if (!scope) return
+      await writeSecurityAudit(scope.db, {
+        officeId: scope.staff.officeId,
+        actorStaffId: scope.staff.id,
+        action: 'auth.denied',
+        outcome: 'not_found',
+        reasonCode: 'resource_not_found_or_out_of_scope',
+        permission: scope.operation,
+        context: { ...auditContextOf(c), route: c.req.routePath },
+      }).catch(() => {})
+    }
+    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound) {
+      return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
+    }
     // ID の形でないもの（PostgreSQL の invalid_text_representation）も「無い」
-    if ((err as { code?: string }).code === '22P02') return json(c, { error: 'not_found' }, 404)
+    if ((err as { code?: string }).code === '22P02') {
+      return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
+    }
     if (err instanceof repo.Forbidden) return json(c, { error: 'forbidden', message: err.message }, 403)
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)

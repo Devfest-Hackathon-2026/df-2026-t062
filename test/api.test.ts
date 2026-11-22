@@ -146,12 +146,28 @@ test('ログインしていないと 401、ほかの事業所の利用者は見�
     `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
     [ids.kai],
   )).rows[0].n
+  const securityBefore = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM security_audit_events WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)`,
+    ['dev:other@example.com'],
+  )).rows[0].n
   assert.equal((await call(`/api/clients/${ids.kai}`, { token: OTHER })).status, 404)
   const after = (await dbForTests!.query<{ n: string }>(
     `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
     [ids.kai],
   )).rows[0].n
   assert.equal(after, before)
+  const securityAfter = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM security_audit_events WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)`,
+    ['dev:other@example.com'],
+  )).rows[0].n
+  assert.equal(Number(securityAfter), Number(securityBefore) + 1)
+  const denial = (await dbForTests!.query<{ outcome: string, reason_code: string, target_id: string | null }>(
+    `SELECT outcome, reason_code, target_id FROM security_audit_events
+      WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)
+      ORDER BY id DESC LIMIT 1`,
+    ['dev:other@example.com'],
+  )).rows[0]
+  assert.deepEqual(denial, { outcome: 'not_found', reason_code: 'resource_not_found_or_out_of_scope', target_id: null })
   const list = (await call('/api/clients', { token: OTHER })).body as { clients: { name: string }[] }
   assert.ok(!list.clients.some((c) => c.name === '甲斐' && false))
   assert.equal(list.clients.length, 4)
@@ -196,8 +212,8 @@ test('利用者一覧・詳細の閲覧監査は対象IDと相関IDを保存す�
   const detail = await call(`/api/clients/${ids.kai}`)
   assert.equal(detail.status, 200)
   const detailRequestId = detail.headers.get('x-request-id')
-  const detailAudit = await dbForTests!.query<{ request_id: string, client_id: string, resource_id: string, action: string }>(
-    `SELECT request_id, client_id, resource_id, action
+  const detailAudit = await dbForTests!.query<{ request_id: string, client_id: string, resource_id: string, action: string, route: string }>(
+    `SELECT request_id, client_id, resource_id, action, route
        FROM access_audit_events
       WHERE action = 'client.view' AND client_id = $1
       ORDER BY id DESC LIMIT 1`,
@@ -207,6 +223,7 @@ test('利用者一覧・詳細の閲覧監査は対象IDと相関IDを保存す�
   assert.equal(detailAudit.rows[0].client_id, ids.kai)
   assert.equal(detailAudit.rows[0].resource_id, ids.kai)
   assert.equal(detailAudit.rows[0].action, 'client.view')
+  assert.equal(detailAudit.rows[0].route, '/api/clients/:id')
 })
 
 test('監査OutcomeのDB制約はnot_foundを許可し、不正値を拒否する', { skip }, async () => {
@@ -256,6 +273,19 @@ test('直す → ページを保存 → 版 → PDF。保存していない AI �
   if (hasPdf) {
     assert.equal(pdf.status, 200)
     assert.ok((pdf.body as ArrayBuffer).byteLength > 10000)
+    const exportAudit = await dbForTests!.query<{ document_id: string, resource_id: string, access_mode: string, route: string }>(
+      `SELECT document_id, resource_id, access_mode, route
+         FROM access_audit_events
+        WHERE action = 'document.export' AND document_id = $1
+        ORDER BY id DESC LIMIT 1`,
+      [docId],
+    )
+    assert.deepEqual(exportAudit.rows[0], {
+      document_id: docId,
+      resource_id: docId,
+      access_mode: 'export',
+      route: '/api/documents/:id/pdf',
+    })
   } else assert.equal(pdf.status, 503, '元の PDF が置き場になければ 503')
 })
 
@@ -529,6 +559,15 @@ test('書き方の相談: エージェントが録音を探し、用紙を読ん
   assert.notEqual(p.after, p.before)
   assert.equal((searchResults.at(-1)!.hits as { id: string }[])[0].id.startsWith('r1-'), true)
   assert.deepEqual(((await call(`/api/documents/${docId}`)).body as Doc).document.fields, before.document.fields)
+
+  const documentAudits = await dbForTests!.query<{ resource_id: string, action: string }>(
+    `SELECT resource_id, action FROM access_audit_events
+      WHERE request_id = (SELECT request_id FROM access_audit_events WHERE action = 'transcript.view' AND document_id = $1 ORDER BY id DESC LIMIT 1)
+      ORDER BY id`,
+    [docId],
+  )
+  assert.ok(documentAudits.rows.some((row) => row.resource_id === docId && row.action === 'document.view'))
+  assert.ok(documentAudits.rows.some((row) => row.action === 'transcript.view'))
 
   assert.equal((await ask([{ role: 'user', text: 'a' }], OTHER)).status, 404)
   assert.equal((await ask([])).status, 400)
