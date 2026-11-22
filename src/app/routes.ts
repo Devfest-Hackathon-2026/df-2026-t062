@@ -10,16 +10,21 @@ export type Route =
   | { name: 'officeKind', kind: string }
   | { name: 'officeUpload', kind: string }
   | { name: 'officeReview', kind: string, versionId: string }
+  // 責任者が書類の種類を足す（#153）: 手順 1「書類について」と、手順 4「聞き取ること」
+  | { name: 'officeAdd' }
+  | { name: 'officeTopics', kind: string }
 
 export function parse(path: string, search = ''): Route {
   const m = /^\/clients\/([0-9a-f-]{36})\/?$/.exec(path)
   if (m) return { name: 'client', id: m[1], doc: new URLSearchParams(search).get('doc') ?? undefined }
   if (path === '/login') return { name: 'login' }
   if (path === '/office' || path === '/office/') return { name: 'office' }
-  const o = /^\/office\/forms\/([^/]+)(?:\/(upload|review\/([0-9a-f-]{36})))?\/?$/.exec(path)
+  if (path === '/office/add' || path === '/office/add/') return { name: 'officeAdd' }
+  const o = /^\/office\/forms\/([^/]+)(?:\/(upload|topics|review\/([0-9a-f-]{36})))?\/?$/.exec(path)
   if (o) {
     const kind = decodeURIComponent(o[1])
     if (o[2] === 'upload') return { name: 'officeUpload', kind }
+    if (o[2] === 'topics') return { name: 'officeTopics', kind }
     if (o[3]) return { name: 'officeReview', kind, versionId: o[3] }
     return { name: 'officeKind', kind }
   }

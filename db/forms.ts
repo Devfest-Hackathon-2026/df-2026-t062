@@ -351,6 +351,14 @@ export async function rebaseDocuments(db: Db, templateId: string, opts: { dryRun
 export interface KindFormState {
   key: string
   name: string
+  /** 事業所で足した種類か（#153。全体の種類は false） */
+  own: boolean
+  perClient: 'one' | 'many'
+  createFrom: string | null
+  /** 録音から AI が書く種類か（拾う内容が空でない） */
+  records: boolean
+  /** 事業所で足した種類の拾う内容（手順 4 で直す）。全体の種類は空 */
+  topics: { id: string, name: string, guide: string, last: boolean }[]
   /** 新しい書類に使う書式。office: 事業所で上げた書式か（でなければ全体の書式）。since: 使い始めた日時 */
   current: { versionId: string, office: boolean, since: string | null } | null
   /** 事業所の書式を使っていないときの、前に使っていた事業所の書式（「事業所の書式に戻す」） */
@@ -365,11 +373,15 @@ const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : null)
 
 /** 事業所の、書類の種類ごとの書式の様子 */
 export async function officeFormStates(db: Q, officeId: string): Promise<KindFormState[]> {
-  const kinds = (await db.query('SELECT key, name FROM form_kinds ORDER BY is_primary DESC, key')).rows
+  // 全体の種類と、その事業所の種類（やめたものは出さない。#153）
+  const kinds = (await db.query(
+    'SELECT key, name, office_id, per_client, create_from, topics FROM form_kinds WHERE (office_id IS NULL OR office_id = $1) AND retired_at IS NULL ORDER BY is_primary DESC, office_id NULLS FIRST, key',
+    [officeId],
+  )).rows
   const out: KindFormState[] = []
   for (const k of kinds) {
     const v = (await db.query(
-      `SELECT v.id, v.status, v.created_at, v.published_at, v.retired_at, t.office_id, jsonb_path_exists(v.schemas, '$[*][*]') AS has_slots FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id
+      `SELECT v.id, v.version, v.status, v.created_at, v.published_at, v.retired_at, t.office_id, jsonb_path_exists(v.schemas, '$[*][*]') AS has_slots FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id
        WHERE t.kind = $1 AND (t.office_id = $2 OR (t.office_id IS NULL AND v.status = 'published'))
        ORDER BY v.version DESC`,
       [k.key, officeId],
@@ -379,7 +391,8 @@ export async function officeFormStates(db: Q, officeId: string): Promise<KindFor
     const globalPub = v.find((r) => r.office_id === null)
     const cur = officePub ?? globalPub
     const retired = officePub ? undefined : [...mine].filter((r) => r.status === 'retired').sort((a, b) => (b.retired_at?.getTime() ?? 0) - (a.retired_at?.getTime() ?? 0))[0]
-    const draft = mine.find((r) => r.status === 'draft')
+    // 使っている事業所の版より古い下書き（読めなかった取り込みの残りなど）は、もう出さない（#153）
+    const draft = mine.find((r) => r.status === 'draft' && (!officePub || r.version > officePub.version))
     const fromImport = draft ? (await db.query('SELECT review FROM form_imports WHERE version_id = $1 ORDER BY created_at DESC LIMIT 1', [draft.id])).rows[0] : undefined
     const imp = (await db.query(
       'SELECT id, status, uploaded_at, error_kind, version_id, created_at, updated_at FROM form_imports WHERE office_id = $1 AND kind = $2 ORDER BY created_at DESC, id LIMIT 1',
@@ -387,6 +400,8 @@ export async function officeFormStates(db: Q, officeId: string): Promise<KindFor
     )).rows[0]
     out.push({
       key: k.key, name: k.name,
+      own: k.office_id !== null, perClient: k.per_client, createFrom: k.create_from ?? null, records: (k.topics as unknown[]).length > 0,
+      topics: k.office_id !== null ? (k.topics as { id: string, name: string, guide: string, last: boolean }[]).map((t) => ({ id: t.id, name: t.name, guide: t.guide, last: t.last })) : [],
       current: cur ? { versionId: cur.id, office: cur.office_id !== null, since: iso(cur.published_at) } : null,
       shelved: retired ? { versionId: retired.id, since: iso(retired.published_at) } : null,
       draft: draft ? { versionId: draft.id, createdAt: iso(draft.created_at)!, fromImport: !!fromImport, empty: !draft.has_slots, review: fromImport?.review ?? [] } : null,

@@ -53,6 +53,8 @@ app → screens → components → lib
 | `office-kind/` | `/office/forms/<種類>` | 責任者: 書類の画面（書式） |
 | `office-upload/` | `/office/forms/<種類>/upload` | 責任者: 書式を上げる |
 | `office-review/` | `/office/forms/<種類>/review/<版>` | 責任者: 読み取った書式を確かめる・直す |
+| `office-add/` | `/office/add` | 責任者: 事業所の書類を足す 手順 1「書類について」（#153） |
+| `office-topics/` | `/office/forms/<種類>/topics` | 責任者: 事業所の書類を足す 手順 4「聞き取ること」（#153） |
 
 PC と iPad で画面が違うときは、同じフォルダに `Pc〜`・`Pad〜` で並べる。
 
@@ -72,6 +74,7 @@ PC と iPad で画面が違うときは、同じフォルダに `Pc〜`・`Pad�
 | `header/` | PC の上の帯とロゴ |
 | `office-shell/` | 責任者の画面の外枠（上の帯と左のメニュー、戻るリンク） |
 | `form-status/` | 責任者の画面で使う、書類ごとの書式の様子（読み取り中・読めなかったなど） |
+| `office-add/` | 事業所の書類を足す流れ（#153）の手順の帯・使い始めるの確かめ・手順の決まり |
 
 ### lib/
 

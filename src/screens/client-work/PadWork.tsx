@@ -102,7 +102,7 @@ export function PadWork({ clientId }: { clientId: string }) {
         )}
         {docOpen && (
           <div role="menu" style={{ position: 'absolute', left: 150, top: 64, width: 380, background: '#FFFFFF', borderRadius: 16, boxShadow: '0 12px 36px rgba(20,24,32,0.28)', padding: 8, display: 'flex', flexDirection: 'column', zIndex: 20 }}>
-            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
               <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
             ))}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
@@ -115,7 +115,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             ))}
             <div className="care-plan-menu-section">
               <div className="care-plan-menu-title">ケアプラン</div>
-              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
+              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
             </div>
           </div>
         )}

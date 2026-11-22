@@ -49,3 +49,33 @@ export function topicsFingerprint(topics: readonly Topic[]): string {
 
 /** AI が要約する項目（機械の項目を除く。最後に書く項目も、話に出れば要約する） */
 export const summaryTopics = (topics: readonly Topic[]) => topics.filter((t) => t.by === 'ai')
+
+// ---------- 事業所が足した種類の項目（#153） ----------
+
+/** 拾う内容の案を作る AI に渡すもの: 書類の名前と、書式の欄に入る内容の言葉 */
+export interface TopicDraftInput { kindName: string, slots: string[] }
+/** 案の 1 つ（名前と、何をまとめるか） */
+export interface TopicDraft { name: string, guide: string }
+export type TopicDrafter = (input: TopicDraftInput) => Promise<TopicDraft[]>
+
+/** 足した種類の最後に書く項目。録音から書く種類は、はじめはこれだけを持つ（一覧が空なら録音から書かない） */
+export const OFFICE_OVERALL: Topic = { id: 'overall', name: '全体のまとめ', guide: 'その回の話の全体のまとめ。ほかの項目に入らない大事な話も含める', by: 'ai', last: true }
+
+/**
+ * 責任者が直した項目の一覧を、保存する形にする。id のない項目には、重ならない id を振る。最後に書く項目（全体のまとめ）は最後に 1 つだけ残す
+ */
+export function officeTopics(items: readonly { id?: string, name: string, guide: string }[]): Topic[] {
+  const used = new Set<string>(['overall'])
+  const out: Topic[] = []
+  for (const it of items) {
+    let id = it.id && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(it.id) && !used.has(it.id) ? it.id : ''
+    for (let n = out.length + 1; !id; n++) if (!used.has(`t${n}`)) id = `t${n}`
+    used.add(id)
+    out.push({ id, name: it.name.trim(), guide: it.guide.trim(), by: 'ai', last: false })
+  }
+  return [...out, { ...OFFICE_OVERALL }]
+}
+
+/** 試しの案（費用なし）: 書式の欄の言葉を、そのまま 1 つずつ項目にする（多すぎるときは先頭から 10 個） */
+export const fakeTopicDrafter: TopicDrafter = async ({ slots }) =>
+  [...new Set(slots.map((s) => s.trim()).filter(Boolean))].slice(0, 10).map((s) => ({ name: s, guide: `${s}について話に出たこと` }))
