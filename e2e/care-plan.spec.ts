@@ -134,10 +134,13 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   const initialCanvas = (await page.locator('.cp-canvas').boundingBox())!
   expect(initialCanvas.y).toBeLessThan(ui === 'pad' ? viewport.height * .45 : viewport.height - 220)
   await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
-  if (ui === 'pc') expect(Math.abs((await page.locator('.sheet-toolbar').boundingBox())!.y - assessmentTop)).toBeLessThan(2)
+  // CIのLinuxでは上部の描画寸法に2px差が出る。そこまでを許容し、大きな配置ずれは検出する。
+  if (ui === 'pc') expect(Math.abs((await page.locator('.sheet-toolbar').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
   const metrics = { browser: browser.version(), project: info.project.name, viewport, displays: [] as unknown[] }
   for (const number of [1, 2, 3]) {
     await table(page, number)
+    // 各表で同じ3表一括保存を重複表示しない。
+    await expect(page.locator('.cp-work').getByRole('button', { name: /^(書類を保存|保存)$/ })).toHaveCount(1)
     const image = page.locator('.cp-canvas img').first()
     await expect(image).toBeVisible()
     await expect.poll(() => image.evaluate((e: HTMLImageElement) => e.complete && e.naturalWidth > 0)).toBe(true)

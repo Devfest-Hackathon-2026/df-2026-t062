@@ -43,13 +43,6 @@ function Modal({ title, onClose, children }: { title: string, onClose: () => voi
   </dialog>
 }
 
-function SaveButton({ busy, disabled, save }: { busy: boolean, disabled: boolean, save: () => void }) {
-  return <div className="cp-save">
-    <span>第1〜3表の変更をまとめて保存します</span>
-    <button type="button" className="savebtn pc-work-save" disabled={disabled || busy} onClick={save}>{busy ? '処理中…' : '保存'}</button>
-  </div>
-}
-
 export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget }: {
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
   onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null,
@@ -216,7 +209,6 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
     setNotice(''); setSlots((old) => old.map((s, i) => i === index ? { ...s, ...change } : s))
   }
   const services = plan.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services))
-  const saveButton = <SaveButton save={save} busy={busy} disabled={readOnly || !ready} />
   const saved = plan.documents.every((d) => d.latestRevision > 0)
   const saveStatus = dirty ? '保存していない変更があります' : saved ? 'すべて保存済み' : 'まだ保存されていません'
   const output = <DocumentOutput status={<>第1〜3表 · {saveStatus}</>} disabled={busy || !ready || dirty || !saved}
@@ -261,7 +253,6 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
             onNeed={(i) => needs[i] ? setNeedIndex(i) : setNeedsOpen(true)}
             onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
         </>}
-        {saveButton}
         </div>
       </main>
     </div>

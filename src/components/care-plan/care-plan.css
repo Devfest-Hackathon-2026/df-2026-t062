@@ -21,8 +21,6 @@
 .cp-legend {color:#5a6270; font-size:12px; padding:16px 10px}
 .cp-canvas {min-width:0; min-height:0; background:#fff; border:1px solid #E1E4EA; border-radius:12px; display:flex; flex-direction:column; overflow:hidden; position:relative}
 .cp-sheet-scroll {flex:1 1 auto; min-height:0; overflow:auto; background:#E9EBEF; padding:10px 21px 20px}
-.cp-save {display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:flex-end; padding:10px 0}
-.cp-save span {font-size:12px; color:#5a6270}
 .cp-paper {background:#fff; padding:24px; border:1px solid #e1e4ea; box-shadow:0 3px 12px #1420300d}
 .cp-paper>header {display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
 .cp-paper h2 {font-size:20px; margin:0}
