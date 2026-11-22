@@ -1,4 +1,4 @@
-import { test,expect,headers,createPlan,openPlan,getPlan,save,table } from './support/fixtures.ts'
+import { test,expect,headers,createPlan,openPlan,getPlan,save,table,openCareDocument } from './support/fixtures.ts'
 
 test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保存/確定→明示再計算/過去版/未計算',async({page,ui,clientId},info)=>{
  const client=(await(await page.request.get(`/api/clients/${clientId}`,{headers})).json()).client
@@ -33,11 +33,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  const confirmation=page.getByRole('dialog',{name:'計画を確定しますか？',exact:true})
  await confirmation.getByRole('button',{name:'第1〜3表を確定する',exact:true}).click();await expect(confirmation).not.toBeVisible()
  await page.reload()
- const open=async(number:6|7)=>{
-  if(ui==='pad')await page.getByRole('button',{name:'アセスメント',exact:true}).click()
-  else await page.getByRole('button',{name:'＋ 書類を作る',exact:true}).click()
-  await page.getByRole('menuitem',{name:number===6?/サービス利用票 第6表/:/サービス利用票別表 第7表/}).click()
- }
+ const open=(number:6|7)=>openCareDocument(page,ui,number)
  await open(6)
  await page.getByLabel('対象年月',{exact:true}).fill('2026-06')
  await page.getByRole('button',{name:'週間計画から予定を確認',exact:true}).click()
@@ -48,7 +44,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  await page.getByRole('button',{name:'第6表を保存',exact:true}).click()
  await expect(page.getByLabel('修正履歴')).toContainText('保存版 1')
  await page.getByRole('button',{name:'用紙に戻る',exact:true}).click()
- await page.getByRole('button',{name:'書類に戻る',exact:true}).click();await open(7)
+ await page.getByRole('button',{name:'ケアプランに戻る',exact:true}).click();await open(7)
  const month=(await(await page.request.get(`/api/clients/${clientId}/care-plan-months`,{headers})).json()).months[0]
  await page.getByLabel('第6表（保存済み）',{exact:true}).selectOption(month.id)
  await page.getByLabel('事業所の地域区分',{exact:true}).selectOption('6')

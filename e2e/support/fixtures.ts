@@ -38,8 +38,8 @@ export { expect }
 export async function openPlan(page: Page, ui: 'pc' | 'pad') {
   if (ui === 'pad') {
     await page.locator('.pad > header').getByRole('button', { name: 'アセスメント', exact: true }).click()
-    await page.getByRole('menuitem', { name: /ケアプランを作成/ }).click()
-  } else await page.getByRole('tab', { name: 'ケアプランを作成', exact: true }).click()
+    await page.getByRole('menuitem', { name: /ケアプラン/ }).click()
+  } else await page.getByRole('tab', { name: 'ケアプラン', exact: true }).click()
 }
 export async function createPlan(page: Page, ui: 'pc' | 'pad', effectiveFrom = '2026-04-01') {
   await openPlan(page, ui)
@@ -95,4 +95,16 @@ export async function addSchedule(page: Page) {
   await dialog.getByLabel('終了', { exact: true }).fill('10:00')
   await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
   await save(page)
+}
+
+
+export async function openCareDocument(page: Page, ui: 'pc' | 'pad', number: 4 | 5 | 6 | 7) {
+  const tabs = page.getByRole('tablist', { name: 'ケアプランの書類', exact: true })
+  const creating = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
+  if (!await tabs.isVisible()) {
+    await openPlan(page, ui)
+    await expect(creating.or(page.getByRole('navigation', { name: 'ケアプランの表', exact: true }))).toBeVisible()
+  }
+  if (await creating.isVisible()) await creating.getByRole('button', { name: '閉じる', exact: true }).click()
+  await tabs.getByRole('tab', { name: new RegExp(`^第${number}表 `) }).click()
 }
