@@ -12,10 +12,17 @@ import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core
 import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
+import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
 
 type Q = Db | Tx
 
 export interface Staff { id: string, officeId: string, name: string, email: string | null, role: string, officeName: string }
+
+const auditContexts = new WeakMap<Staff, AuditContext>()
+
+export function auditContextOf(staff: Staff | null | undefined): AuditContext | undefined {
+  return staff ? auditContexts.get(staff) : undefined
+}
 
 export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource, documentSource?: DocumentSource }
 export interface SavedRow { value: unknown, by: Who }
@@ -42,20 +49,36 @@ export class Forbidden extends Error {}
 // ---------- 職員 ----------
 
 /** ログインした職員。止めた職員（disabled_at あり）は null（リクエストのたびに DB から読むので、止めたらすぐ効く） */
-export async function staffByAuth(db: Q, authUid: string, email?: string, allowEmailMatch = false): Promise<Staff | null> {
+export async function staffByAuth(db: Q, authUid: string, email?: string, allowEmailMatch = false, auditContext?: AuditContext): Promise<Staff | null> {
   const sql = `SELECT s.id, s.office_id, s.name, s.email, s.role, o.name AS office_name
                FROM staff s JOIN offices o ON o.id = s.office_id
                WHERE (s.auth_uid = $1 ${allowEmailMatch ? 'OR (s.email IS NOT NULL AND s.email = $2)' : ''}) AND s.disabled_at IS NULL LIMIT 1`
   const r = await db.query(sql, allowEmailMatch ? [authUid, email ?? ''] : [authUid])
   const s = r.rows[0]
-  return s ? { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name } : null
+  if (!s) return null
+  const staff = { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name }
+  if (auditContext) auditContexts.set(staff, auditContext)
+  return staff
 }
 
-export async function audit(db: Q, staff: Staff | null, officeId: string, action: string, ids: { clientId?: string, documentId?: string }, detail: Record<string, unknown> = {}) {
-  await db.query(
-    'INSERT INTO audit_events (office_id, staff_id, client_id, document_id, action, detail) VALUES ($1,$2,$3,$4,$5,$6)',
-    [officeId, staff?.id ?? null, ids.clientId ?? null, ids.documentId ?? null, action, JSON.stringify(detail)],
-  )
+export async function audit(
+  db: Q,
+  staff: Staff | null,
+  officeId: string | null,
+  action: string,
+  ids: { clientId?: string, documentId?: string },
+  detail: Record<string, unknown> = {},
+  context: AuditContext & { outcome?: AuditOutcome } = {},
+) {
+  await writeBusinessAudit(db, {
+    officeId,
+    actorStaffId: staff?.id ?? null,
+    action,
+    ids,
+    detail,
+    outcome: context.outcome,
+    context: { ...auditContextOf(staff), ...context },
+  })
 }
 
 // ---------- 利用者 ----------

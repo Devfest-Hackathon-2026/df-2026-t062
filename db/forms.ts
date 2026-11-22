@@ -6,6 +6,7 @@ import { fieldDict, type LocalField } from '../core/dictionary.ts'
 import { basePdfAssetPath, contentOf, toFormDef, type FormDef, type FormKind, type FormPage, type FormVersionView, type TemplateSlot } from '../core/form.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { Conflict, Forbidden } from './repo.ts'
+import { writeBusinessAudit, type AuditContext } from './audit.ts'
 
 type Q = Db | Tx
 
@@ -335,10 +336,11 @@ export async function rebaseDocuments(db: Db, templateId: string, opts: { dryRun
     const offices = new Map<string, number>()
     for (const r of moved.rows) offices.set(r.office_id, (offices.get(r.office_id) ?? 0) + 1)
     for (const [officeId, n] of offices) {
-      await c.query(
-        "INSERT INTO audit_events (office_id, action, detail) VALUES ($1, 'form.rebase', $2)",
-        [officeId, JSON.stringify({ kind: target.kind, from: await Promise.all(olds.map(async (id) => { const v = await loadVersion(c, id); return { version: v.version, contentSha: v.contentSha } })), to: { version: target.version, contentSha: target.contentSha }, documents: n })],
-      )
+      await writeBusinessAudit(c, {
+        officeId,
+        action: 'form.rebase',
+        detail: { kind: target.kind, from: await Promise.all(olds.map(async (id) => { const v = await loadVersion(c, id); return { version: v.version, contentSha: v.contentSha } })), to: { version: target.version, contentSha: target.contentSha }, documents: n },
+      })
     }
     return result
   })
@@ -438,7 +440,7 @@ export async function draftFrom(db: Db, scope: ManagerScope, id: string): Promis
 }
 
 /** 最初の書式（全体の書式）に戻す: 事業所の使う版を退かせる。もう戻っていれば何もしない。今の書類は前の版のまま */
-export async function revertToGlobal(db: Db, officeId: string, staffId: string, kind: string): Promise<void> {
+export async function revertToGlobal(db: Db, officeId: string, staffId: string, kind: string, auditContext?: AuditContext): Promise<void> {
   await tx(db, async (c) => {
     if (!(await c.query('SELECT 1 FROM form_kinds WHERE key = $1', [kind])).rows.length) throw new FormNotFound(kind)
     const t = (await c.query('SELECT id FROM form_templates WHERE kind = $1 AND office_id = $2 FOR UPDATE', [kind, officeId])).rows[0]
@@ -448,8 +450,13 @@ export async function revertToGlobal(db: Db, officeId: string, staffId: string, 
       [t.id],
     )
     if (!r.rows.length) return
-    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.revert', $3)",
-      [officeId, staffId, JSON.stringify({ kind, from: { version: Number(r.rows[0].version) } })])
+    await writeBusinessAudit(c, {
+      officeId,
+      actorStaffId: staffId,
+      action: 'form.revert',
+      detail: { kind, from: { version: Number(r.rows[0].version) } },
+      context: auditContext,
+    })
   })
 }
 
@@ -457,14 +464,19 @@ export async function revertToGlobal(db: Db, officeId: string, staffId: string, 
  * 前に使っていた事業所の書式に戻す。退いた版は公開し直せない（DB のトリガー）ので、同じ中身の版を作って公開する。
  * 退いた版でなければ NotDraft と同じ 409、全体の書式は 403
  */
-export async function reuseVersion(db: Db, scope: ManagerScope & { officeId: string }, staffId: string, id: string): Promise<FormVersion> {
+export async function reuseVersion(db: Db, scope: ManagerScope & { officeId: string }, staffId: string, id: string, auditContext?: AuditContext): Promise<FormVersion> {
   return tx(db, async (c) => {
     const v = await officeVersion(c, scope, id)
     if (v.status !== 'retired') throw new Conflict('form_version')
     const copy = await insertCopy(c, v)
     await publish(c, v.templateId, copy)
-    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.reuse', $3)",
-      [scope.officeId, staffId, JSON.stringify({ kind: v.kind, from: { version: v.version } })])
+    await writeBusinessAudit(c, {
+      officeId: scope.officeId,
+      actorStaffId: staffId,
+      action: 'form.reuse',
+      detail: { kind: v.kind, from: { version: v.version } },
+      context: auditContext,
+    })
     return readVersion(c, copy)
   })
 }

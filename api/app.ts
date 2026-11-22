@@ -37,6 +37,8 @@ import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
+import { randomUUID } from 'node:crypto'
+import type { AuditContext } from '../db/audit.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -197,8 +199,26 @@ async function exists(storage: Storage, path: string): Promise<boolean> {
 export function createApp(deps: ApiDeps) {
   const app = new Hono()
   const accounts = deps.accounts ?? (() => defaultAccounts())
+  const auditContexts = new WeakMap<object, AuditContext>()
+
+  const auditContextOf = (c: Context): AuditContext => auditContexts.get(c) ?? {
+    requestId: randomUUID(),
+    correlationId: randomUUID(),
+    traceId: c.req.header('x-cloud-trace-context')?.split('/')[0],
+    route: c.req.path,
+    source: 'api',
+  }
 
   app.use('*', async (c, next) => {
+    const auditContext: AuditContext = {
+      requestId: randomUUID(),
+      correlationId: randomUUID(),
+      traceId: c.req.header('x-cloud-trace-context')?.split('/')[0],
+      route: c.req.path,
+      source: 'api',
+    }
+    auditContexts.set(c, auditContext)
+    c.header('X-Request-Id', auditContext.requestId!)
     await next()
     // 様式の版のように、ブラウザが覚えてよいものは道の中で決める。それ以外は覚えさせない
     if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store')
@@ -233,7 +253,7 @@ export function createApp(deps: ApiDeps) {
       const user = await login(c)
       if (!user) return unauthorized(c)
       const db = await deps.db()
-      const staff = await repo.staffByAuth(db, user.uid, user.email, deps.devAuth)
+      const staff = await repo.staffByAuth(db, user.uid, user.email, deps.devAuth, auditContextOf(c))
       if (!staff) return unauthorized(c)
       if (!allows(staff.role, op)) return forbidden(c)
       return handler(c, staff, db)
@@ -430,7 +450,7 @@ export function createApp(deps: ApiDeps) {
           const r = await runChat({ model, document, others, recordings, messages, draft, diagramField, onStep: (text) => send({ type: 'step', text }) })
           send({ type: 'done', ...r })
         } catch (e) {
-          console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: (e as Error)?.name ?? 'Error' }))
+          console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, request_id: auditContextOf(c).requestId, error: (e as Error)?.name ?? 'Error' }))
           send({ type: 'error', code: chatError(e).code })
         }
         ctl.close()
@@ -596,7 +616,7 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/admin/offices', siteRoute(async (c, _admin, db) => {
     const input = await body(c, OfficeInput)
     const account = await accounts().ensureUser(input.admin.email, input.admin.name)
-    const r = await staffDb.createOffice(db, { ...input, admin: { ...input.admin, authUid: account.uid } })
+    const r = await staffDb.createOffice(db, { ...input, admin: { ...input.admin, authUid: account.uid } }, auditContextOf(c))
     return json(c, { ...r, accountCreated: account.created }, 201)
   }))
 
@@ -689,11 +709,13 @@ export function createApp(deps: ApiDeps) {
     return json(c, await managerView(db, r.version), r.created ? 201 : 200)
   }))
   app.post('/api/office/forms/:kind/revert', staffRoute('form.manage', async (c, staff, db) => {
-    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!)
+    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!, repo.auditContextOf(staff))
     return json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })
   }))
-  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) =>
-    json(c, await managerView(db, await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!)))))
+  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) => {
+    const version = await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!, repo.auditContextOf(staff))
+    return json(c, await managerView(db, version))
+  }))
   versionRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, db)))
 
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------
@@ -739,7 +761,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)
     if (err instanceof PdfOverflow) return json(c, { error: 'overflow', slots: err.slots, message: err.message }, 422)
     // ログには中身を出さない（種類と道だけ）
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: err.name }))
+    console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, request_id: auditContextOf(c).requestId, error: err.name }))
     return json(c, { error: 'internal' }, 500)
   })
 
