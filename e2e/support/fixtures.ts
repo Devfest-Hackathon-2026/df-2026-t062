@@ -46,10 +46,14 @@ export async function createPlan(page: Page, ui: 'pc' | 'pad', effectiveFrom = '
   await page.getByRole('button', {name: '＋ 計画を作る', exact:true}).click()
   const dialog = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel('適用開始日', { exact: true }).fill(effectiveFrom)
-  await dialog.getByLabel('適用終了日（任意）').fill('2027-03-31')
-  await dialog.getByRole('button', { name: '第1〜3表を作る' }).click()
-  await expect(dialog).not.toBeVisible()
+  await expect(dialog.locator('input[type=date]')).toHaveCount(0)
+  await page.clock.setFixedTime(new Date(`${effectiveFrom}T01:00:00+09:00`))
+  try {
+    await dialog.getByRole('button', { name: '第1〜3表を作る' }).click()
+    await expect(dialog).not.toBeVisible()
+  } finally {
+    await page.clock.setFixedTime(new Date())
+  }
   await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeEnabled()
 }
 export async function getPlan(page: Page, clientId: string): Promise<CarePlanView> {
@@ -70,7 +74,7 @@ export async function table(page: Page, number: number) {
 }
 export async function addNeed(page: Page) {
   await table(page, 2)
-  await page.getByRole('button', { name: 'ニーズを追加・編集', exact: true }).click()
+  await page.getByRole('button', { name: 'ニーズ（押して編集）', exact: true }).click()
   await page.getByRole('button', { name: '＋ ニーズを追加', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '第2表・ニーズ 1', exact: true })
   await dialog.getByLabel('生活全般の解決すべき課題（ニーズ）').fill('安全に入浴したい')
@@ -87,7 +91,7 @@ export async function addNeed(page: Page) {
 }
 export async function addSchedule(page: Page) {
   await table(page, 3)
-  await page.getByRole('button', { name: '予定を追加・編集', exact: true }).click()
+  await page.getByRole('button', { name: '週間予定（押して編集）', exact: true }).first().click()
   await page.getByRole('button', { name: '＋ 予定を追加', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '第3表・予定の編集', exact: true })
   await dialog.getByLabel('第2表のサービス').selectOption({ index: 1 })

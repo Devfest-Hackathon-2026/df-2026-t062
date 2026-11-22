@@ -18,6 +18,7 @@ const isPlanKind = (key: string) => ['care_plan_1', 'care_plan_2', 'care_plan_3'
 export { isPlanKind }
 const names = ['第1表・基本情報と方針', '第2表・ニーズとサービス', '第3表・週間計画']
 const days = ['月', '火', '水', '木', '金', '土', '日']
+const planDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
 const statusText = (status: string) => status === 'draft' ? '下書き' : status === 'confirmed' ? '確定済み' : '旧版'
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const message = (error: unknown) => {
@@ -69,9 +70,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [copyFrom, setCopyFrom] = useState<string>()
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [copyFrom, setCopyFrom] = useState<CarePlanSummary>()
   const request = useRef(0)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(busy || childBusy) }, [busy, childBusy, onBusyChange])
@@ -131,7 +130,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       {displayedPlan && <div className="cp-history-footer">
         <button type="button" className="btn" disabled={busy || childBusy || dirty || displayedPlan.status === 'draft'}
           title={displayedPlan.status === 'draft' ? '計画を確定すると改定版を作れます' : dirty ? '先に入力内容を保存してください' : undefined}
-          onClick={() => { setCopyFrom(displayedPlan.id); setFrom(displayedPlan.effectiveFrom); setTo(displayedPlan.effectiveTo ?? ''); setHistoryOpen(false); setCreating(true) }}>この計画から改定版を作る</button>
+          onClick={() => { setCopyFrom(displayedPlan); setHistoryOpen(false); setCreating(true) }}>この計画から改定版を作る</button>
       </div>}
       {error && <p role="alert" className="cp-error">{error}</p>}
     </Modal>}
@@ -141,13 +140,15 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
         if (!mayLeave()) return
         setBusy(true); setError('')
         try {
-          const r = await api.createCarePlan(clientId, { effectiveFrom: from, effectiveTo: to || null, copyFromPlanId: copyFrom })
+          const r = await api.createCarePlan(clientId, {
+            effectiveFrom: copyFrom?.effectiveFrom ?? planDate.format(new Date()),
+            effectiveTo: copyFrom?.effectiveTo ?? null,
+            copyFromPlanId: copyFrom?.id,
+          })
           setSelected(r.plan); setDirty(false); setCreating(false); await loadList()
         } catch (e) { setError(message(e)) } finally { setBusy(false) }
       }}>
         <p>第1〜3表を一緒に作ります。AIを使わず、手入力で作成できます。</p>
-        <label>適用開始日<input type="date" required value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-        <label>適用終了日（任意）<input type="date" min={from || undefined} value={to} onChange={(e) => setTo(e.target.value)} /></label>
         {error && <p role="alert" className="cp-error">{error}</p>}
         <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
       </form>
@@ -294,14 +295,9 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
           </div></div>
         </section>}
         {(continuous?[1,2]:active>0?[active]:[]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={active===i}><h2>{names[i]}</h2>
-          <div className="cp-paper-actions">
-            <button className="btn" disabled={busy} onClick={() => i === 1 ? setNeedsOpen(true) : setScheduleOpen(true)}>{i === 1 ? 'ニーズを追加・編集' : '予定を追加・編集'}</button>
-            {i === 2 && <button className="btn" disabled={busy} onClick={() => setActivitiesOpen(true)}>主な日常生活上の活動を編集</button>}
-            <small>厚生労働省の公式様式。欄を押して入力します。</small>
-          </div>
           <OfficialPlanSheet state={i === 1 ? second : third} needs={needs} slots={slots} touch={touch}
             busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={i === 1 && aiNeeds.size > 0}
-            onNeed={(i) => needs[i] ? setNeedIndex(i) : setNeedsOpen(true)}
+            onNeed={setNeedIndex} onNeeds={() => setNeedsOpen(true)}
             onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
         </section>)}
         </div>
@@ -335,6 +331,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     </Modal>}
     {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
       <p>入力はこの画面に保持します。各表の「保存」で第1〜3表をまとめて保存してください。</p>
+      {!readOnly && <button className="btn" type="button" disabled={busy} onClick={() => { setNeedIndex(null); setNeedsOpen(true) }}>ニーズ一覧</button>}
       <fieldset disabled={readOnly || busy}>
         <NeedFields need={needs[needIndex]} update={(change) => updateNeed(needIndex, change)} />
         <button className="btn cp-danger" onClick={() => { if (window.confirm('ニーズと、その下の目標・サービス・週間予定を削除しますか？')) {
