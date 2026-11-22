@@ -40,7 +40,7 @@ export async function listCareRecords(db: Db, officeId: string, clientId: string
 }
 export async function careRecordRevision(db: Db, officeId: string, id: string, rev: number): Promise<CareRecordRevision> {
   const r = (await db.query(`SELECT v.rev,v.saved_at,v.template_version_id,v."values" FROM revisions v JOIN documents d ON d.id=v.document_id
-    WHERE d.id=$1 AND d.office_id=$2 AND d.kind IN ('care_plan_4','care_plan_5','care_plan_6') AND v.rev=$3`, [id, officeId, rev])).rows[0]
+    WHERE d.id=$1 AND d.office_id=$2 AND d.kind IN ('care_plan_4','care_plan_5','care_plan_6','care_plan_7') AND v.rev=$3`, [id, officeId, rev])).rows[0]
   if (!r) throw new NotFound()
   return { rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString(), formVersionId: r.template_version_id, values: r.values }
 }
