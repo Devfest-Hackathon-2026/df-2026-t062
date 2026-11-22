@@ -35,7 +35,7 @@ export interface FormPage {
   width: number
   height: number
   /** 保存値から印字時だけ展開する。様式の種類ではなく、この宣言で改ページを決める。 */
-  print?: { type: 'text' } | { type: 'flow', slots: string[] } | { type: 'sections', slots: string[], list?: { key: string, rowsPerPage: number } } | {
+  print?: { type: 'text' } | {
     type: 'table'
     key: string
     nested: string[]
