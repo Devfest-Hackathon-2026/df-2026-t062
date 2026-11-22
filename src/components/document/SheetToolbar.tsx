@@ -24,8 +24,10 @@ export function SheetToolbar({ title, page, zoom, onZoom, hasUpdates = false, ai
       <span className="sheet-status">{status}</span>
       {saved && <span role="status" className="sheet-saved">保存しました</span>}
       {saveHint && <span className="sheet-status">{saveHint}</span>}
+      <div className="sheet-save-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
       <button type="button" className="savebtn pc-work-save" aria-label="書類を保存" disabled={disabled} onClick={onSave}>保存</button>
       {actions}
+      </div>
     </div>
   </div>
 }

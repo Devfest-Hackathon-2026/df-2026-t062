@@ -205,8 +205,12 @@ test('左側は用紙の選択だけにし、確定は保存の横から明示�
   await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeDisabled()
   await save(page)
   await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeEnabled()
-  const order = await toolbar.locator('.sheet-actions > button').allTextContents()
+  const order = await toolbar.locator('.sheet-save-actions > button').allTextContents()
   expect(order.slice(-2)).toEqual(['保存', '計画を確定'])
+  const saveBox = (await toolbar.getByRole('button', { name: '書類を保存', exact: true }).boundingBox())!
+  const confirmBox = (await toolbar.getByRole('button', { name: '計画を確定', exact: true }).boundingBox())!
+  expect(Math.abs(saveBox.y + saveBox.height / 2 - confirmBox.y - confirmBox.height / 2)).toBeLessThan(2)
+  expect(confirmBox.x).toBeGreaterThanOrEqual(saveBox.x + saveBox.width)
 })
 
 test('ケアプランとの往復で相談履歴と参照元を保つ', async ({ page, clientId, ui }) => {
