@@ -1,3 +1,4 @@
+import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { useEffect,useRef,useState } from 'react'
 import { FEE_MASTER,type FeeInput } from '../../../core/care-fees.ts'
 import type { CareFeeCalculation,CareFeeSummary } from '../../../core/care-fee-api.ts'
@@ -49,14 +50,17 @@ export function CareFeeWork({clientId,clientName,onBack}:{clientId:string;client
   const r=await api.confirmCareFee(calculation.groupId,calculation.id,calculation.revision)
   if(active.current){setCalculation(r.calculation);setNotice('この算定を確定しました')}
  })
+ const editor = <>
+   {error&&<p role="alert" className="care-record-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
+   {!source?<p>保存済みの第6表と、その保存版を選択してください。</p>:<><h2>{source.month.month} ・ 計画版 {source.month.planVersion} ／ 第6表 保存版 {source.revision}</h2><p>マスター：{input.masterId}（検証範囲 {FEE_MASTER.effectiveFrom}〜{FEE_MASTER.verifiedThrough}）</p><CareFeeConditions value={input} source={source} disabled={busy} onChange={change} /><button className="savebtn" disabled={busy} onClick={calculate}>この条件で計算して保存</button>{dirty&&<p role="status">算定条件の変更はまだ保存していません。</p>}</>}
+   {calculation&&<><label>算定履歴<select aria-label="算定履歴" value={calculation.id} disabled={busy} onChange={e=>{const id=e.target.value;void run(async()=>{if(mayDiscard())await loadCalculation(calculation.groupId,id)})}}>{history.map(h=><option key={h.id} value={h.id}>保存版 {h.revision}</option>)}</select></label><CareFeeResult calculation={calculation} /><div className="care-fee-actions"><button className="btn" disabled={busy} onClick={()=>void run(async()=>downloadBlob(await api.pdf(calculation.documentId,calculation.revision),'サービス利用票別表_'+calculation.month+'_'+clientName+'.pdf'))}>この算定のPDF</button><button className="btn" disabled={busy||dirty||!!calculation.confirmedAt||calculation.result.status!=='calculated'} onClick={confirm}>{calculation.confirmedAt?'確定済み':'この算定を確定'}</button></div></>}
+ </>
  return <main className="care-record-work care-fee-work"><header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>{if(mayDiscard())onBack()}}>書類に戻る</button><h1>{clientName} さんのサービス利用票別表</h1></header>
   <div className="care-record-columns"><aside className="care-record-list" aria-label="第7表の参照月と保存済み算定"><h2>参照する第6表</h2><label>第6表（保存済み）<select aria-label="第6表（保存済み）" value={source?.month.id??''} disabled={busy} onChange={e=>chooseMonth(e.target.value)}><option value="">対象月・計画版を選択</option>{months.map(m=><option key={m.id} value={m.id}>{m.month} ・ 計画版 {m.planVersion}</option>)}</select></label>{!months.length&&<p>第6表を保存してから選択してください。</p>}
    {source&&<label>第6表の保存版<select aria-label="第6表の保存版" value={source.revision} disabled={busy} onChange={e=>{const rev=Number(e.target.value);void run(async()=>{setInput(v=>({...v,scopeConfirmed:false}));setDirty(true);await loadSource(source.month.id,rev)})}}>{revisions.map(r=><option key={r.rev} value={r.rev}>保存版 {r.rev}</option>)}</select></label>}
    <h2>保存済みの算定</h2>{!fees.length?<p>算定はまだありません。</p>:<ol>{fees.map(f=><li key={f.id}><button type="button" disabled={busy} aria-pressed={calculation?.groupId===f.id} onClick={()=>void run(async()=>{if(mayDiscard())await loadCalculation(f.id)})}>{f.month} ・ {f.basis==='planned'?'予定':'実績'}<small>保存版 {f.revision} ・ {f.status==='calculated'?'計算済み':'未計算'}</small></button></li>)}</ol>}
   </aside><section className="care-record-editor" aria-label="第7表の計算と保存結果">
-   {error&&<p role="alert" className="care-record-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
-   {!source?<p>保存済みの第6表と、その保存版を選択してください。</p>:<><h2>{source.month.month} ・ 計画版 {source.month.planVersion} ／ 第6表 保存版 {source.revision}</h2><p>マスター：{input.masterId}（検証範囲 {FEE_MASTER.effectiveFrom}〜{FEE_MASTER.verifiedThrough}）</p><CareFeeConditions value={input} source={source} disabled={busy} onChange={change} /><button className="savebtn" disabled={busy} onClick={calculate}>この条件で計算して保存</button>{dirty&&<p role="status">算定条件の変更はまだ保存していません。</p>}</>}
-   {calculation&&<><label>算定履歴<select aria-label="算定履歴" value={calculation.id} disabled={busy} onChange={e=>{const id=e.target.value;void run(async()=>{if(mayDiscard())await loadCalculation(calculation.groupId,id)})}}>{history.map(h=><option key={h.id} value={h.id}>保存版 {h.revision}</option>)}</select></label><CareFeeResult calculation={calculation} /><div className="care-fee-actions"><button className="btn" disabled={busy} onClick={()=>void run(async()=>downloadBlob(await api.pdf(calculation.documentId,calculation.revision),'サービス利用票別表_'+calculation.month+'_'+clientName+'.pdf'))}>この算定のPDF</button><button className="btn" disabled={busy||dirty||!!calculation.confirmedAt||calculation.result.status!=='calculated'} onClick={confirm}>{calculation.confirmedAt?'確定済み':'この算定を確定'}</button></div></>}
+   {calculation && source ? <OfficialCareWorkspace documentId={calculation.documentId} revision={calculation.revision} values={{}} title="第7表・サービス利用票別表" status={dirty ? '算定条件に未保存の変更があります' : '保存済みの算定結果'}>{editor}</OfficialCareWorkspace> : editor}
   </section></div>
  </main>
 }

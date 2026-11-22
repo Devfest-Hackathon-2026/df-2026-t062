@@ -1,3 +1,4 @@
+import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { CareRecordConfirmationPanel } from './CareRecordConfirmationPanel.tsx'
 import { MeetingFields } from './MeetingFields.tsx'
 import { careRecordConfig, type CareRecordKind } from '../../../core/care-record.ts'
@@ -97,7 +98,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
       <section className="care-record-editor" aria-label={config.short + 'の編集'}>
         {(error || state.error) && <p role="alert" className="care-record-error">{error || state.error}</p>}
         {state.notice && <p role="status">{state.notice}</p>}
-        {!id ? <p>記録を選ぶか、「{config.short}を追加」で新しい記録を作成してください。</p> : !ready ? <p role="status">記録を読み込んでいます…</p> : <>
+        {!id ? <p>記録を選ぶか、「{config.short}を追加」で新しい記録を作成してください。</p> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`} status={past ? `保存版 ${past.rev}（閲覧のみ）` : dirty || !state.doc?.rev ? '未保存' : '保存済み'}>
           <div className="care-record-toolbar"><span role="status">{past ? '保存版 ' + past.rev + 'を表示中（閲覧のみ）' : dirty ? '保存していない変更があります' : state.doc?.rev ? '保存済み（最終確定とは異なります）' : '未保存'}</span><button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button><button className="btn" disabled={busy || (!past && (dirty || !state.doc?.rev)) || !state.hasPdf} onClick={exportPdf}>{past ? 'この保存版のPDF' : '第' + config.number + '表PDF'}</button></div>
           <label>修正履歴<select aria-label="修正履歴" value={past?.rev ?? ''} disabled={busy} onChange={e => showRevision(e.target.value)}><option value="">現在の記録</option>{revisions.map(r => <option key={r.rev} value={r.rev}>保存版 {r.rev} ・ {new Date(r.savedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</option>)}</select></label>
           <CareRecordConfirmationPanel key={'confirmation-'+id} documentId={id} clientId={clientId} kind={kind} revision={past?.rev ?? state.doc?.rev ?? 0} dirty={!past && !!dirty} readOnly={!!past} busy={busy} onWorkingChange={value => { busyRef.current=value;setBusy(value) }} />
@@ -112,7 +113,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
             </>}
           </fieldset>
           {!past && id && <CareRecordDraftPanel key={id} documentId={id} beforeAdopt={state.flush} onApplied={async () => { await state.reload(); setReload(n => n + 1) }} />}
-        </>}
+        </OfficialCareWorkspace>}
       </section>
     </div>
   </main>
