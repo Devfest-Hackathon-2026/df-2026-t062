@@ -18,8 +18,13 @@ export const test = base.extend<{ clientId: string, clientName: string, ui: 'pc'
     await page.route('**/__/firebase/init.json', (route) => route.fulfill({ status: 404, body: '' }))
     await page.goto('/')
     await page.getByRole('textbox', { name: 'メールアドレス' }).fill('e2e@example.com')
+    const clientsResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/clients' && response.status() === 200
+    })
     await page.getByRole('button', { name: 'ログイン', exact: true }).click()
     await expect(page.getByRole('heading', { name: /^(担当の利用者|利用者)$/ })).toBeVisible()
+    await clientsResponse
     // ui指定なしで実際のタッチ端末判定も検証する。
     await page.goto(`/clients/${clientId}`)
     await expect(page.getByRole('heading', { level: 1 }).or(page.locator('.pad > header'))).toBeVisible()
@@ -36,11 +41,11 @@ export async function openPlan(page: Page, ui: 'pc' | 'pad') {
     await page.getByRole('menuitem', { name: /ケアプランを作成/ }).click()
   } else await page.getByRole('button', { name: 'ケアプランを作成', exact: true }).click()
 }
-export async function createPlan(page: Page, ui: 'pc' | 'pad') {
+export async function createPlan(page: Page, ui: 'pc' | 'pad', effectiveFrom = '2026-04-01') {
   await openPlan(page, ui)
   const dialog = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel('適用開始日', { exact: true }).fill('2026-04-01')
+  await dialog.getByLabel('適用開始日', { exact: true }).fill(effectiveFrom)
   await dialog.getByLabel('適用終了日（任意）').fill('2027-03-31')
   await dialog.getByRole('button', { name: '第1〜3表を作る' }).click()
   await expect(dialog).not.toBeVisible()
