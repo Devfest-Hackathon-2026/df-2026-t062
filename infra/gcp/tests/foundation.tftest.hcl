@@ -34,6 +34,15 @@ override_resource {
 }
 
 override_resource {
+  target          = google_service_account.recording_cleanup
+  override_during = plan
+  values = {
+    email = "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com"
+    name  = "projects/mock-project/serviceAccounts/cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
   target          = google_service_account.tasks_invoker
   override_during = plan
   values = {
@@ -58,6 +67,7 @@ run "private_service_with_scoped_deployer" {
     project_id                 = "mock-project"
     github_repository_id       = "1447301909"
     github_repository_owner_id = "234936919"
+    app_origins                = []
   }
 
   assert {
@@ -162,9 +172,11 @@ run "private_service_with_scoped_deployer" {
       google_sql_user.api.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
       google_sql_user.api.name == "cloud-run-api-runtime@mock-project.iam" &&
       google_sql_user.worker.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
-      google_sql_user.worker.name == "cloud-run-worker-runtime@mock-project.iam"
+      google_sql_user.worker.name == "cloud-run-worker-runtime@mock-project.iam" &&
+      google_sql_user.recording_cleanup.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
+      google_sql_user.recording_cleanup.name == "cloud-run-recording-cleanup@mock-project.iam"
     )
-    error_message = "The API and worker must be IAM database users without passwords."
+    error_message = "The API, worker and recording cleanup must be IAM database users without passwords."
   }
 
   assert {
@@ -229,6 +241,26 @@ run "private_service_with_scoped_deployer" {
 
   assert {
     condition = (
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].service_account == "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].timeout == "900s" &&
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].max_retries == 0 &&
+      google_cloud_scheduler_job.recording_cleanup.schedule == "*/15 * * * *" &&
+      google_cloud_scheduler_job.recording_cleanup.http_target[0].oauth_token[0].service_account_email == "tasks-invoker@mock-project.iam.gserviceaccount.com"
+    )
+    error_message = "The recording cleanup Job must use its dedicated service account and run every 15 minutes through Scheduler."
+  }
+
+  assert {
+    condition = (
+      google_storage_bucket.source.soft_delete_policy[0].retention_duration_seconds == 259200 &&
+      length(google_storage_bucket.source.lifecycle_rule) == 0 &&
+      google_storage_bucket_iam_member.recording_cleanup_source.condition[0].expression == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-source/objects/recordings/\")"
+    )
+    error_message = "The source bucket must use three-day Soft Delete and keep Lifecycle disabled until readiness is verified."
+  }
+
+  assert {
+    condition = (
       google_identity_platform_config.auth.sign_in[0].email[0].enabled &&
       google_identity_platform_config.auth.client[0].permissions[0].disabled_user_signup
     )
@@ -240,7 +272,9 @@ run "private_service_with_scoped_deployer" {
       google_service_account_iam_member.api_signs_as_itself.role == "roles/iam.serviceAccountTokenCreator" &&
       google_service_account_iam_member.api_acts_as_tasks_invoker.role == "roles/iam.serviceAccountUser" &&
       google_cloud_tasks_queue_iam_member.api_enqueues.role == "roles/cloudtasks.enqueuer" &&
-      google_storage_bucket_iam_member.api_source.role == "roles/storage.objectAdmin" &&
+      google_storage_bucket_iam_member.api_source_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.api_source_creator.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.api_document_inputs_cleanup.role == "roles/storage.objectAdmin" &&
       google_storage_bucket_iam_member.api_output.role == "roles/storage.objectAdmin" &&
       google_storage_bucket_iam_member.api_forms.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.worker_source.role == "roles/storage.objectViewer" &&
@@ -248,6 +282,8 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket_iam_member.speech_source_object_viewer.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.speech_source_object_viewer.member == "serviceAccount:service-123456789012@gcp-sa-speech.iam.gserviceaccount.com" &&
       google_storage_bucket_iam_member.worker_work.role == "roles/storage.objectAdmin" &&
+      toset(google_project_iam_custom_role.recording_cleanup_object_control.permissions) == toset(["storage.objects.get", "storage.objects.delete", "storage.objects.update"]) &&
+      google_storage_bucket_iam_member.recording_cleanup_source.member == "serviceAccount:cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
       google_project_iam_member.worker_vertex.role == "roles/aiplatform.user" &&
       google_project_iam_member.api_vertex.role == "roles/aiplatform.user" &&
       google_project_iam_member.api_firebaseauth_admin.role == "roles/firebaseauth.admin" &&
