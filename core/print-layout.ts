@@ -36,6 +36,18 @@ export function expandPrintLayout(
   const expanded = form.schemas.flatMap((schemas, sourceIndex): PrintPage[] => {
     const layout = form.pages.find((p) => p.pdfIndex === sourceIndex)?.print
     if (!layout || layout.type === 'text') return [{ sourceIndex, schemas, input: rendered }]
+    if (layout.type === 'sections') {
+      const regions = layout.slots.map(n => schemas.find(s => s.name === n))
+      if (!regions.length || regions.some(s => !s || s.type !== 'text')) throw new Error('文章の継続領域が不正です')
+      const parts = regions.map(s => textChunks(rendered[s!.name] ?? '', s!))
+      const rows = layout.list && Array.isArray(values[layout.list.key]) ? values[layout.list.key] as unknown[] : []
+      if (layout.list && (!Number.isInteger(layout.list.rowsPerPage) || layout.list.rowsPerPage < 1)) throw new Error('継続する表の行数が不正です')
+      const count = Math.max(1, ...parts.map(p => p.length), layout.list ? Math.ceil(rows.length / layout.list.rowsPerPage) : 0)
+      return Array.from({ length: count }, (_, n) => ({
+        sourceIndex, schemas,
+        input: { ...(layout.list ? renderAll(form.bindings, { ...values, [layout.list.key]: rows.slice(n * layout.list.rowsPerPage, (n + 1) * layout.list.rowsPerPage) }) : rendered), ...Object.fromEntries(regions.map((s, i) => [s!.name, parts[i][n] ?? ''])) },
+      }))
+    }
     if (layout.type === 'flow') {
       const regions = layout.slots.map(name => schemas.find(s => s.name === name))
       if (!regions.length || regions.some(s => !s || s.type !== 'text')) throw new Error('文章の継続領域が不正です')

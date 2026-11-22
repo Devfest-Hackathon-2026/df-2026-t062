@@ -1,0 +1,35 @@
+{
+  "kind": "care_plan_4",
+  "name": "サービス担当者会議の要点 第4表",
+  "title": "サービス担当者会議の要点（厚生労働省 令和6年7月4日）",
+  "publisher": "厚生労働省",
+  "sourceUrl": "https://www.mhlw.go.jp/content/001271371.pdf",
+  "sourcePdfSha256": "b525d876cc7b4c7252d243b6e3bfaf32c1508cb2dc8f7763686841967af4e5c9",
+  "sourcePages": [
+    20
+  ],
+  "basePdfSha256": "babfce74001539c821f30972dd4fc66a7c7895189d2243e595d8b7838748d618",
+  "pages": [
+    {
+      "no": 1,
+      "pdfIndex": 0,
+      "title": "サービス担当者会議の要点",
+      "width": 297,
+      "height": 210,
+      "print": {
+        "type": "sections",
+        "slots": [
+          "検討した項目",
+          "検討内容",
+          "結論",
+          "残された課題",
+          "次回の開催時期"
+        ],
+        "list": {
+          "key": "meeting.attendees",
+          "rowsPerPage": 9
+        }
+      }
+    }
+  ]
+}
