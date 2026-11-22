@@ -10,6 +10,7 @@ import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import { useDocument } from '../document/useDocument.ts'
 import { DailyActivities } from './DocumentFields.tsx'
 import { OfficialPlanSheet } from './OfficialPlanSheet.tsx'
+import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { savePlanEdits, documentDirty } from './save.ts'
 import './care-plan.css'
 
@@ -49,12 +50,13 @@ export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, o
   </button>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true }: {
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false }: {
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
-  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean, selectedTable?:number, hideNavigation?:boolean,
 }) {
   const [plans, setPlans] = useState<CarePlanSummary[]>([])
   const [selected, setSelected] = useState<CarePlanView | null>(null)
+  const [listLoaded,setListLoaded]=useState(false)
   const [busy, setBusy] = useState(false)
   const [childBusy, setChildBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -85,7 +87,8 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       if (r.plans[0]) {
         const result = await api.carePlan(r.plans[0].id)
         if (alive) setSelected(result.plan)
-      } else setCreating(true)
+      } else if(!hideNavigation) setCreating(true)
+      if(alive)setListLoaded(true)
     }).catch((e) => { if (alive) setError(message(e)) })
     return () => { alive = false }
   }, [clientId])
@@ -143,13 +146,14 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
         <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
       </form>
     </Modal>}
-    {selected ? <PlanEditor key={selected.id} initial={selected} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+    {selected ? <PlanEditor key={selected.id} initial={selected} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
-      : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
+      : listLoaded && hideNavigation ? <OfficialCareWorkspace formKind={`care_plan_${selectedTable+1}`} values={{}} title={names[selectedTable]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget }: {
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false }: {
+  selectedTable?:number,hideNavigation?:boolean,
   outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
   onBusy: (busy: boolean) => void, onUpdated: () => void,
@@ -158,6 +162,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
   const [needs, setNeeds] = useState<NeedInput[]>(initial.needs)
   const [slots, setSlots] = useState<SlotInput[]>(initial.slots)
   const [active, setActive] = useState(0)
+  useEffect(()=>{setActive(selectedTable)},[selectedTable])
   const [zoom, setZoom] = useState(100)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -252,10 +257,10 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     })} />
   return <>
     {outputTarget && createPortal(output, outputTarget)}
-    <div className="cp-layout">
-      <nav className="cp-nav" aria-label="ケアプランの表"><div className="cp-nav-title">ケアプラン用紙</div>{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
+    <div className={`cp-layout${hideNavigation?' cp-layout-single':''}`}>
+      {!hideNavigation&&<nav className="cp-nav" aria-label="ケアプランの表"><div className="cp-nav-title">ケアプラン用紙</div>{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
 
-      </nav>
+      </nav>}
       <main className="cp-canvas">
         <div className="cp-context-bar">
           <div className="cp-context-meta" role="group" aria-label="表示中の計画">

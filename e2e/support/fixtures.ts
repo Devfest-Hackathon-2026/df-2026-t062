@@ -43,6 +43,7 @@ export async function openPlan(page: Page, ui: 'pc' | 'pad') {
 }
 export async function createPlan(page: Page, ui: 'pc' | 'pad', effectiveFrom = '2026-04-01') {
   await openPlan(page, ui)
+  await page.getByRole('button', {name: '＋ 計画を作る', exact:true}).click()
   const dialog = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('適用開始日', { exact: true }).fill(effectiveFrom)
@@ -64,7 +65,7 @@ export async function save(page: Page) {
   await expect(page.getByRole('status').filter({ hasText: '第1〜3表を保存しました' })).toBeVisible()
 }
 export async function table(page: Page, number: number) {
-  await page.getByRole('navigation', { name: 'ケアプランの表' }).getByRole('button', { name: new RegExp(`^${number} 第${number}表`) }).click()
+  await page.getByRole('tablist', { name: 'ケアプランの書類' }).getByRole('tab', { name: new RegExp(`^第${number}表 `) }).click()
   await expect(page.locator('.sheet-toolbar h2')).toContainText(`第${number}表`)
 }
 export async function addNeed(page: Page) {
@@ -103,7 +104,7 @@ export async function openCareDocument(page: Page, ui: 'pc' | 'pad', number: 4 |
   const creating = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
   if (!await tabs.isVisible()) {
     await openPlan(page, ui)
-    await expect(creating.or(page.getByRole('navigation', { name: 'ケアプランの表', exact: true }))).toBeVisible()
+    await expect(tabs).toBeVisible()
   }
   if (await creating.isVisible()) await creating.getByRole('button', { name: '閉じる', exact: true }).click()
   await tabs.getByRole('tab', { name: new RegExp(`^第${number}表 `) }).click()

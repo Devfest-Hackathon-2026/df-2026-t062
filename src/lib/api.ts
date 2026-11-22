@@ -132,6 +132,7 @@ export const api = {
   clients: (q = '', sort: 'updated' | 'name' = 'updated') => req<{ clients: ClientSummary[] }>('GET', `/api/clients?q=${encodeURIComponent(q)}&sort=${sort}`),
   createClient: (input: { name: string, sex?: '男' | '女' | null, status?: string }) => req<{ id: string, documentId: string }>('POST', '/api/clients', input),
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
+  publishedForm: (kind:string) => req<{formVersionId:string}>('GET',`/api/form-kinds/${encodeURIComponent(kind)}/published`),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
   careFees:(clientId:string)=>req<{fees:CareFeeSummary[]}>('GET',`/api/clients/${clientId}/care-plan-fees`),

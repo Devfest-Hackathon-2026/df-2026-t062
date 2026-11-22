@@ -45,6 +45,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  await expect(page.getByLabel('修正履歴')).toContainText('保存版 1')
  await page.getByRole('button',{name:'用紙に戻る',exact:true}).click()
  await page.getByRole('button',{name:'この保存版で第7表（予定）',exact:true}).click()
+ await page.getByRole('button',{name:'入力・修正',exact:true}).click()
  await expect(page.getByRole('status').filter({hasText:'指定した保存版を引き継ぎました'})).toBeVisible()
  const month=(await(await page.request.get(`/api/clients/${clientId}/care-plan-months`,{headers})).json()).months[0]
  await expect(page.getByLabel('第6表（保存済み）',{exact:true})).toHaveValue(month.id)
@@ -85,6 +86,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  await page.getByRole('button',{name:'用紙に戻る',exact:true}).click()
  await page.getByRole('button',{name:'この保存版で第7表（実績）',exact:true}).click()
  await expect(page.getByLabel('第6表の保存版',{exact:true})).toHaveValue('1')
+ await page.getByRole('button',{name:'入力・修正',exact:true}).click()
  await expect(page.getByLabel('算定する区分',{exact:true})).toHaveValue('actual')
  await expect(page.getByRole('region',{name:'保存済みの算定結果',exact:true})).toHaveCount(0)
  await page.reload();await open(7)
@@ -104,6 +106,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  await page.getByLabel('算定する区分',{exact:true}).selectOption('actual')
  await page.getByRole('checkbox',{name:/加減算・公費/}).check()
  await page.getByRole('button',{name:'この条件で計算して保存',exact:true}).click()
+ await page.getByRole('button',{name:'入力・修正',exact:true}).click()
  await expect(result.getByRole('status')).toHaveText('未計算・要確認')
  await expect(result).toContainText('実績未入力があります')
  await expect(result.locator('dd')).toHaveCount(0)

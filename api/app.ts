@@ -350,6 +350,11 @@ export function createApp(deps: ApiDeps) {
 
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
+  app.get('/api/form-kinds/:kind/published', staffRoute('care.work', async(c,staff,db)=>{
+    const kind=await kinds.visibleKind(db,staff.officeId,c.req.param('kind')!)
+    if(!kind)throw new repo.NotFound()
+    return json(c,{formVersionId:await forms.publishedVersionId(db,staff.officeId,kind.key)})
+  }))
 
   // ---------- ケアプラン（#90）----------
 

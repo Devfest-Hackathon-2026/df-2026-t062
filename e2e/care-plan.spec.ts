@@ -66,6 +66,7 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   await openHistory()
   await history.getByRole('button', { name: 'この計画から改定版を作る', exact: true }).click()
   await page.getByRole('dialog', { name: '改定版を作る', exact: true }).getByRole('button', { name: '第1〜3表を作る' }).click()
+  await table(page,1)
   await expect(policy).toBeEditable()
   const revised = await getPlan(page, clientId)
   expect(revised).toMatchObject({ version: 2, status: 'draft', previousPlanId: persisted.id })
@@ -176,7 +177,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
     expect(canvas.width).toBeGreaterThan(600)
     if (ui === 'pc') {
       const assistant = (await page.locator('.assistant-panel').boundingBox())!
-      const nav = (await page.locator('.cp-nav').boundingBox())!
+      const nav = (await page.locator('.cp-area-tabs').boundingBox())!
       expect(nav.x + nav.width).toBeLessThan(canvas.x)
       expect(canvas.x + canvas.width).toBeLessThan(assistant.x)
     }
@@ -224,8 +225,8 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
 
 test('左側は用紙の選択だけにし、確定は保存の横から明示的に行う', async ({ page, ui }) => {
   await createPlan(page, ui)
-  const nav = page.getByRole('navigation', { name: 'ケアプランの表' })
-  await expect(nav.getByRole('button')).toHaveCount(3)
+  const nav = page.getByRole('tablist', { name: 'ケアプランの書類' })
+  await expect(nav.getByRole('tab')).toHaveCount(7)
   await expect(nav.locator('select')).toHaveCount(0)
   for (const name of ['読み直す', 'AI原案を作る', '計画を確定', '＋ 計画を作る']) {
     await expect(nav.getByRole('button', { name, exact: true })).toHaveCount(0)

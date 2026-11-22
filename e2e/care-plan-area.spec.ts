@@ -1,4 +1,24 @@
-import { test, expect, createPlan, openCareDocument } from './support/fixtures.ts'
+import { test, expect, createPlan, openCareDocument, openPlan, headers } from './support/fixtures.ts'
+
+test('ケアプランを開くと左の縦一覧から全7表の空用紙を閲覧でき、記録は作成しない',async({page,ui,clientId})=>{
+ const writes:string[]=[]
+ page.on('request',r=>{if(r.method()==='POST'&&/care-(plans|records|plan-months)/.test(r.url()))writes.push(r.url())})
+ await openPlan(page,ui)
+ const nav=page.getByRole('tablist',{name:'ケアプランの書類',exact:true})
+ await expect(nav.getByRole('tab')).toHaveCount(7)
+ let bottom=0
+ for(let n=1;n<=7;n++){
+  const tab=nav.getByRole('tab',{name:new RegExp(`^第${n}表 `)})
+  const box=(await tab.boundingBox())!;expect(box.y).toBeGreaterThanOrEqual(bottom);bottom=box.y+box.height
+  await tab.click()
+  await expect(page.getByRole('img',{name:new RegExp(`第${n}表.*原紙`)}).first()).toBeVisible()
+ }
+ expect(writes).toEqual([])
+ for(const endpoint of ['care-plans','care-records?kind=care_plan_4','care-records?kind=care_plan_5','care-plan-months','care-plan-fees']){
+  const r=await page.request.get(`/api/clients/${clientId}/${endpoint}`,{headers});expect(r.ok()).toBeTruthy()
+  const body=await r.json();expect(body.plans??body.records??body.months??body.fees).toHaveLength(0)
+ }
+})
 
 test('第4〜7表の入口をケアプラン内に集約し、表の往復で未保存入力を保持する', async ({ page, ui }) => {
   if (ui === 'pc') {
@@ -28,6 +48,6 @@ test('第4〜7表の入口をケアプラン内に集約し、表の往復で未
   await page.getByRole('button', { name: '入力・修正', exact: true }).click()
   await expect(page.getByLabel('検討内容', { exact: true })).toHaveValue('切り替えで失わない会議の未保存入力')
   await page.getByRole('button', { name: '用紙に戻る', exact: true }).click()
-  await page.getByRole('tablist', { name: 'ケアプランの書類', exact: true }).getByRole('tab', { name: '第1〜3表', exact: true }).click()
+  await page.getByRole('tablist', { name: 'ケアプランの書類', exact: true }).getByRole('tab', { name: '第1表 基本情報と方針', exact: true }).click()
   await expect(policy).toHaveValue('表の切り替え後も残す未保存の方針')
 })

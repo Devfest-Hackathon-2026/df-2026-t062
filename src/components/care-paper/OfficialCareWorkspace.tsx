@@ -5,29 +5,31 @@ import { api } from '../../lib/api.ts'
 import './care-paper.css'
 
 /** PDF出力と同じ原紙・印字座標を使用する。保存版はその版の値と様式を読む。 */
-export function OfficialCareWorkspace({ documentId, revision, formVersionId, savedRevision, values, title, status, children }: {
-  documentId: string, revision?: number, formVersionId?: string, savedRevision?: number, values: Record<string, unknown>, title: string, status?: ReactNode, children: ReactNode,
+export function OfficialCareWorkspace({ documentId, formKind, revision, formVersionId, savedRevision, values, title, status, children }: {
+  documentId?: string, formKind?:string, revision?: number, formVersionId?: string, savedRevision?: number, values: Record<string, unknown>, title: string, status?: ReactNode, children: ReactNode,
 }) {
   const [loaded, setLoaded] = useState<{ identity: string, form: FormDef, assets: FormAssetsView, base: Record<string, unknown> }>()
   const [error, setError] = useState('')
   const [zoom, setZoom] = useState(100)
   const [pageIndex, setPageIndex] = useState(0)
   const dialog = useRef<HTMLDialogElement>(null)
-  const identity = `${documentId}:${revision ?? 'current'}:${formVersionId ?? ''}`
+  useEffect(()=>{dialog.current?.close()},[documentId])
+  const identity = `${documentId ?? formKind}:${revision ?? 'current'}:${formVersionId ?? ''}`
   useEffect(() => {
     let alive = true
     setError('')
     void (async () => {
-      const source = revision
+      const source = documentId ? revision
         ? (await api.careRecordRevision(documentId, revision)).revision
-        : (await api.document(documentId)).document
-      const versionId = formVersionId ?? source.formVersionId
+        : (await api.document(documentId)).document : undefined
+      if(!source&&!formKind&&!formVersionId)throw new Error('表示する様式が指定されていません')
+      const versionId = formVersionId ?? source?.formVersionId ?? (await api.publishedForm(formKind!)).formVersionId
       const [version, assets] = await Promise.all([api.formVersion(versionId), api.formAssets(versionId)])
-      const base = 'values' in source ? source.values : Object.fromEntries(Object.entries(source.fields).map(([key, field]) => [key, field.value]))
+      const base = !source ? {} : 'values' in source ? source.values : Object.fromEntries(Object.entries(source.fields).map(([key, field]) => [key, field.value]))
       if (alive) setLoaded({ identity, form: toFormDef(version), assets, base })
     })().catch(e => { if (alive) setError(e instanceof Error ? e.message : '用紙を読み込めませんでした') })
     return () => { alive = false }
-  }, [documentId, revision, formVersionId, savedRevision, identity])
+  }, [documentId, formKind, revision, formVersionId, savedRevision, identity])
   const current = loaded?.identity === identity ? loaded : undefined
   const rendered = useMemo(() => {
     if (!current) return { pages: [], baseline: [] }
