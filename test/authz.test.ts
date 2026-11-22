@@ -19,10 +19,11 @@ test('権限表: 14_認可.md の表のとおり', () => {
     'staff.manage': [false, true, false],
     'form.manage': [false, true, false],
     'site.manage': [false, false, true],
+    'recording.retention.manage': [false, true, false],
   }
   assert.deepEqual([...OPERATIONS].sort(), Object.keys(table).sort())
   for (const op of OPERATIONS) assert.deepEqual(['caremanager', 'admin', 'siteAdmin'].map((r) => allows(r, op)), table[op], op)
-  assert.deepEqual(operationsOf('admin'), ['care.work', 'staff.manage', 'form.manage'])
+  assert.deepEqual(operationsOf('admin'), ['care.work', 'staff.manage', 'form.manage', 'recording.retention.manage'])
   assert.deepEqual(operationsOf('知らない役割'), [], '表にない役割は何もできない')
 })
 
@@ -154,6 +155,7 @@ test('すべての入口で、宣言した操作について、使う人ごと�
     'staff.manage': { care: 403, admin: PASS, disabled: 401, site: 401, anon: 401, careB: 403, adminB: PASS },
     'form.manage': { care: 403, admin: PASS, disabled: 401, site: 401, anon: 401, careB: 403, adminB: PASS },
     'site.manage': { care: 403, admin: 403, disabled: 403, site: PASS, anon: 401, careB: 403, adminB: 403 },
+    'recording.retention.manage': { care: 403, admin: PASS, disabled: 401, site: 401, anon: 401, careB: 403, adminB: PASS },
   }
   const wrong: string[] = []
   for (const r of routes) {
@@ -179,7 +181,7 @@ test('care.work: ほかの事業所の利用者は、ケアマネも責任者も
 test('/api/me: 自分の役割でできる操作を返す', { skip }, async () => {
   const me = async (t: string) => ((await call('/api/me', t)).body as { staff: { role: string, operations: string[] } }).staff
   assert.deepEqual((await me(WHO.care)).operations, ['care.work'])
-  assert.deepEqual((await me(WHO.admin)).operations, ['care.work', 'staff.manage', 'form.manage'])
+  assert.deepEqual((await me(WHO.admin)).operations, ['care.work', 'staff.manage', 'form.manage', 'recording.retention.manage'])
 })
 
 test('staff.manage: 責任者は自分の事業所の職員だけを見て、止める・戻す・役割を変える。止めたらすぐ 401', { skip }, async () => {

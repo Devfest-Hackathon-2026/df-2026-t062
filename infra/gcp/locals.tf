@@ -14,8 +14,9 @@ locals {
   worker_url = "https://${var.worker_service_name}-${data.google_project.this.number}.${var.region}.run.app"
 
   # IAM 認証の DB ユーザー名は、サービスアカウントのメールから ".gserviceaccount.com" を除いたもの。
-  api_db_user    = trimsuffix(google_service_account.runtime.email, ".gserviceaccount.com")
-  worker_db_user = trimsuffix(google_service_account.worker.email, ".gserviceaccount.com")
+  api_db_user     = trimsuffix(google_service_account.runtime.email, ".gserviceaccount.com")
+  worker_db_user  = trimsuffix(google_service_account.worker.email, ".gserviceaccount.com")
+  cleanup_db_user = trimsuffix(google_service_account.recording_cleanup.email, ".gserviceaccount.com")
 
   api_env = {
     AUTH_MODE           = "firebase"
@@ -68,6 +69,14 @@ locals {
   migrate_env = {
     CLOUD_SQL_INSTANCE = google_sql_database_instance.main.connection_name
     DB_USER            = local.api_db_user
+    DB_NAME            = google_sql_database.app.name
+  }
+
+  cleanup_env = {
+    STORAGE_MODE       = "gcs"
+    GCS_SOURCE_BUCKET  = google_storage_bucket.source.name
+    CLOUD_SQL_INSTANCE = google_sql_database_instance.main.connection_name
+    DB_USER            = local.cleanup_db_user
     DB_NAME            = google_sql_database.app.name
   }
 }
