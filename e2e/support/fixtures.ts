@@ -18,8 +18,13 @@ export const test = base.extend<{ clientId: string, clientName: string, ui: 'pc'
     await page.route('**/__/firebase/init.json', (route) => route.fulfill({ status: 404, body: '' }))
     await page.goto('/')
     await page.getByRole('textbox', { name: 'メールアドレス' }).fill('e2e@example.com')
+    const clientsResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === 'GET' && url.pathname === '/api/clients' && response.status() === 200
+    })
     await page.getByRole('button', { name: 'ログイン', exact: true }).click()
     await expect(page.getByRole('heading', { name: /^(担当の利用者|利用者)$/ })).toBeVisible()
+    await clientsResponse
     // ui指定なしで実際のタッチ端末判定も検証する。
     await page.goto(`/clients/${clientId}`)
     await expect(page.getByRole('heading', { level: 1 }).or(page.locator('.pad > header'))).toBeVisible()
