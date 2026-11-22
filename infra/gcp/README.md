@@ -69,9 +69,12 @@ recording_cleanup_alerts_enabled      = true
 monitoring_notification_channel_ids   = ["projects/<project-id>/notificationChannels/<channel-id>"]
 monitoring_environment                 = "production"
 recording_cleanup_scheduler_job_name   = "t062-recording-cleanup"
+recording_cleanup_scheduler_paused    = false
 ```
 
 通知チャネルIDが空のままアラートを有効化した場合、Terraformのpreconditionで適用を停止します。通知チャネルの作成・変更はTerraformの対象外とし、宛先の変更時はCloud Monitoring側の管理記録と監視Runbookを更新します。
+
+`recording_cleanup_scheduler_paused` の既定値は `true` です。正式イメージのデプロイ、DBマイグレーション、readiness確認、通知確認が完了し、責任者が稼働を承認した後だけ、本番の環境設定で `false` にします。手動の `gcloud scheduler jobs resume` だけで運用せず、Terraformの設定と実リソースを一致させます。
 
 ### サービスアカウントと権限
 
@@ -117,6 +120,8 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
    ```
 
 3. 移行はリリースのワークフローが流します。手元から流す場合は、`app` に所属するユーザー（api・workerのサービスアカウントを借りる、または `GRANT app TO` した自分のIAMユーザー）で `DB_USER=... CLOUD_SQL_INSTANCE=... npm run db:migrate` を実行します。`postgres` で流すとテーブルの持ち主が `postgres` になり、api・workerが使えなくなります。
+
+録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
 
 ## 様式（アセスメント用紙・入院時情報提供書）を入れる
 

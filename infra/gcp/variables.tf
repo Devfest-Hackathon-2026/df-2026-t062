@@ -188,6 +188,12 @@ variable "recording_cleanup_scheduler_job_name" {
   default     = "t062-recording-cleanup"
 }
 
+variable "recording_cleanup_scheduler_paused" {
+  description = "Keep the recording cleanup Scheduler paused until production readiness has been approved."
+  type        = bool
+  default     = true
+}
+
 variable "source_recording_lifecycle_enabled" {
   description = "readiness確認後だけ有効化するsource録音のLifecycle安全弁。"
   type        = bool

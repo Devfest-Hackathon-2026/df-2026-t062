@@ -100,7 +100,7 @@ case "${1:-}" in
     image="$IMAGE_BY_DIGEST"
     job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
     assert_main
-    previous_image="$(gcloud run jobs describe "$job" "${target[@]}" --format='value(template.template.containers[0].image)')"
+    previous_image="$(gcloud run jobs describe "$job" "${target[@]}" --format='value(spec.template.spec.template.spec.containers[0].image)')"
     printf 'cleanup_previous_image=%s\n' "$previous_image" >> "$GITHUB_OUTPUT"
     gcloud run jobs update "$job" "${target[@]}" --image "$image" --command node --args worker/recording-cleanup.ts
     ;;

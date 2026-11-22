@@ -9,6 +9,7 @@
 1. Cloud Monitoringの録音削除Dashboardで、保持期限超過数、最終失敗数、保全不一致数、最終成功時刻を確認する。
 2. Cloud Run Jobの実行履歴で、Schedulerから起動されたか、Jobが開始・完了したかを確認する。
 3. Cloud Loggingで`recording.retention.*`を検索し、`error_code`と件数だけを確認する。音声内容、利用者情報、GCSの完全なオブジェクトパスをログへ追加しない。
+4. Lifecycle有効化前のreadiness結果で、保持期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
 
 ## Alert別の対応
 
@@ -35,6 +36,12 @@
 - Schedulerの実行履歴を確認する。
 - Schedulerが成功していてJobが開始されていなければCloud Run Jobの権限・API・実行履歴を確認する。
 - Jobが開始されて完了していなければ、Cloud RunのログとCloud SQL接続を確認する。
+
+### Lifecycle readiness失敗
+
+- `missing_expiry_count` または `missing_generation_count` があれば、対象録音のDB値とGCSメタデータを確認する。
+- `legacy_hold_sync_count`、`unsynced_hold_count`、`escalated_hold_count` があれば、Object Holdの同期完了までLifecycleを有効化しない。
+- `failed_deletion_count`、`stuck_deletion_count`、`stale_upload_count` があれば、Cleanup Jobの失敗原因を解消してから再確認する。
 
 ## 安全な再実行
 
