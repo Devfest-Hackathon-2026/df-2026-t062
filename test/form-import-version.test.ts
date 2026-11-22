@@ -104,3 +104,36 @@ test('事業所だけの欄: 定義をまとめて local_fields にする。印�
     { slot: '', reason: 'local.meetingPlace の定義がページで違う（先の定義を使う）' },
   ])
 })
+
+// #147: 点線で区切った時間割の行（ケアプラン第 3 表など）。一覧の行を、曜日と時刻の範囲で選ぶ
+test('一覧の行を条件（範囲を含む）で選ぶ欄は、条件に合う行をすべて改行でつなぐ join@1 にする。1 桁の時は 2 桁にそろえる', () => {
+  const v = buildVersion([page(1, [
+    slot('月 9:00', 'text', 'plan.weekly[day=月,start=9:00〜10:00].service'),
+    slot('火 22:00', 'text', 'plan.weekly[day=火,start=22:00~23:00].service'),
+  ])])
+  assert.deepEqual(v.bindings['p1_月9:00'], {
+    op: 'join@1', ui: 'text', ref: { key: 'plan.weekly' },
+    where: { day: { eq: '月' }, start: { between: ['09:00', '10:00'] } }, show: 'service', sep: '\n',
+  })
+  assert.deepEqual((v.bindings['p1_火22:00'] as Extract<Binding, { op: 'join@1' }>).where.start, { between: ['22:00', '23:00'] })
+  assert.deepEqual(v.review, [])
+  const values = { 'plan.weekly': [
+    { day: '月', start: '09:30', end: '10:30', service: '入浴介助' },
+    { day: '月', start: '09:00', end: '09:45', service: '服薬確認' },
+    { day: '月', start: '10:00', end: '11:00', service: '通所介護' },
+    { day: '火', start: '09:30', end: '10:30', service: '訪問看護' },
+  ] }
+  assert.equal(renderSlot(v.bindings['p1_月9:00'], values), '入浴介助\n服薬確認', '始まりが 9 時台の月曜の予定だけ。10:00 ちょうどは次の行')
+  assert.equal(renderSlot(v.bindings['p1_火22:00'], values), '')
+})
+
+test('条件で行を選ぶ欄: 一覧にない項目の名前は、値の一覧にない key として事業所だけの欄にする', () => {
+  const v = buildVersion([page(1, [slot('月 9:00', 'text', 'plan.weekly[weekday=月,start=09:00〜10:00].service')])])
+  assert.equal(v.bindings['p1_月9:00'].ref.key, 'local.p1_1')
+  assert.equal(v.review.length, 1)
+})
+
+test('等しいだけの条件を 2 つ書いた欄は、その両方に合う行（1 行）を読む', () => {
+  const v = buildVersion([page(1, [slot('月 9:00', 'text', 'plan.weekly[day=月,start=09:00].service')])])
+  assert.deepEqual(v.bindings['p1_月9:00'], { op: 'text@1', ui: 'text', ref: { key: 'plan.weekly', path: [{ match: { day: '月', start: '09:00' } }, 'service'] } })
+})

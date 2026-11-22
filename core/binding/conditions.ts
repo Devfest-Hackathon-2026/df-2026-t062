@@ -58,6 +58,7 @@ export function test(v: unknown, t: Test): boolean {
   if ('nonEmpty' in t) return !isEmpty(v)
   if ('empty' in t) return isEmpty(v)
   if ('startsWith' in t) return typeof v === 'string' && v.startsWith(t.startsWith)
+  if ('between' in t) return typeof v === 'string' && v !== '' && v >= t.between[0] && v < t.between[1]
   if ('rowWhere' in t) return Array.isArray(v) && v.some((r) => !!r && typeof r === 'object' && Object.entries(t.rowWhere).every(([k, tt]) => test((r as Record<string, unknown>)[k], tt)))
   if ('not' in t) return !test(v, t.not)
   return false

@@ -138,3 +138,41 @@ test('ページの画像（PNG）を指定の細かさで作る', async () => {
     assert.ok(near(w, 595, 1) && near(h, 842, 1), `${w}x${h}`)
   } finally { await pdf.close() }
 })
+
+// 点線を、短い画像を並べて描く PDF がある（厚生労働省のケアプラン第 3 表など。2mm×0.25mm の画像を 2mm おきに並べる）。#147
+async function imageDashPdf(): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create()
+  // 5×1 画素の白黒の画像（黒 4 画素＋白 1 画素。点線の 1 区切り）
+  const dash = pdf.context.register(pdf.context.stream(new Uint8Array([0b00001000]), {
+    Type: 'XObject', Subtype: 'Image', Width: 5, Height: 1, ColorSpace: 'DeviceGray', BitsPerComponent: 1,
+  }))
+  const page = pdf.addPage([283.46, 283.46]) // 100mm 四方
+  page.node.set(PDFName.of('Resources'), pdf.context.obj({ XObject: { D: dash } }))
+  const mm = (v: number) => v * 72 / 25.4
+  const ops: string[] = []
+  const place = (x: number, yTop: number, w: number, h: number) => ops.push(`q ${mm(w)} 0 0 ${mm(h)} ${mm(x)} ${mm(100 - yTop - h)} cm /D Do Q`)
+  // 横の点線: y=30（上端）から 0.25mm の厚さで、x=10〜50 を 2mm の画像 20 個で
+  for (let k = 0; k < 20; k++) place(10 + 2 * k, 30, 2, 0.25)
+  // 縦の点線: x=70 で、y=10〜30 を 2mm の画像 10 個で（画像を回さずに縦長に置く）
+  for (let k = 0; k < 10; k++) place(70, 10 + 2 * k, 0.25, 2)
+  // 写真のような大きい画像と、□ くらいの小さい正方形の画像は線にしない
+  place(10, 60, 30, 20)
+  place(60, 60, 0.25, 0.25)
+  page.node.set(PDFName.of('Contents'), pdf.context.register(pdf.context.stream(ops.join('\n'))))
+  return pdf.save()
+}
+
+test('細い画像を並べて描いた点線も、罫線として拾う。大きい画像と小さい点は線にしない（#147）', async () => {
+  const pdf = await openPdf(await imageDashPdf())
+  try {
+    const p = await pdf.layout(1)
+    const atH = p.hlines.filter(([y]) => near(y, 30.13, 0.2))
+    assert.equal(atH.length, 20, JSON.stringify(p.hlines))
+    assert.ok(near(Math.min(...atH.map(([, a]) => a)), 10, 0.05) && near(Math.max(...atH.map(([, , b]) => b)), 50, 0.05))
+    const atV = p.vlines.filter(([x]) => near(x, 70.13, 0.2))
+    assert.equal(atV.length, 10, JSON.stringify(p.vlines))
+    assert.ok(near(Math.min(...atV.map(([, a]) => a)), 10, 0.05) && near(Math.max(...atV.map(([, , b]) => b)), 30, 0.05))
+    assert.ok(!p.hlines.some(([y]) => y > 55), `大きい画像・点の辺を線にしない: ${JSON.stringify(p.hlines.filter(([y]) => y > 55))}`)
+    assert.ok(!p.vlines.some(([x, y0]) => y0 > 55), `大きい画像・点の辺を線にしない: ${JSON.stringify(p.vlines.filter(([, y0]) => y0 > 55))}`)
+  } finally { await pdf.close() }
+})

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // iPadは画面寸法・タッチ入力・WebKitの再現。実機Safariの代替とは扱わない。
+// いつもは PC（1920）だけで流す（#189）。ほかの大きさと iPad は E2E_ALL=1 のときだけ流す。
+const all = process.env.E2E_ALL === '1'
 const ipad = (name: string, viewport: { width: number, height: number }) => ({
   name, use: { ...devices['iPad Pro 11'], viewport, browserName: 'webkit' as const },
 })
@@ -21,11 +23,13 @@ export default defineConfig({
   },
   projects: [
     { name: 'pc-1920', use: { browserName: 'chromium', viewport: { width: 1920, height: 1080 } } },
-    { name: 'pc-2560', use: { browserName: 'chromium', viewport: { width: 2560, height: 1440 } } },
-    ipad('ipad-11-portrait', { width: 834, height: 1194 }),
-    ipad('ipad-11-landscape', { width: 1194, height: 834 }),
-    ipad('ipad-129-portrait', { width: 1024, height: 1366 }),
-    ipad('ipad-129-landscape', { width: 1366, height: 1024 }),
+    ...(all ? [
+      { name: 'pc-2560', use: { browserName: 'chromium' as const, viewport: { width: 2560, height: 1440 } } },
+      ipad('ipad-11-portrait', { width: 834, height: 1194 }),
+      ipad('ipad-11-landscape', { width: 1194, height: 834 }),
+      ipad('ipad-129-portrait', { width: 1024, height: 1366 }),
+      ipad('ipad-129-landscape', { width: 1366, height: 1024 }),
+    ] : []),
   ],
   webServer: {
     command: 'node e2e/support/server.ts',

@@ -12,6 +12,8 @@ export type Test =
   | { has: Scalar } | { hasOther: Scalar[] }
   | { nonEmpty: true } | { empty: true }
   | { startsWith: string }
+  /** 始め以上・終わり未満。同じ桁の文字（時刻 HH:mm など）で比べる */
+  | { between: [string, string] }
   | { rowWhere: Record<string, Test> }
   | { not: Test }
 

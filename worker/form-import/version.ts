@@ -64,10 +64,16 @@ interface Parsed {
   ref: Ref
   /** 「[]」で、何行目か分からない */
   rowUnknown: boolean
+  /** 一覧の行を範囲を含む条件で選ぶ欄（key[欄=値,欄=始め〜終わり].欄）。条件に合う行をすべて読む */
+  rows?: { where: Record<string, Test>, show: string }
 }
 
+/** 1 桁の時（9:00）は 2 桁（09:00）にそろえる。値の一覧の時刻は HH:mm なので、文字のまま比べられるように */
+const padTime = (v: string) => (/^\d:\d\d$/.test(v) ? `0${v}` : v)
+const RANGE = /\s*[〜~～]\s*/
+
 /**
- * AI の key の書き方（key、key.欄、key[0].欄、key[印].欄、key[欄=値].欄、key[].欄）を Ref にする。
+ * AI の key の書き方（key、key.欄、key[0].欄、key[印].欄、key[欄=値].欄、key[欄=値,欄=値].欄、key[欄=始め〜終わり].欄、key[].欄）を Ref にする。
  * fields.json にない key・欄なら null
  */
 export function parseRef(text: string): Parsed | null {
@@ -75,6 +81,7 @@ export function parseRef(text: string): Parsed | null {
   if (!key) return null
   const path: Step[] = []
   let rowUnknown = false
+  let range: Record<string, Test> | null = null
   let rest = text.slice(key.length)
   while (rest) {
     const m = rest.match(/^\[([^\]]*)\]/) ?? rest.match(/^\.([A-Za-z][A-Za-z0-9_]*)/)
@@ -83,7 +90,24 @@ export function parseRef(text: string): Parsed | null {
       const inner = m[1]
       if (inner === '') { path.push(0); rowUnknown = true }
       else if (/^\d+$/.test(inner)) path.push(Number(inner))
-      else if (inner.includes('=')) { const [k, v] = inner.split('='); path.push({ match: { [k.trim()]: v.trim() } }) }
+      else if (inner.includes('=')) {
+        const match: Record<string, string> = {}
+        const where: Record<string, Test> = {}
+        let hasRange = false
+        for (const part of inner.split(',')) {
+          const eq = part.indexOf('=')
+          if (eq < 0) return null
+          const k = part.slice(0, eq).trim()
+          const v = part.slice(eq + 1).trim()
+          // 条件の項目が、その一覧の行の項目にあるか
+          if (!k || checkBindings({ x: { op: 'text@1', ui: 'text', ref: { key, path: [...path, 0, k] } } }).length) return null
+          const r = v.split(RANGE)
+          if (r.length === 2 && r[0] && r[1]) { where[k] = { between: [padTime(r[0]), padTime(r[1])] }; hasRange = true }
+          else { match[k] = padTime(v); where[k] = { eq: padTime(v) } }
+        }
+        if (hasRange) { if (range || path.length) return null; range = where }
+        path.push({ match })
+      }
       else path.push({ flag: inner })
     } else {
       path.push(m[1])
@@ -92,7 +116,12 @@ export function parseRef(text: string): Parsed | null {
   }
   const ref: Ref = path.length ? { key, path } : { key }
   // 欄の名前が fields.json にあるか（共通の確かめで見る）
-  if (checkBindings({ x: { op: 'text@1', ui: 'text', ref } }).length) return null
+  if (checkBindings({ x: { op: 'text@1', ui: 'text', ref: range ? { key, path: [0, ...path.slice(1)] } : ref } }).length) return null
+  if (range) {
+    // 範囲で選べるのは「一覧[条件].項目」の形だけ
+    if (path.length !== 2 || typeof path[1] !== 'string') return null
+    return { ref: { key }, rowUnknown: false, rows: { where: range, show: path[1] } }
+  }
   return { ref, rowUnknown }
 }
 
@@ -166,6 +195,10 @@ function bindingOf(
   if (!parsed) {
     const ref = toLocal(isMark ? 'bool' : 'text', s.ref ? `値の一覧にない key なので、事業所だけの欄にした（${s.ref}）` : '値の key がないので、事業所だけの欄にした')
     return isMark ? { op: 'option@1', ui: s.ui as 'check' | 'circle', ref, is: { eq: true } } : { op: 'text@1', ui: s.ui === 'area' ? 'area' : 'text', ref }
+  }
+  if (parsed.rows) {
+    if (!isMark) return { op: 'join@1', ui: s.ui === 'area' ? 'area' : 'text', ref: parsed.ref, where: parsed.rows.where, show: parsed.rows.show, sep: '\n' }
+    return { op: 'option@1', ui: s.ui as 'check' | 'circle', ref: toLocal('bool', `範囲の条件で行を選べるのは文字の欄だけなので、事業所だけの欄にした（${s.ref}）`), is: { eq: true } }
   }
   let { ref } = parsed
   if (!isMark) {
