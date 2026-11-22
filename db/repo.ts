@@ -603,8 +603,8 @@ export async function createRecording(db: Tx, staff: Staff, clientId: string, mi
   if (!doc) throw new NotFound()
   const ext = mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac') ? 'm4a' : mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'bin'
   const inserted = (await db.query(
-    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, source_expires_at, created_by, device_recording_id)
-     VALUES ($1,$2,$3,'',$4,now() + interval '7 days',$5,$6)
+    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by, device_recording_id)
+     VALUES ($1,$2,$3,'',$4,$5,$6)
      ON CONFLICT (office_id, client_id, device_recording_id) DO NOTHING RETURNING id`,
     [staff.officeId, clientId, doc.id, mime, staff.id, deviceRecordingId ?? null],
   )).rows[0]

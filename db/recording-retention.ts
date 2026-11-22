@@ -28,6 +28,16 @@ export interface RecordingRetentionState {
   retentionHoldSetBy: string | null
 }
 
+export interface RecordingDeletionCandidate {
+  recordingId: string
+  officeId: string
+  clientId: string
+  documentId: string
+  objectPath: string
+  sourceExpiresAt: string
+  sourceDeleteStatus: 'requested' | 'deleting'
+}
+
 function state(row: Record<string, unknown>): RecordingRetentionState {
   return {
     recordingId: row.id as string,
@@ -66,15 +76,15 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
   if (!before) throw new Error('recording_not_found')
   const updated = (await db.query(
     `UPDATE recordings
-        SET source_expires_at = recorded_at + interval '7 days',
+        SET source_expires_at = recorded_at + make_interval(days => $3),
             source_delete_status = CASE
               WHEN retention_hold THEN 'pending'
-              WHEN recorded_at + interval '7 days' <= now() THEN 'eligible'
+              WHEN recorded_at + make_interval(days => $3) <= now() THEN 'eligible'
               ELSE 'pending'
             END
-      WHERE id = $1 AND office_id = $2 AND source_delete_status <> 'deleted'
+      WHERE id = $1 AND office_id = $2 AND source_delete_status IN ('pending', 'eligible')
       RETURNING id, source_delete_status`,
-    [recordingId, context.officeId],
+    [recordingId, context.officeId, RECORDING_MAX_RETENTION_DAYS],
   )).rows[0]
   if (!updated) return null
   await retentionAudit(db, { ...context, action: 'recording.retention_set', recordingId, detail: {
@@ -96,15 +106,23 @@ export async function setRecordingSuccessRetention(db: Db | Tx, jobId: string, c
   if (!before) throw new Error('recording_not_found')
   const updated = (await db.query(
     `UPDATE recordings
-        SET source_expires_at = LEAST(source_expires_at, recorded_at + interval '7 days', now() + interval '72 hours'),
+        SET source_expires_at = LEAST(
+              source_expires_at,
+              recorded_at + make_interval(days => $2),
+              now() + make_interval(hours => $3)
+            ),
             source_delete_status = CASE
               WHEN retention_hold THEN 'pending'
-              WHEN LEAST(source_expires_at, recorded_at + interval '7 days', now() + interval '72 hours') <= now() THEN 'eligible'
+              WHEN LEAST(
+                source_expires_at,
+                recorded_at + make_interval(days => $2),
+                now() + make_interval(hours => $3)
+              ) <= now() THEN 'eligible'
               ELSE 'pending'
             END
-      WHERE id = $1 AND source_delete_status <> 'deleted'
+      WHERE id = $1 AND source_delete_status IN ('pending', 'eligible')
       RETURNING id, source_delete_status`,
-    [before.id],
+    [before.id, RECORDING_MAX_RETENTION_DAYS, RECORDING_SUCCESS_RETENTION_HOURS],
   )).rows[0]
   if (!updated) return null
   await retentionAudit(db, {
@@ -143,26 +161,38 @@ export async function setRecordingRetentionHold(db: Db, recordingId: string, con
   validateReasonCode(reasonCode)
   return tx(db, async (c) => {
     const before = (await c.query(
-      'SELECT id, client_id, document_id, source_delete_status FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
+      `SELECT id, client_id, document_id, source_delete_status, retention_hold,
+              retention_hold_until, retention_hold_reason_code
+         FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE`,
       [recordingId, context.officeId],
     )).rows[0]
     if (!before) throw new Error('recording_not_found')
-    if (before.source_delete_status === 'deleted') throw new Error('recording_already_deleted')
+    if (before.source_delete_status === 'deleting' || before.source_delete_status === 'deleted') {
+      throw new Error('recording_deletion_in_progress')
+    }
     const updated = (await c.query(
       `UPDATE recordings
           SET retention_hold = true, retention_hold_until = $3, retention_hold_reason_code = $4,
               retention_hold_set_at = now(), retention_hold_set_by = $5, source_delete_status = 'pending'
-        WHERE id = $1 AND office_id = $2
+        WHERE id = $1 AND office_id = $2 AND $3 > now()
         RETURNING id, source_delete_status`,
       [recordingId, context.officeId, holdUntil, reasonCode, context.actorStaffId ?? null],
     )).rows[0]
+    if (!updated) throw new Error('retention_hold_until_must_be_future')
     await retentionAudit(c, {
       ...context,
       clientId: context.clientId ?? before.client_id,
       documentId: context.documentId ?? before.document_id,
       action: 'recording.retention_hold_set',
       recordingId,
-      detail: { previousStatus: before.source_delete_status, nextStatus: updated.source_delete_status, reasonCode },
+      detail: {
+        previousStatus: before.source_delete_status,
+        nextStatus: updated.source_delete_status,
+        previousHoldState: before.retention_hold ? 'active' : 'inactive',
+        holdState: 'active',
+        holdUntil: holdUntil.toISOString(),
+        reasonCode,
+      },
     })
     return updated.source_delete_status as SourceDeleteStatus
   })
@@ -174,7 +204,8 @@ export async function releaseRecordingRetentionHold(db: Db, recordingId: string,
 
 async function releaseRecordingRetentionHoldInTx(c: Tx, recordingId: string, context: RecordingRetentionContext, trigger: 'manual' | 'expired') {
   const before = (await c.query(
-    `SELECT id, client_id, document_id, source_delete_status, retention_hold
+    `SELECT id, client_id, document_id, source_delete_status, retention_hold,
+            retention_hold_until, retention_hold_reason_code
        FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE`,
     [recordingId, context.officeId],
   )).rows[0]
@@ -185,17 +216,25 @@ async function releaseRecordingRetentionHoldInTx(c: Tx, recordingId: string, con
         SET retention_hold = false, retention_hold_until = NULL, retention_hold_reason_code = NULL,
             retention_hold_set_at = NULL, retention_hold_set_by = NULL,
             source_delete_status = CASE WHEN source_expires_at <= now() THEN 'eligible' ELSE 'pending' END
-      WHERE id = $1 AND office_id = $2
+      WHERE id = $1 AND office_id = $2 AND retention_hold = true AND source_delete_status = 'pending'
       RETURNING source_delete_status`,
     [recordingId, context.officeId],
   )).rows[0]
+  if (!updated) throw new Error('invalid_retention_hold_state')
   await retentionAudit(c, {
     ...context,
     clientId: context.clientId ?? before.client_id,
     documentId: context.documentId ?? before.document_id,
     action: 'recording.retention_hold_released',
     recordingId,
-    detail: { previousStatus: before.source_delete_status, nextStatus: updated.source_delete_status, trigger },
+    detail: {
+      previousStatus: before.source_delete_status,
+      nextStatus: updated.source_delete_status,
+      holdState: 'released',
+      holdUntil: new Date(before.retention_hold_until).toISOString(),
+      reasonCode: before.retention_hold_reason_code,
+      trigger,
+    },
   })
   return true
 }
@@ -233,15 +272,67 @@ export async function markExpiredSourceRecordingsEligible(db: Db, limit = 100) {
   return result.rows.map((row) => row.id as string)
 }
 
-export async function listExpiredSourceRecordings(db: Db, limit = 100): Promise<RecordingRetentionState[]> {
-  const rows = (await db.query(
-    `SELECT id, source_expires_at, source_deleted_at, source_delete_status, retention_policy_version,
-            retention_hold, retention_hold_until, retention_hold_reason_code, retention_hold_set_at, retention_hold_set_by
-       FROM recordings
-      WHERE source_delete_status = 'eligible' AND source_expires_at <= now()
+export async function claimExpiredSourceRecordings(db: Db, limit = 100): Promise<RecordingDeletionCandidate[]> {
+  await markExpiredSourceRecordingsEligible(db, limit)
+  return tx(db, async (c) => {
+    const rows = (await c.query(
+      `WITH candidates AS (
+         SELECT id, source_delete_status AS previous_status
+           FROM recordings
+          WHERE source_delete_status IN ('eligible', 'requested')
+            AND source_expires_at <= now() AND retention_hold = false AND source_deleted_at IS NULL
+          ORDER BY source_expires_at, id
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED
+       )
+       UPDATE recordings r
+          SET source_delete_status = 'requested'
+         FROM candidates c
+        WHERE r.id = c.id
+       RETURNING r.id, r.office_id, r.client_id, r.document_id, r.object_path,
+                 r.source_expires_at, r.source_delete_status, c.previous_status`,
+      [limit],
+    )).rows
+    for (const row of rows) {
+      if (row.previous_status === 'requested') continue
+      await retentionAudit(c, {
+        officeId: row.office_id,
+        clientId: row.client_id,
+        documentId: row.document_id,
+        auditContext: { source: 'scheduler' },
+        action: 'recording.delete_requested',
+        recordingId: row.id,
+        detail: { previousStatus: row.previous_status, nextStatus: row.source_delete_status },
+      })
+    }
+    return rows.map((row) => ({
+      recordingId: row.id,
+      officeId: row.office_id,
+      clientId: row.client_id,
+      documentId: row.document_id,
+      objectPath: row.object_path,
+      sourceExpiresAt: new Date(row.source_expires_at).toISOString(),
+      sourceDeleteStatus: 'requested',
+    }))
+  })
+}
+
+export async function beginSourceDeletion(db: Db, recordingId: string, officeId: string): Promise<RecordingDeletionCandidate | null> {
+  const row = (await db.query(
+    `UPDATE recordings
+        SET source_delete_status = 'deleting'
+      WHERE id = $1 AND office_id = $2 AND source_delete_status = 'requested'
         AND retention_hold = false AND source_deleted_at IS NULL
-      ORDER BY source_expires_at, id LIMIT $1`,
-    [limit],
-  )).rows
-  return rows.map(state)
+      RETURNING id, office_id, client_id, document_id, object_path, source_expires_at, source_delete_status`,
+    [recordingId, officeId],
+  )).rows[0]
+  return row ? {
+    recordingId: row.id,
+    officeId: row.office_id,
+    clientId: row.client_id,
+    documentId: row.document_id,
+    objectPath: row.object_path,
+    sourceExpiresAt: new Date(row.source_expires_at).toISOString(),
+    sourceDeleteStatus: 'deleting',
+  } : null
 }

@@ -32,13 +32,37 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       (office_id,client_id,document_id,created_by,file_name,mime,sha256,bytes,status,result)
       VALUES ($1,$2,$3,$4,'架空.png','image/png',$5,10,'review',$6) RETURNING id`,
     [office, client, document, staff, 'a'.repeat(64), JSON.stringify({ candidates: [] })])).rows[0].id
+    const recording = (await db.query(
+      `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, status, recorded_at, created_by)
+       VALUES ($1,$2,$3,'recordings/backfill.webm','audio/webm','uploaded','2026-01-01T00:00:00Z',$4) RETURNING id`,
+      [office, client, document, staff],
+    )).rows[0].id
     assert.deepEqual(await migrate(db, undefined, { stopBefore: '0018_audit_events.sql' }), ['0009_document_input_form_version.sql'])
     const row = (await db.query('SELECT * FROM document_inputs WHERE id=$1', [id])).rows[0]
     assert.equal(row.template_version_id, null)
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')
     assert.equal(row.status, 'review')
     assert.deepEqual(row.result, { candidates: [] })
-    assert.deepEqual(await migrate(db), ['0018_audit_events.sql', '0019_recording_retention.sql'])
+    assert.deepEqual(await migrate(db), [
+      '0018_audit_events.sql',
+      '0019_recording_retention.sql',
+      '0020_recording_retention_backfill.sql',
+      '0021_recording_retention_constraints.sql',
+      '0022_recording_delete_candidates_index.sql',
+      '0023_recording_retention_holds_index.sql',
+    ])
+    const backfilled = (await db.query(
+      'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
+      [recording],
+    )).rows[0]
+    assert.equal(Number(backfilled.seconds), 7 * 24 * 60 * 60)
+    const oldApiInsert = (await db.query(
+      `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by)
+       VALUES ($1,$2,$3,'recordings/old-api.webm','audio/webm',$4)
+       RETURNING extract(epoch FROM source_expires_at - recorded_at) AS seconds`,
+      [office, client, document, staff],
+    )).rows[0]
+    assert.equal(Number(oldApiInsert.seconds), 7 * 24 * 60 * 60)
     assert.deepEqual(await migrate(db), [])
   } finally {
     await db.query(`DROP SCHEMA ${schema} CASCADE`)

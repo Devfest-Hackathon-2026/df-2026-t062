@@ -50,7 +50,9 @@
 - Worker が取得するたび `run_token` を発行する。段階の更新と完了時に照合し、リースを失った古い実行を拒む。処理中は定期的にリースを延長する。
 - 録音の `applyBatch` とジョブの `succeeded`／`partial` への更新は同じトランザクションで行う。`batches.job_id` は録音処理で一意。反映直後に通信が切れても、次の配信で同じ変更を重ねない。
 - 原本の保持期限は録音時に `recorded_at + 7日` で設定し、録音完了時に再計算する。AI処理が完了したときは `min(現在期限, recorded_at + 7日, 完了時刻 + 72時間)` に短縮し、失敗・再試行では延長しない。正式な書類・要約・監査ログは原本の期限とは別に残る。
-- `retention_hold` は無期限を許さず、未来の `retention_hold_until` を必須にする。設定・解除は `recording.retention_hold_set`／`recording.retention_hold_released` として `audit_events` に追記する。期限切れ保全は将来の定期処理で自動解除し、`source_delete_status = 'eligible'` の原本だけを削除候補として取得する。
+- `retention_hold` は無期限を許さず、未来の `retention_hold_until` を必須にする。設定・解除は `recording.retention_hold_set`／`recording.retention_hold_released` として、期限・理由・手動解除か期限切れ解除かを `audit_events` に追記する。
+- 原本削除は `pending → eligible → requested → deleting → deleted` の順に進める。候補取得時に `requested` へ更新して `recording.delete_requested` を残す。`requested` までは保全設定で `pending` に戻せるが、Storage 削除を始める `deleting` 以降は保全設定を拒否する。候補取得と削除開始はいずれも条件付き更新にし、保全設定との競合で削除してはいけない原本を削除しない。
+- 既存録音への期限付与は小分けにコミットし、候補検索用の索引は `CREATE INDEX CONCURRENTLY` で作る。移行中に旧 API が期限列を指定せず録音を追加しても失敗しないよう、DB の既定値を先に設定してから既存行を補完し、最後に `NOT NULL` を有効にする。
 - 保持期限の変更は `recording.retention_set` として、録音完了時と AI の正式記録反映時に追記する。`recording.retention_set` の detail には録音 ID・旧状態・新状態・契機・ポリシー版だけを入れ、音声・文字起こし・要約・氏名などの中身は入れない。
 - `partial` は確定済みの結果であり、自動再配信しない。AI が処理できなかった欄と形式不一致で反映できなかった欄の key を `jobs.steps.write.incompleteFields` に保存し、ジョブ API に出す。PDF プレビューでは該当欄を赤枠で示す。失敗項目だけを補完する別ジョブは作らず、担当者が録音し直す。
 

@@ -10,26 +10,49 @@ ALTER TABLE recordings
   ADD COLUMN retention_hold_set_at timestamptz,
   ADD COLUMN retention_hold_set_by uuid REFERENCES staff(id),
   ADD CONSTRAINT recordings_retention_hold_fields_check CHECK (
-    NOT retention_hold
-    OR (retention_hold_until IS NOT NULL AND retention_hold_reason_code IS NOT NULL AND retention_hold_set_at IS NOT NULL)
+    (NOT retention_hold
+      AND retention_hold_until IS NULL
+      AND retention_hold_reason_code IS NULL
+      AND retention_hold_set_at IS NULL
+      AND retention_hold_set_by IS NULL)
+    OR (retention_hold
+      AND source_delete_status = 'pending'
+      AND retention_hold_until IS NOT NULL
+      AND retention_hold_reason_code IS NOT NULL
+      AND retention_hold_set_at IS NOT NULL
+      AND retention_hold_until > retention_hold_set_at)
+  ),
+  ADD CONSTRAINT recordings_source_deleted_state_check CHECK (
+    (source_delete_status = 'deleted') = (source_deleted_at IS NOT NULL)
   );
 
-UPDATE recordings
-SET source_expires_at = recorded_at + interval '7 days',
-    source_delete_status = CASE
-      WHEN recorded_at + interval '7 days' <= now() THEN 'eligible'
-      ELSE 'pending'
-    END
-WHERE source_expires_at IS NULL;
-
 ALTER TABLE recordings
-  ALTER COLUMN source_expires_at SET NOT NULL;
+  ALTER COLUMN source_expires_at SET DEFAULT (now() + interval '7 days');
 
-CREATE INDEX recordings_source_delete_candidates
-  ON recordings (source_delete_status, source_expires_at)
-  WHERE source_delete_status IN ('pending', 'eligible')
-    AND source_deleted_at IS NULL;
+CREATE PROCEDURE backfill_recording_source_expiry() LANGUAGE plpgsql AS $$
+DECLARE
+  changed integer;
+BEGIN
+  LOOP
+    WITH batch AS (
+      SELECT id FROM recordings
+      WHERE source_expires_at IS NULL
+      ORDER BY id
+      LIMIT 500
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE recordings r
+    SET source_expires_at = r.recorded_at + interval '7 days',
+        source_delete_status = CASE
+          WHEN r.recorded_at + interval '7 days' <= now() THEN 'eligible'
+          ELSE 'pending'
+        END
+    FROM batch
+    WHERE r.id = batch.id;
 
-CREATE INDEX recordings_retention_holds
-  ON recordings (retention_hold, retention_hold_until)
-  WHERE retention_hold;
+    GET DIAGNOSTICS changed = ROW_COUNT;
+    COMMIT;
+    EXIT WHEN changed = 0;
+  END LOOP;
+END
+$$;
