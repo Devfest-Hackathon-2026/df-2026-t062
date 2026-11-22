@@ -41,10 +41,25 @@ test('第5表: 追加→保存→再表示→履歴→PDF。保存失敗でも�
   await page.getByRole('button', { name: '資料から下書きを作る', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '未確認の候補です' })).toBeVisible()
   await expect(page.getByLabel('記録内容', { exact: true })).toHaveValue('人が修正した架空の本文')
-  await page.getByRole('button', { name: '内容を確認して記録に採用', exact: true }).click()
-  await expect(page.getByLabel('記録内容', { exact: true })).toHaveValue('AIによる架空の下書き。未決定事項は次回確認する。')
-  await expect(page.getByLabel('修正履歴')).not.toContainText('保存版 3')
-  await page.getByRole('button', { name: '記録を保存', exact: true }).click()
+  const recordList = page.getByRole('complementary', { name: '支援経過の記録一覧', exact: true })
+  const previousHeight = (await recordList.boundingBox())!.height
+  let resumeRefresh!: () => void
+  const refreshGate = new Promise<void>(resolve => { resumeRefresh = resolve })
+  const listRoute = '**/api/clients/*/care-records?*'
+  await page.route(listRoute, async route => { await refreshGate; await route.continue() })
+  const refreshStarted = page.waitForRequest(r => r.method() === 'GET' && r.url().includes('/care-records?'))
+  try {
+    await page.getByRole('button', { name: '内容を確認して記録に採用', exact: true }).click()
+    await refreshStarted
+    await expect(page.getByLabel('記録内容', { exact: true })).toHaveValue('AIによる架空の下書き。未決定事項は次回確認する。')
+    // 遅い一覧再取得中も、記録と保存ボタンの位置を保つ。
+    await expect(recordList).toContainText('人が修正した架空の本文')
+    expect((await recordList.boundingBox())!.height).toBeCloseTo(previousHeight, 0)
+    await expect(page.getByLabel('修正履歴')).not.toContainText('保存版 3')
+    const saved = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/save'))
+    await page.getByRole('button', { name: '記録を保存', exact: true }).click()
+    expect((await saved).ok()).toBeTruthy()
+  } finally { resumeRefresh() }
   await expect(page.getByLabel('修正履歴')).toContainText('保存版 3')
   await page.getByRole('button', { name: '書類に戻る', exact: true }).click()
   await expect(page.getByRole('tablist', { name: '書類' }).or(page.getByRole('button', { name: 'アセスメント', exact: true }))).toBeVisible()
