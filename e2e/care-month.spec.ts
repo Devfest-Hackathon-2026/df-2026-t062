@@ -1,6 +1,17 @@
 import { test,expect,headers,createPlan,addNeed,addSchedule,getPlan } from './support/fixtures.ts'
 
 test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復旧→履歴/PDF→前月コピー',async({page,ui,clientId},info)=>{
+ const clientResponse=await page.request.get('/api/clients/'+clientId,{headers})
+ const assessment=(await clientResponse.json()).client.documents.find((d:{kind:string})=>d.kind==='assessment').id
+ const admissionResponse=await page.request.post('/api/clients/'+clientId+'/documents',{headers,data:{kind:'admission'}})
+ expect(admissionResponse.ok()).toBeTruthy()
+ const admission=(await admissionResponse.json()).id
+ const sourceAddresses=new Map([[assessment,'架空アセスメントの住所'],[admission,'架空入院時情報の独立した住所']])
+ for(const [id,address] of sourceAddresses){
+  const current=await page.request.get('/api/documents/'+id,{headers}),base=(await current.json()).document.fields['person.address']?.value??null
+  expect((await page.request.patch('/api/documents/'+id+'/fields',{headers,data:{changes:[{key:'person.address',value:address,base}]}})).ok()).toBeTruthy()
+  expect((await page.request.post('/api/documents/'+id+'/save',{headers,data:{scope:'document'}})).ok()).toBeTruthy()
+ }
  await createPlan(page,ui,'2026-03-01');await addNeed(page);await addSchedule(page)
  await page.getByRole('button',{name:'計画を確定',exact:true}).click()
  await page.getByRole('dialog',{name:'計画を確定しますか？',exact:true}).getByRole('button',{name:'第1〜3表を確定する'}).click()
@@ -68,4 +79,12 @@ test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復�
  await expect(diff).toContainText('追加 0件')
  await diff.getByRole('button',{name:'キャンセル',exact:true}).click()
  await page.screenshot({path:info.outputPath('care-month.png'),fullPage:true})
+ await page.getByRole('button',{name:'書類に戻る',exact:true}).click()
+ await expect(page.getByRole('tablist',{name:'書類'}).or(page.getByRole('button',{name:'アセスメント',exact:true}))).toBeVisible()
+ for(const [id,address] of sourceAddresses){
+  const r=await page.request.get('/api/documents/'+id,{headers}),document=(await r.json()).document
+  expect(document.fields['person.address'].value).toBe(address)
+  expect(document.saved['person.address'].value).toBe(address)
+  expect(document.rev).toBe(1)
+ }
 })
