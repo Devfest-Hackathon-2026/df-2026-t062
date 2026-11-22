@@ -91,6 +91,20 @@ resource "google_service_account_iam_member" "deployer_uses_worker_runtime" {
   member             = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
+resource "google_cloud_run_v2_job_iam_member" "deployer_updates_recording_cleanup" {
+  location = google_cloud_run_v2_job.recording_cleanup.location
+  name     = google_cloud_run_v2_job.recording_cleanup.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "tasks_invoker_runs_recording_cleanup" {
+  location = google_cloud_run_v2_job.recording_cleanup.location
+  name     = google_cloud_run_v2_job.recording_cleanup.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.tasks_invoker.email}"
+}
+
 # --- api の実行用サービスアカウント ---
 
 # Cloud SQL に接続する（Connector）。両方ともプロジェクト単位のロールで、インスタンス単位には絞れない
@@ -106,10 +120,34 @@ resource "google_project_iam_member" "api_sql_instance_user" {
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
-resource "google_storage_bucket_iam_member" "api_source" {
+resource "google_storage_bucket_iam_member" "api_source_viewer" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_storage_bucket_iam_member" "api_source_creator" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "recordings-create-only"
+    description = "API may create only new recording objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
+}
+
+resource "google_storage_bucket_iam_member" "api_document_inputs_cleanup" {
   bucket = google_storage_bucket.source.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "document-inputs-only"
+    description = "API may remove only stale document input objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/document-inputs/\")"
+  }
 }
 
 resource "google_storage_bucket_iam_member" "api_output" {
@@ -171,6 +209,63 @@ resource "google_project_iam_member" "worker_sql_instance_user" {
   project = var.project_id
   role    = "roles/cloudsql.instanceUser"
   member  = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_project_iam_member" "recording_cleanup_sql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.recording_cleanup.email}"
+}
+
+resource "google_project_iam_member" "recording_cleanup_sql_instance_user" {
+  project = var.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "serviceAccount:${google_service_account.recording_cleanup.email}"
+}
+
+resource "google_project_iam_custom_role" "recording_cleanup_object_control" {
+  role_id     = "recordingCleanupObjectControl"
+  title       = "Recording cleanup object control"
+  description = "Read metadata and delete live recording objects; never create or restore"
+  permissions = [
+    "storage.objects.get",
+    "storage.objects.delete",
+    "storage.objects.update",
+  ]
+}
+
+resource "google_project_iam_custom_role" "recording_hold_object_control" {
+  role_id     = "recordingHoldObjectControl"
+  title       = "Recording hold object control"
+  description = "Read and update temporary hold metadata on recording objects"
+  permissions = [
+    "storage.objects.get",
+    "storage.objects.update",
+  ]
+}
+
+resource "google_storage_bucket_iam_member" "recording_cleanup_source" {
+  bucket = google_storage_bucket.source.name
+  role   = google_project_iam_custom_role.recording_cleanup_object_control.name
+  member = "serviceAccount:${google_service_account.recording_cleanup.email}"
+
+  condition {
+    title       = "recordings-prefix-only"
+    description = "Cleanup Job may control only recording source objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
+}
+
+resource "google_storage_bucket_iam_member" "worker_source_hold_control" {
+  bucket = google_storage_bucket.source.name
+  role   = google_project_iam_custom_role.recording_hold_object_control.name
+  member = "serviceAccount:${google_service_account.worker.email}"
+
+  condition {
+    title       = "recordings-hold-only"
+    description = "Worker may update metadata only for recording objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
 }
 
 resource "google_storage_bucket_iam_member" "worker_source" {

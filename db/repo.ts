@@ -624,26 +624,53 @@ export async function createRecording(db: Tx, staff: Staff, clientId: string, mi
 }
 
 export async function setRecordingUploadUrl(db: Tx, recordingId: string, url: string) {
-  await db.query('UPDATE recordings SET upload_url = $1 WHERE id = $2', [url, recordingId])
+  const result = await db.query(
+    `UPDATE recordings
+        SET upload_url = $1, upload_started_at = now(), upload_completed_at = NULL, status = 'uploading',
+            upload_cancel_attempts = 0, upload_cancel_claim_token = NULL, upload_cancel_claimed_at = NULL,
+            upload_cancel_last_attempt_at = NULL, upload_cancel_next_retry_at = NULL,
+            upload_cancel_last_error_code = NULL, upload_cancel_escalated_at = NULL
+      WHERE id = $2 AND status IN ('uploading', 'failed')
+      RETURNING id`,
+    [url, recordingId],
+  )
+  if (!result.rows.length) throw new Conflict('録音のアップロード状態を変更できません')
+}
+
+export interface UploadedRecordingObject {
+  size: number
+  generation: string
+  metageneration: string
 }
 
 /** 録音の行をロックし、完了とジョブの作成を同じトランザクションで確定する。 */
 export async function completeRecording(
   db: Db, staff: Staff, recordingId: string, durationMs: number | null, expectedBytes: number | undefined,
-  uploadedSize: (path: string) => Promise<number | null>,
+  uploadedObject: (path: string) => Promise<number | UploadedRecordingObject | null>,
 ): Promise<string | null> {
   return tx(db, async (c) => {
     const rec = (await c.query(
-      'SELECT client_id, document_id, object_path, bytes, source_delete_status FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
+      'SELECT client_id, document_id, object_path, bytes, status, source_delete_status, source_generation, source_metageneration FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
       [recordingId, staff.officeId],
     )).rows[0]
     if (!rec) throw new NotFound()
+    if (rec.status === 'abandoning') throw new Conflict('録音アップロードを整理中です')
     const existing = (await c.query('SELECT id FROM jobs WHERE recording_id = $1', [recordingId])).rows[0]
-    const bytes = existing ? Number(rec.bytes) : await uploadedSize(rec.object_path)
+    const uploaded: number | UploadedRecordingObject | null = existing ? null : await uploadedObject(rec.object_path)
+    const bytes = existing ? Number(rec.bytes) : typeof uploaded === 'number' ? uploaded : uploaded?.size ?? null
     if (!bytes || (expectedBytes !== undefined && bytes !== expectedBytes)) return null
     if (existing) return existing.id as string
 
-    await c.query("UPDATE recordings SET status = 'uploaded', bytes = $1, duration_ms = $2, upload_url = NULL WHERE id = $3", [bytes, durationMs, recordingId])
+    const uploadedMetadata = uploaded && typeof uploaded === 'object' ? uploaded : null
+    await c.query(
+      `UPDATE recordings
+          SET status = 'uploaded', bytes = $1, duration_ms = $2, upload_url = NULL,
+              upload_completed_at = now(), source_generation = $4, source_metageneration = $5,
+              upload_cancel_claim_token = NULL, upload_cancel_claimed_at = NULL,
+              upload_cancel_next_retry_at = NULL, upload_cancel_last_error_code = NULL
+        WHERE id = $3`,
+      [bytes, durationMs, recordingId, uploadedMetadata?.generation ?? null, uploadedMetadata?.metageneration ?? null],
+    )
     await setRecordingRetentionOnComplete(c, recordingId, {
       officeId: staff.officeId, actorStaffId: staff.id, clientId: rec.client_id, documentId: rec.document_id,
       auditContext: auditContextOf(staff),

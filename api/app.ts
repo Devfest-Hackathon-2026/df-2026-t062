@@ -40,6 +40,13 @@ import { fakeTopicDrafter, type TopicDrafter } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
 import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
+import {
+  HOLD_REASON_CODES,
+  getRecordingRetention,
+  requestRecordingRetentionHold,
+  requestRecordingRetentionHoldRelease,
+  type HoldReasonCode,
+} from '../db/recording-retention.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -146,6 +153,10 @@ const ChatInput = z.object({
     .refine((m) => m.at(-1)?.role === 'user'),
 })
 const CompleteInput = z.object({ durationMs: z.number().int().min(0).nullish(), bytes: z.number().int().positive().optional() })
+const RecordingRetentionHoldInput = z.object({
+  holdUntil: z.iso.datetime({ offset: true }),
+  reasonCode: z.enum(HOLD_REASON_CODES),
+}).strict()
 // 職員・最初の責任者を登録する。メールは小文字にそろえる（Identity Platform のメールは大文字・小文字を区別しない）
 const Email = z.string().trim().toLowerCase().max(254).pipe(z.email())
 const Name = z.string().trim().min(1).max(60)
@@ -684,10 +695,54 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/recordings/:id/complete', staffRoute('care.work', async (c, staff, db) => {
     const { durationMs, bytes } = await body(c, CompleteInput)
     const jobId = await repo.completeRecording(db, staff, c.req.param('id')!, durationMs ?? null, bytes,
-      (path) => deps.storage().size('source', path))
+      async (path) => {
+        const result = await deps.storage().sourceObjects().getLiveObjectMetadata(path)
+        if (result.kind === 'not_found') return null
+        if (result.kind === 'error') throw new Error(`source_metadata_${result.code}`)
+        return {
+          size: result.metadata.size,
+          generation: result.metadata.generation,
+          metageneration: result.metadata.metageneration,
+        }
+      })
     if (!jobId) return json(c, { error: 'not_uploaded' }, 409)
     const job = await repo.dispatchRecordingJob(db, jobId, () => deps.queue().enqueue(jobId, { initial: true }))
     return json(c, job, 202)
+  }))
+
+  app.get('/api/office/recordings/:id/retention', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const recordingId = c.req.param('id')!
+    const retention = await getRecordingRetention(db, recordingId, staff.officeId)
+    if (!retention) throw new repo.NotFound()
+    await accessAudit(c, db, staff, {
+      resourceType: 'recording_retention', resourceId: recordingId, accessMode: 'view', action: 'recording.retention.view',
+    })
+    return json(c, { retention })
+  }))
+
+  app.put('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const input = await body(c, RecordingRetentionHoldInput)
+    const holdUntil = new Date(input.holdUntil)
+    const retention = await requestRecordingRetentionHold(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    }, holdUntil, input.reasonCode as HoldReasonCode)
+    if (!retention) throw new repo.NotFound()
+    const version = retention.retentionHoldOperationVersion
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, version)
+    return json(c, { retention }, 202)
+  }))
+
+  app.delete('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const retention = await requestRecordingRetentionHoldRelease(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    })
+    if (!retention) throw new repo.NotFound()
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, retention.retentionHoldOperationVersion)
+    return json(c, { retention }, 202)
   }))
 
   // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
@@ -923,7 +978,7 @@ export function createApp(deps: ApiDeps) {
         context: { ...auditContextOf(c), route: c.req.routePath },
       }).catch(() => {})
     }
-    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound) {
+    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound || (err instanceof Error && err.message === 'recording_not_found')) {
       return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
     }
     // ID の形でないもの（PostgreSQL の invalid_text_representation）も「無い」
@@ -934,6 +989,12 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
     if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof Error && ['invalid_hold_until', 'invalid_hold_reason_code'].includes(err.message)) {
+      return json(c, { error: err.message }, 400)
+    }
+    if (err instanceof Error && ['recording_source_deleted', 'recording_source_deleting', 'retention_hold_not_active'].includes(err.message)) {
+      return json(c, { error: err.message }, 409)
+    }
     if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
     if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
     if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)

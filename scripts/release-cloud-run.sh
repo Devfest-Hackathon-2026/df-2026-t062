@@ -95,6 +95,27 @@ case "${1:-}" in
     printf 'Cloud Run worker `%s` is serving the new image. Previous revision: `%s`.\n' \
       "$worker" "$WORKER_PREVIOUS_REVISION" >> "$GITHUB_STEP_SUMMARY"
     ;;
+  cleanup-deploy)
+    require_digest
+    image="$IMAGE_BY_DIGEST"
+    job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
+    assert_main
+    previous_image="$(gcloud run jobs describe "$job" "${target[@]}" --format='value(template.template.containers[0].image)')"
+    printf 'cleanup_previous_image=%s\n' "$previous_image" >> "$GITHUB_OUTPUT"
+    gcloud run jobs update "$job" "${target[@]}" --image "$image" --command node --args worker/recording-cleanup.ts
+    ;;
+  cleanup-verify)
+    job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
+    previous_image="${CLEANUP_PREVIOUS_IMAGE:?Missing cleanup previous image}"
+    if ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--verify-lifecycle-readiness >/dev/null ||
+      ! gcloud run jobs execute "$job" "${target[@]}" --wait; then
+      echo "Cleanup Job verification failed. Restoring $previous_image." >&2
+      gcloud run jobs update "$job" "${target[@]}" --image "$previous_image" --command node --args worker/recording-cleanup.ts
+      exit 1
+    fi
+    gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts >/dev/null
+    printf 'Recording cleanup Job `%s` is verified.\n' "$job" >> "$GITHUB_STEP_SUMMARY"
+    ;;
   stage)
     require_digest
     image="$IMAGE_BY_DIGEST"
@@ -142,7 +163,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "Usage: $0 {migrate|worker-deploy|worker-verify|stage|promote|cleanup}" >&2
+    echo "Usage: $0 {migrate|cleanup-deploy|cleanup-verify|worker-deploy|worker-verify|stage|promote|cleanup}" >&2
     exit 2
     ;;
 esac

@@ -5,12 +5,14 @@ import { Hono, type Context } from 'hono'
 import { contextFields, reconcile, runJob, type WorkerContext, type WorkerDeps } from './jobs.ts'
 import { reconcileFormImports, runFormImport } from './form-import/job.ts'
 import { reconcileInspections, runInspection } from './inspect/job.ts'
+import { synchronizeRetentionHold } from './recording-cleanup-service.ts'
 
 export interface WorkerQueue {
   enqueueDocumentInput?(id: string): Promise<void>
   enqueue(jobId: string): Promise<void>
   enqueueFormImport(importId: string): Promise<void>
   enqueueInspection(inspectionId: string): Promise<void>
+  enqueueRetentionHold?(recordingId: string, operationVersion: string): Promise<void>
 }
 
 export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
@@ -49,6 +51,12 @@ export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
   // AI 点検（#113）
   app.post('/tasks/inspections/:id/run', async (c) => {
     await runInspection(deps, c.req.param('id'), contextOf(c))
+    return c.json({ ok: true })
+  })
+  app.post('/tasks/recordings/:id/retention-hold-sync', async (c) => {
+    const body: { recordingId?: string, operationVersion?: string } = await c.req.json<{ recordingId?: string, operationVersion?: string }>().catch(() => ({ recordingId: undefined, operationVersion: undefined }))
+    if (!body.operationVersion || body.recordingId !== c.req.param('id')) return c.json({ error: 'bad_request' }, 400)
+    await synchronizeRetentionHold(deps, c.req.param('id'), body.operationVersion)
     return c.json({ ok: true })
   })
   app.post('/tasks/reconcile', async (c) => c.json({
