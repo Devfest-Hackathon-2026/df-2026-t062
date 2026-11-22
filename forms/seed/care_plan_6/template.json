@@ -1,0 +1,2091 @@
+{
+  "basePdf": "base.pdf",
+  "schemas": [
+    [
+      {
+        "name": "対象月_y",
+        "type": "text",
+        "position": {
+          "x": 80,
+          "y": 14
+        },
+        "width": 8,
+        "height": 5,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "対象月_m",
+        "type": "text",
+        "position": {
+          "x": 95,
+          "y": 14
+        },
+        "width": 6,
+        "height": 5,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "利用者名",
+        "type": "text",
+        "position": {
+          "x": 95,
+          "y": 47
+        },
+        "width": 125,
+        "height": 6,
+        "fontSize": 9,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 9,
+          "max": 9,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "事業所名",
+        "type": "text",
+        "position": {
+          "x": 167,
+          "y": 30
+        },
+        "width": 54,
+        "height": 7,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "担当者名",
+        "type": "text",
+        "position": {
+          "x": 158,
+          "y": 36
+        },
+        "width": 62,
+        "height": 5,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_y",
+        "type": "text",
+        "position": {
+          "x": 250,
+          "y": 29
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_m",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 29
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_d",
+        "type": "text",
+        "position": {
+          "x": 281,
+          "y": 29
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "時間帯",
+        "type": "text",
+        "position": {
+          "x": 5.5,
+          "y": 91
+        },
+        "width": 16,
+        "height": 7.3,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "内容",
+        "type": "text",
+        "position": {
+          "x": 22.8,
+          "y": 91
+        },
+        "width": 16.3,
+        "height": 7.3,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "事業所",
+        "type": "text",
+        "position": {
+          "x": 40.3,
+          "y": 91
+        },
+        "width": 23.5,
+        "height": 7.3,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定1",
+        "type": "text",
+        "position": {
+          "x": 109.8,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績1",
+        "type": "text",
+        "position": {
+          "x": 109.8,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定2",
+        "type": "text",
+        "position": {
+          "x": 115.31,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績2",
+        "type": "text",
+        "position": {
+          "x": 115.31,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定3",
+        "type": "text",
+        "position": {
+          "x": 120.82,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績3",
+        "type": "text",
+        "position": {
+          "x": 120.82,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定4",
+        "type": "text",
+        "position": {
+          "x": 126.33,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績4",
+        "type": "text",
+        "position": {
+          "x": 126.33,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定5",
+        "type": "text",
+        "position": {
+          "x": 131.84,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績5",
+        "type": "text",
+        "position": {
+          "x": 131.84,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定6",
+        "type": "text",
+        "position": {
+          "x": 137.35,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績6",
+        "type": "text",
+        "position": {
+          "x": 137.35,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定7",
+        "type": "text",
+        "position": {
+          "x": 142.86,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績7",
+        "type": "text",
+        "position": {
+          "x": 142.86,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定8",
+        "type": "text",
+        "position": {
+          "x": 148.37,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績8",
+        "type": "text",
+        "position": {
+          "x": 148.37,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定9",
+        "type": "text",
+        "position": {
+          "x": 153.88,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績9",
+        "type": "text",
+        "position": {
+          "x": 153.88,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定10",
+        "type": "text",
+        "position": {
+          "x": 159.39,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績10",
+        "type": "text",
+        "position": {
+          "x": 159.39,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定11",
+        "type": "text",
+        "position": {
+          "x": 164.89999999999998,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績11",
+        "type": "text",
+        "position": {
+          "x": 164.89999999999998,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定12",
+        "type": "text",
+        "position": {
+          "x": 170.41,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績12",
+        "type": "text",
+        "position": {
+          "x": 170.41,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定13",
+        "type": "text",
+        "position": {
+          "x": 175.92000000000002,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績13",
+        "type": "text",
+        "position": {
+          "x": 175.92000000000002,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定14",
+        "type": "text",
+        "position": {
+          "x": 181.43,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績14",
+        "type": "text",
+        "position": {
+          "x": 181.43,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定15",
+        "type": "text",
+        "position": {
+          "x": 186.94,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績15",
+        "type": "text",
+        "position": {
+          "x": 186.94,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定16",
+        "type": "text",
+        "position": {
+          "x": 192.45,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績16",
+        "type": "text",
+        "position": {
+          "x": 192.45,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定17",
+        "type": "text",
+        "position": {
+          "x": 197.95999999999998,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績17",
+        "type": "text",
+        "position": {
+          "x": 197.95999999999998,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定18",
+        "type": "text",
+        "position": {
+          "x": 203.47,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績18",
+        "type": "text",
+        "position": {
+          "x": 203.47,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定19",
+        "type": "text",
+        "position": {
+          "x": 208.98,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績19",
+        "type": "text",
+        "position": {
+          "x": 208.98,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定20",
+        "type": "text",
+        "position": {
+          "x": 214.49,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績20",
+        "type": "text",
+        "position": {
+          "x": 214.49,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定21",
+        "type": "text",
+        "position": {
+          "x": 220,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績21",
+        "type": "text",
+        "position": {
+          "x": 220,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定22",
+        "type": "text",
+        "position": {
+          "x": 225.51,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績22",
+        "type": "text",
+        "position": {
+          "x": 225.51,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定23",
+        "type": "text",
+        "position": {
+          "x": 231.01999999999998,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績23",
+        "type": "text",
+        "position": {
+          "x": 231.01999999999998,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定24",
+        "type": "text",
+        "position": {
+          "x": 236.52999999999997,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績24",
+        "type": "text",
+        "position": {
+          "x": 236.52999999999997,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定25",
+        "type": "text",
+        "position": {
+          "x": 242.04000000000002,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績25",
+        "type": "text",
+        "position": {
+          "x": 242.04000000000002,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定26",
+        "type": "text",
+        "position": {
+          "x": 247.55,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績26",
+        "type": "text",
+        "position": {
+          "x": 247.55,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定27",
+        "type": "text",
+        "position": {
+          "x": 253.06,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績27",
+        "type": "text",
+        "position": {
+          "x": 253.06,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定28",
+        "type": "text",
+        "position": {
+          "x": 258.57,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績28",
+        "type": "text",
+        "position": {
+          "x": 258.57,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定29",
+        "type": "text",
+        "position": {
+          "x": 264.08,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績29",
+        "type": "text",
+        "position": {
+          "x": 264.08,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定30",
+        "type": "text",
+        "position": {
+          "x": 269.59,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績30",
+        "type": "text",
+        "position": {
+          "x": 269.59,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定31",
+        "type": "text",
+        "position": {
+          "x": 275.09999999999997,
+          "y": 91
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績31",
+        "type": "text",
+        "position": {
+          "x": 275.09999999999997,
+          "y": 95
+        },
+        "width": 5.1,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "予定合計",
+        "type": "text",
+        "position": {
+          "x": 281.3,
+          "y": 91
+        },
+        "width": 5.7,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "実績合計",
+        "type": "text",
+        "position": {
+          "x": 281.3,
+          "y": 95
+        },
+        "width": 5.7,
+        "height": 3.5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "center",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "明細案内",
+        "type": "text",
+        "position": {
+          "x": 5,
+          "y": 204
+        },
+        "width": 282,
+        "height": 3,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "曜日1",
+        "type": "text",
+        "position": {
+          "x": 109.8,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日2",
+        "type": "text",
+        "position": {
+          "x": 115.31,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日3",
+        "type": "text",
+        "position": {
+          "x": 120.82,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日4",
+        "type": "text",
+        "position": {
+          "x": 126.33,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日5",
+        "type": "text",
+        "position": {
+          "x": 131.84,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日6",
+        "type": "text",
+        "position": {
+          "x": 137.35,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日7",
+        "type": "text",
+        "position": {
+          "x": 142.86,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日8",
+        "type": "text",
+        "position": {
+          "x": 148.37,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日9",
+        "type": "text",
+        "position": {
+          "x": 153.88,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日10",
+        "type": "text",
+        "position": {
+          "x": 159.39,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日11",
+        "type": "text",
+        "position": {
+          "x": 164.89999999999998,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日12",
+        "type": "text",
+        "position": {
+          "x": 170.41,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日13",
+        "type": "text",
+        "position": {
+          "x": 175.92000000000002,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日14",
+        "type": "text",
+        "position": {
+          "x": 181.43,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日15",
+        "type": "text",
+        "position": {
+          "x": 186.94,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日16",
+        "type": "text",
+        "position": {
+          "x": 192.45,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日17",
+        "type": "text",
+        "position": {
+          "x": 197.95999999999998,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日18",
+        "type": "text",
+        "position": {
+          "x": 203.47,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日19",
+        "type": "text",
+        "position": {
+          "x": 208.98,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日20",
+        "type": "text",
+        "position": {
+          "x": 214.49,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日21",
+        "type": "text",
+        "position": {
+          "x": 220.0,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日22",
+        "type": "text",
+        "position": {
+          "x": 225.51,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日23",
+        "type": "text",
+        "position": {
+          "x": 231.01999999999998,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日24",
+        "type": "text",
+        "position": {
+          "x": 236.52999999999997,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日25",
+        "type": "text",
+        "position": {
+          "x": 242.04000000000002,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日26",
+        "type": "text",
+        "position": {
+          "x": 247.55,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日27",
+        "type": "text",
+        "position": {
+          "x": 253.06,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日28",
+        "type": "text",
+        "position": {
+          "x": 258.57,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日29",
+        "type": "text",
+        "position": {
+          "x": 264.08,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日30",
+        "type": "text",
+        "position": {
+          "x": 269.59,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "曜日31",
+        "type": "text",
+        "position": {
+          "x": 275.09999999999997,
+          "y": 86.4
+        },
+        "width": 5.1,
+        "height": 3.4,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 6,
+        "alignment": "center",
+        "lineHeight": 1.1
+      },
+      {
+        "name": "保険者番号",
+        "type": "text",
+        "position": {
+          "x": 20,
+          "y": 27
+        },
+        "width": 50,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "保険者名",
+        "type": "text",
+        "position": {
+          "x": 94,
+          "y": 27
+        },
+        "width": 46,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "被保険者番号",
+        "type": "text",
+        "position": {
+          "x": 20,
+          "y": 46
+        },
+        "width": 50,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_y",
+        "type": "text",
+        "position": {
+          "x": 250,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_m",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_d",
+        "type": "text",
+        "position": {
+          "x": 281,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      }
+    ],
+    [
+      {
+        "name": "明細",
+        "type": "text",
+        "position": {
+          "x": 12,
+          "y": 12
+        },
+        "width": 186,
+        "height": 272,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      }
+    ]
+  ]
+}

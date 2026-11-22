@@ -30,6 +30,10 @@ export async function ensurePdf(kind: FormKind): Promise<{ pdf: Uint8Array | nul
     const source = await PDFDocument.load(b)
     const extracted = await PDFDocument.create({ updateMetadata: false })
     for (const page of await extracted.copyPages(source, meta.sourcePages.map((n) => n - 1))) extracted.addPage(page)
+    for (const page of meta.blankPages ?? []) {
+      if (!Number.isFinite(page.width) || !Number.isFinite(page.height) || page.width <= 0 || page.height <= 0 || page.width > 1000 || page.height > 1000) throw new Error('明細用紙の寸法が不正です')
+      extracted.addPage([page.width * 72 / 25.4, page.height * 72 / 25.4]).drawRectangle({x:0,y:0,width:1,height:1,opacity:0})
+    }
     b = new Uint8Array(await extracted.save())
   }
   if (sha(b) !== meta.basePdfSha256) throw new Error(`公式の PDF が、欄の位置を合わせた版と違います（様式が改訂された可能性。欄の位置と対応を作り直して、新しい版にする）: ${meta.sourceUrl}`)

@@ -39,7 +39,7 @@ function scalar(f: FieldSpec, o: SchemaOptions = {}): z.ZodType {
     case 'bool': return z.boolean()
     case 'number': return z.number()
     case 'date': return z.string().regex(o.strictDates ? DATE : PARTIAL_DATE).refine(onCalendar, '暦にない日付です')
-    case 'text': case 'longtext': return z.string()
+    case 'text': case 'longtext': return f.format === 'time' ? z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/) : z.string()
     case 'object': return z.object(Object.fromEntries(subFieldsOf(f).map((s) => [s.key, scalar(s, o).nullish()]))).strict()
     case 'list': return z.array(z.object(Object.fromEntries(subFieldsOf(f).map((s) => [s.key, scalar(s, o).nullish()]))).strict())
     default: return z.never()
