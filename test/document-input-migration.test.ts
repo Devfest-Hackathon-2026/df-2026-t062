@@ -32,12 +32,13 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       (office_id,client_id,document_id,created_by,file_name,mime,sha256,bytes,status,result)
       VALUES ($1,$2,$3,$4,'架空.png','image/png',$5,10,'review',$6) RETURNING id`,
     [office, client, document, staff, 'a'.repeat(64), JSON.stringify({ candidates: [] })])).rows[0].id
-    assert.deepEqual(await migrate(db), ['0009_document_input_form_version.sql'])
+    assert.deepEqual(await migrate(db, undefined, { stopBefore: '0010_audit_events.sql' }), ['0009_document_input_form_version.sql'])
     const row = (await db.query('SELECT * FROM document_inputs WHERE id=$1', [id])).rows[0]
     assert.equal(row.template_version_id, null)
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')
     assert.equal(row.status, 'review')
     assert.deepEqual(row.result, { candidates: [] })
+    assert.deepEqual(await migrate(db), ['0010_audit_events.sql'])
     assert.deepEqual(await migrate(db), [])
   } finally {
     await db.query(`DROP SCHEMA ${schema} CASCADE`)
