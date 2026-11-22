@@ -91,6 +91,12 @@ resource "google_service_account_iam_member" "deployer_uses_worker_runtime" {
   member             = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
+resource "google_service_account_iam_member" "deployer_uses_recording_cleanup_runtime" {
+  service_account_id = google_service_account.recording_cleanup.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
 resource "google_cloud_run_v2_job_iam_member" "deployer_updates_recording_cleanup" {
   location = google_cloud_run_v2_job.recording_cleanup.location
   name     = google_cloud_run_v2_job.recording_cleanup.name

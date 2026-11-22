@@ -244,6 +244,7 @@ run "private_service_with_scoped_deployer" {
   assert {
     condition = (
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].service_account == "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.deployer_uses_recording_cleanup_runtime.role == "roles/iam.serviceAccountUser" &&
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].timeout == "900s" &&
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].max_retries == 0 &&
       google_cloud_scheduler_job.recording_cleanup.schedule == "*/15 * * * *" &&
