@@ -167,6 +167,39 @@ test('更新監査のrequest_idが応答のX-Request-Idと一致する', { skip 
   assert.equal(audit.rows[0].route, '/api/clients')
 })
 
+test('利用者一覧・詳細の閲覧監査は対象IDと相関IDを保存する', { skip }, async () => {
+  const list = await call('/api/clients')
+  assert.equal(list.status, 200)
+  const listRequestId = list.headers.get('x-request-id')
+  const listAudit = await dbForTests!.query<{ request_id: string, client_id: string | null, result_count: number, displayed_client_ids: string[] }>(
+    `SELECT request_id, client_id, result_count, displayed_client_ids
+       FROM access_audit_events
+      WHERE action = 'client.list' AND route = '/api/clients'
+      ORDER BY id DESC LIMIT 1`,
+  )
+  assert.equal(listAudit.rows[0].request_id, listRequestId)
+  assert.equal(listAudit.rows[0].client_id, null)
+  assert.equal(Number(listAudit.rows[0].result_count), 4)
+  assert.equal(listAudit.rows[0].displayed_client_ids.length, 4)
+  assert.ok(listAudit.rows[0].displayed_client_ids.includes(ids.kai))
+  assert.ok(listAudit.rows[0].displayed_client_ids.includes(ids.sato))
+
+  const detail = await call(`/api/clients/${ids.kai}`)
+  assert.equal(detail.status, 200)
+  const detailRequestId = detail.headers.get('x-request-id')
+  const detailAudit = await dbForTests!.query<{ request_id: string, client_id: string, resource_id: string, action: string }>(
+    `SELECT request_id, client_id, resource_id, action
+       FROM access_audit_events
+      WHERE action = 'client.view' AND client_id = $1
+      ORDER BY id DESC LIMIT 1`,
+    [ids.kai],
+  )
+  assert.equal(detailAudit.rows[0].request_id, detailRequestId)
+  assert.equal(detailAudit.rows[0].client_id, ids.kai)
+  assert.equal(detailAudit.rows[0].resource_id, ids.kai)
+  assert.equal(detailAudit.rows[0].action, 'client.view')
+})
+
 test('監査OutcomeのDB制約はnot_foundを許可し、不正値を拒否する', { skip }, async () => {
   const office = (await dbForTests!.query<{ office_id: string }>('SELECT office_id FROM clients WHERE id = $1', [ids.kai])).rows[0].office_id
   const security = await dbForTests!.query<{ outcome: string }>(

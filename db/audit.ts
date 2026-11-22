@@ -17,6 +17,22 @@ export interface AccessAuditContext extends AuditContext {
   route: string
 }
 
+export interface AccessAuditInput {
+  officeId: string
+  actorStaffId?: string | null
+  clientId?: string | null
+  documentId?: string | null
+  resourceType: string
+  resourceId?: string | null
+  accessMode: string
+  action: string
+  outcome?: AuditOutcome
+  resultCount?: number | null
+  displayedClientIds?: string[] | null
+  detail?: Record<string, unknown>
+  context: AccessAuditContext
+}
+
 export interface AuditIds {
   clientId?: string
   documentId?: string
@@ -79,7 +95,7 @@ export async function writeBusinessAudit(
 
 export async function writeAccessAudit(
   db: AuditDb,
-  input: { officeId: string, actorStaffId?: string | null, clientId?: string | null, documentId?: string | null, resourceType: string, resourceId?: string | null, accessMode: string, action: string, outcome?: AuditOutcome, resultCount?: number | null, displayedClientIds?: string[] | null, detail?: Record<string, unknown>, context: AccessAuditContext },
+  input: AccessAuditInput,
 ) {
   const c = common(input.context)
   await db.query(
