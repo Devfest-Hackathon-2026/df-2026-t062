@@ -54,6 +54,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [copyFrom, setCopyFrom] = useState<string>()
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -75,10 +76,11 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   }, [clientId])
   const mayLeave = () => !dirty || window.confirm('保存していない入力があります。入力を破棄して移動しますか？')
   const choose = async (id: string) => {
+    if (id === selected?.id) { setHistoryOpen(false); return }
     if (!mayLeave()) return
     const token = ++request.current
     setBusy(true); setError('')
-    try { const r = await api.carePlan(id); if (request.current === token) { setSelected(r.plan); setDirty(false) } }
+    try { const r = await api.carePlan(id); if (request.current === token) { setSelected(r.plan); setDirty(false); setHistoryOpen(false) } }
     catch (e) { setError(message(e)) } finally { if (request.current === token) setBusy(false) }
   }
   const controls = <header className="cp-header">
@@ -90,6 +92,17 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
 
     {(!embedded || !selected) && controls}
     {error && <div role="alert" className="cp-error">{error}</div>}
+    {historyOpen && <Modal title="計画の履歴" onClose={() => setHistoryOpen(false)}>
+      <div className="cp-history-list">
+        {plans.map((p) => <button type="button" className="cp-history-item" key={p.id}
+          aria-current={p.id === selected?.id ? 'true' : undefined} disabled={busy || childBusy}
+          onClick={() => void choose(p.id)}>
+          <span><strong>第{p.version}版</strong><span className={`cp-status cp-${p.status}`}>{statusText(p.status)}</span>{p.id === selected?.id && <small>表示中</small>}</span>
+          <span>{p.effectiveFrom} 〜 {p.effectiveTo ?? '終了日未設定'}</span>
+        </button>)}
+      </div>
+      {error && <p role="alert" className="cp-error">{error}</p>}
+    </Modal>}
     {creating && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
       <form onSubmit={async (e) => {
         e.preventDefault()
@@ -108,16 +121,17 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       </form>
     </Modal>}
     {selected ? <PlanEditor key={selected.id} initial={selected} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+      onHistory={() => { setHistoryOpen(true); void loadList().catch((e) => setError(message(e))) }}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }}
       onCopy={(plan) => { setCopyFrom(plan.id); setFrom(plan.effectiveFrom); setTo(plan.effectiveTo ?? ''); setCreating(true) }} />
       : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, onCopy, outputTarget }: {
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, onCopy, onHistory, outputTarget }: {
   outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
-  onBusy: (busy: boolean) => void, onUpdated: () => void, onCopy: (plan: CarePlanView) => void,
+  onBusy: (busy: boolean) => void, onUpdated: () => void, onCopy: (plan: CarePlanView) => void, onHistory: () => void,
 }) {
   const [plan, setPlan] = useState(initial)
   const [needs, setNeeds] = useState<NeedInput[]>(initial.needs)
@@ -128,6 +142,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [needIndex, setNeedIndex] = useState<number | null>(null)
   const [slotIndex, setSlotIndex] = useState<number | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -222,6 +237,22 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
 
       </nav>
       <main className="cp-canvas">
+        <div className="cp-context-bar">
+          <div className="cp-context-meta" role="group" aria-label="表示中の計画">
+            <strong>第{plan.version}版</strong><span className={`cp-status cp-${plan.status}`}>{statusText(plan.status)}</span>
+            <span>{plan.effectiveFrom} 〜 {plan.effectiveTo ?? '終了日未設定'}</span>
+          </div>
+          <details className="cp-plan-menu" open={menuOpen} onToggle={(e) => setMenuOpen(e.currentTarget.open)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); e.currentTarget.querySelector('summary')?.focus() } }}>
+            <summary>計画メニュー</summary>
+            <div className="cp-menu-items" role="group" aria-label="計画の操作">
+              <button type="button" disabled={busy || !ready} onClick={() => { setMenuOpen(false); onHistory() }}>計画の履歴・切り替え</button>
+              <button type="button" disabled={busy || !ready || dirty || !readOnly}
+                title={!readOnly ? '計画を確定すると改定版を作れます' : undefined}
+                onClick={() => { setMenuOpen(false); onCopy(plan) }}>改定版を作る</button>
+            </div>
+          </details>
+        </div>
         <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
           aiLabel="AI原案から" status={saveStatus}
           saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save}

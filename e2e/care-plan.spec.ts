@@ -60,19 +60,50 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
     await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
     await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeDisabled()
   }
-  // 改定APIは保持するが、今回の指定で左側の管理操作は表示しない。
-  await expect(page.getByRole('button', { name: 'この計画をもとに改定版を作る' })).toHaveCount(0)
-  const revisionResponse = await page.request.post(`/api/clients/${clientId}/care-plans`, { headers, data: {
-    effectiveFrom: persisted.effectiveFrom, effectiveTo: persisted.effectiveTo, copyFromPlanId: persisted.id,
-  } })
-  expect(revisionResponse.ok()).toBeTruthy()
-  await page.reload()
-  await openPlan(page, ui)
+  const openMenu = () => page.getByText('計画メニュー', { exact: true }).click()
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('確定済み')
+  await openMenu()
+  await page.getByRole('button', { name: '改定版を作る', exact: true }).click()
+  await page.getByRole('dialog', { name: '改定版を作る', exact: true }).getByRole('button', { name: '第1〜3表を作る' }).click()
   await expect(policy).toBeEditable()
   const revised = await getPlan(page, clientId)
   expect(revised).toMatchObject({ version: 2, status: 'draft', previousPlanId: persisted.id })
   expect(revised.needs[0].shortGoals[0].services[0].id).not.toBe(persisted.needs[0].shortGoals[0].services[0].id)
   expect(revised.slots[0].serviceId).toBe(revised.needs[0].shortGoals[0].services[0].id)
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('第2版')
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('下書き')
+  await policy.fill('改定版で変更した方針')
+  await policy.blur()
+  await expect.poll(async () => (await getPlan(page, clientId)).plan1['plan.overallPolicy']).toBe('改定版で変更した方針')
+  await openMenu()
+  await page.getByRole('button', { name: '計画の履歴・切り替え', exact: true }).click()
+  const history = page.getByRole('dialog', { name: '計画の履歴', exact: true })
+  // 表示中の版を選び直しても、未保存の入力を読み直しで消さない。
+  await history.getByRole('button', { name: /^第2版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await openMenu()
+  await page.getByRole('button', { name: '計画の履歴・切り替え', exact: true }).click()
+  page.once('dialog', dialog => dialog.dismiss())
+  await history.getByRole('button', { name: /^第1版/ }).click()
+  await expect(history).toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await history.getByRole('button', { name: '閉じる', exact: true }).click()
+  await save(page)
+  await openMenu()
+  await page.getByRole('button', { name: '計画の履歴・切り替え', exact: true }).click()
+  await history.getByRole('button', { name: /^第1版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('地域で安全に暮らせるよう支援する。')
+  await expect(policy).toBeDisabled()
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('第1版')
+  await openMenu()
+  await page.getByRole('button', { name: '計画の履歴・切り替え', exact: true }).click()
+  await history.getByRole('button', { name: /^第2版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await expect(policy).toBeEditable()
+
 })
 
 test('未保存の移動・保存失敗・PDFの長文エラーで成功扱いにせず再試行できる', async ({ page, clientId, ui }) => {
@@ -135,7 +166,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   expect(initialCanvas.y).toBeLessThan(ui === 'pad' ? viewport.height * .45 : viewport.height - 220)
   await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
   // CIのLinuxでは上部の描画寸法に2px差が出る。そこまでを許容し、大きな配置ずれは検出する。
-  if (ui === 'pc') expect(Math.abs((await page.locator('.sheet-toolbar').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
+  if (ui === 'pc') expect(Math.abs((await page.locator('.cp-context-bar').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
   const metrics = { browser: browser.version(), project: info.project.name, viewport, displays: [] as unknown[] }
   for (const number of [1, 2, 3]) {
     await table(page, number)
@@ -203,6 +234,10 @@ test('左側は用紙の選択だけにし、確定は保存の横から明示�
   for (const name of ['読み直す', 'AI原案を作る', '計画を確定', '＋ 計画を作る']) {
     await expect(nav.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
+  const context = page.getByRole('group', { name: '表示中の計画' })
+  await expect(context).toContainText('第1版')
+  await expect(context).toContainText('下書き')
+  await expect(context).toContainText('2026-04-01 〜 2027-03-31')
   const toolbar = page.locator('.sheet-toolbar')
   await expect(toolbar.getByRole('button', { name: '書類を保存', exact: true })).toBeVisible()
   await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeDisabled()
