@@ -107,6 +107,53 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
 
 })
 
+test('第2表で押した対策へ移動し、複数目標の共通サービスを第3表で一度だけ選べる', async ({ page, clientId, ui }) => {
+  await createPlan(page, ui)
+  await addNeed(page)
+  await addSchedule(page)
+  await table(page, 2)
+  const serviceCell = page.getByRole('button', { name: 'サービス内容（押して編集）', exact: true }).filter({ hasText: '入浴介助' })
+  await serviceCell.click()
+  const need = page.getByRole('dialog', { name: '第2表・ニーズ 1', exact: true })
+  await expect(need.getByLabel('サービス内容', { exact: true })).toBeFocused()
+  await need.getByRole('button', { name: '＋ 短期目標を追加', exact: true }).click()
+  const laterGoal = need.locator('.cp-goal').nth(1)
+  await laterGoal.getByLabel('短期目標 2', { exact: true }).fill('安全に浴槽へ入る')
+  await laterGoal.getByRole('combobox', { name: '既存のサービスを紐づける', exact: true }).selectOption({ index: 1 })
+  await laterGoal.getByLabel('頻度', { exact: true }).fill('週2回')
+  await expect(need.locator('.cp-goal').first().getByLabel('頻度', { exact: true })).toHaveValue('週2回')
+  await need.getByRole('button', { name: '閉じる', exact: true }).click()
+  await save(page)
+  const linked = await getPlan(page, clientId)
+  expect(linked.needs[0].shortGoals[1].services[0].id).toBe(linked.slots[0].serviceId)
+  expect(linked.slots).toHaveLength(1)
+  await table(page, 3)
+  await page.getByRole('button', { name: '週間枠（押して編集）', exact: true }).first().click()
+  await page.getByRole('dialog', { name: '第3表・予定の追加と選択' }).getByRole('button', { name: /^月 09:00/ }).click()
+  const choices = page.getByRole('dialog', { name: '第3表・予定の編集' }).getByLabel('第2表のサービス')
+  await expect(choices.getByRole('option', { name: /入浴介助.*週2回.*手すりを使う.*安全に浴槽へ入る/ })).toHaveCount(1)
+  await page.getByRole('dialog', { name: '第3表・予定の編集' }).getByRole('button', { name: '閉じる', exact: true }).click()
+
+  await table(page, 2)
+  await serviceCell.nth(1).click()
+  await expect(laterGoal.getByRole('textbox', { name: 'サービス内容', exact: true })).toBeFocused()
+  await need.locator('.cp-goal').first().getByRole('button', { name: 'この目標との紐づけを外す', exact: true }).click()
+  await need.getByRole('button', { name: '閉じる', exact: true }).click()
+  await save(page)
+  const unlinked = await getPlan(page, clientId)
+  expect(unlinked.needs[0].shortGoals[0].services).toHaveLength(0)
+  expect(unlinked.slots).toEqual(linked.slots)
+
+  await serviceCell.click()
+  const confirmation = page.waitForEvent('dialog')
+  const removing = laterGoal.getByRole('button', { name: 'サービスを削除', exact: true }).click()
+  const warning = await confirmation
+  expect(warning.message()).toContain('第3表の予定も1件削除')
+  await warning.dismiss()
+  await removing
+  await expect(laterGoal.getByRole('textbox', { name: 'サービス内容', exact: true })).toHaveValue('入浴介助')
+})
+
 test('未保存の移動・保存失敗・PDFの長文エラーで成功扱いにせず再試行できる', async ({ page, clientId, ui }) => {
   await createPlan(page, ui)
   const policy = page.getByRole('textbox', { name: '総合的援助方針', exact: true })

@@ -3,17 +3,26 @@ import { FormPage } from '../document/FormPage.tsx'
 import type { DocState } from '../document/useDocument.ts'
 import { officialPlanPages } from './paper.ts'
 
+export interface PaperNeedTarget {
+  needIndex: number
+  goalIndex?: number
+  serviceIndex?: number
+}
+
 /** 公式の原紙画像に入力値と操作領域だけを重ねる。独自の表・罫線は描かない。 */
 export function OfficialPlanSheet({ state, needs, slots, touch, busy, readOnly, zoom, changed, aiChanged, onNeed, onNeeds, onSchedule, onActivities }: {
   state: DocState, needs: NeedInput[], slots: SlotInput[], touch: boolean, busy: boolean, readOnly: boolean,
-  zoom: number, changed: boolean, aiChanged: boolean, onNeed: (index: number) => void,
+  zoom: number, changed: boolean, aiChanged: boolean, onNeed: (target: PaperNeedTarget, field: string) => void,
   onNeeds: () => void, onSchedule: () => void, onActivities: () => void,
 }) {
   if (!state.form) return null
   const pages = officialPlanPages(state.form, state.current, needs, slots)
-  const rowNeeds = needs.flatMap((n, index) =>
-    (n.shortGoals?.length ? n.shortGoals : [null]).flatMap((g) =>
-      Array.from({ length: Math.max(1, g?.services?.length ?? 0) }, () => index)))
+  const rowTargets: PaperNeedTarget[] = needs.flatMap((need, needIndex) =>
+    need.shortGoals?.length
+      ? need.shortGoals.flatMap((goal, goalIndex) => goal.services?.length
+        ? goal.services.map((_, serviceIndex) => ({ needIndex, goalIndex, serviceIndex }))
+        : [{ needIndex, goalIndex }])
+      : [{ needIndex }])
   const action = readOnly ? '内容を確認' : '押して編集'
   return <div className="cp-first-scroll">{pages.map((printed, index) => {
     const page = state.pages.find((p) => p.pdfIndex === printed.sourceIndex)!
@@ -23,7 +32,7 @@ export function OfficialPlanSheet({ state, needs, slots, touch, busy, readOnly, 
     const rowsPerPage = layout.type === 'table' ? layout.rowsPerPage : 0
     const fields = printed.schemas.filter((s) =>
       s.name.includes('__row') || s.name.includes('__slot') || structural.has(s.name))
-    const blankRow = rowNeeds.length - index * rowsPerPage
+    const blankRow = rowTargets.length - index * rowsPerPage
     const paperArea = (name: string | undefined, label: string, open: () => void, topOffset = 0) => {
       const slot = page.slots.find((s) => s.name === name)
       return slot && <button className="cp-paper-field cp-paper-area" type="button" disabled={busy}
@@ -41,13 +50,14 @@ export function OfficialPlanSheet({ state, needs, slots, touch, busy, readOnly, 
         </>}
         {fields.map((s) => {
           const row = s.name.match(/__row(\d+)$/)
-          const needIndex = rowNeeds[index * rowsPerPage + Number(row?.[1] ?? 0)]
+          const target = rowTargets[index * rowsPerPage + Number(row?.[1] ?? 0)]
+          const field = s.name.replace(/__row\d+|__slot\d+/, '')
           const isActivity = layout.type === 'timeline' && s.name.startsWith(layout.activity?.slot ?? '\0')
           const open = layout.type === 'table'
-            ? needIndex === undefined ? onNeeds : () => onNeed(needIndex)
+            ? target === undefined ? onNeeds : () => onNeed(target, field)
             : isActivity ? onActivities : onSchedule
           return <button key={s.name} type="button" disabled={busy} className={`cp-paper-field${changed ? ' cp-hand' : aiChanged ? ' cp-ai' : ''}`}
-            aria-label={`${s.name.replace(/__row\d+|__slot\d+/, '')}（${action}）`}
+            aria-label={`${field}（${action}）`}
             onClick={open} style={{
               left: `${s.position.x / page.width * 100}%`, top: `${s.position.y / page.height * 100}%`,
               width: `${s.width / page.width * 100}%`, height: `${s.height / page.height * 100}%`,

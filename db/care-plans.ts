@@ -448,8 +448,17 @@ async function readStructure(db: Q, planId: string): Promise<Structure> {
   const needs = await db.query('SELECT id, need_text, ordinal FROM care_plan_needs WHERE plan_id = $1 ORDER BY ordinal', [planId])
   const goals = await db.query('SELECT id, need_id, level, ordinal, goal_text, period_text, period_from, period_to FROM care_plan_goals WHERE plan_id = $1 ORDER BY ordinal', [planId])
   const services = await db.query(
-    `SELECT id, need_id, short_goal_id, ordinal, content, insured, service_kind, provider, frequency_text, period_text, period_from, period_to
-     FROM care_plan_services WHERE plan_id = $1 ORDER BY ordinal`,
+    `SELECT s.id, g.need_id, g.short_goal_id, g.ordinal, s.content, s.insured, s.service_kind, s.provider,
+            s.frequency_text, s.period_text, s.period_from, s.period_to
+     FROM care_plan_services s
+     JOIN LATERAL (
+       SELECT s.need_id, s.short_goal_id, s.ordinal
+       UNION ALL
+       SELECT link.need_id, link.short_goal_id, link.ordinal
+       FROM care_plan_shared_service_goals link
+       WHERE link.plan_id = s.plan_id AND link.service_id = s.id
+     ) g ON true
+     WHERE s.plan_id = $1 ORDER BY g.ordinal`,
     [planId],
   )
   return {
@@ -670,6 +679,11 @@ async function copyStructure(c: Tx, source: CarePlanView, targetPlanId: string) 
       await insertGoal(c, targetPlanId, goalId, needId, 'short', j + 1, g)
       for (let k = 0; k < g.services.length; k++) {
         const s = g.services[k]
+        const existingCopy = serviceIds.get(s.id)
+        if (existingCopy) {
+          await linkService(c, targetPlanId, existingCopy, needId, goalId, k + 1)
+          continue
+        }
         const serviceId = randomUUID()
         serviceIds.set(s.id, serviceId)
         await insertService(c, targetPlanId, serviceId, needId, goalId, k + 1, s)
@@ -711,6 +725,14 @@ function insertService(
   )
 }
 
+function linkService(c: Tx, planId: string, serviceId: string, needId: string, shortGoalId: string, ordinal: number) {
+  return c.query(
+    `INSERT INTO care_plan_shared_service_goals (plan_id, service_id, need_id, short_goal_id, ordinal)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [planId, serviceId, needId, shortGoalId, ordinal],
+  )
+}
+
 function checkPeriod(path: string, from: string | null, to: string | null, problems: { path: string, reason: string }[]) {
   if (from !== null && !isDate(from)) problems.push({ path, reason: 'invalid_date' })
   if (to !== null && !isDate(to)) problems.push({ path, reason: 'invalid_date' })
@@ -726,10 +748,9 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
     const problems: { path: string, reason: string }[] = []
     const existingNeeds = new Map(s.needs.map((n) => [n.id, n]))
     const existingGoals = new Map(s.goals.map((g) => [g.id, g]))
-    const existingServices = new Map(s.services.map((x) => [x.id, x]))
+    const existingServiceIds = new Set(s.services.map((service) => service.id))
     const seenNeeds = new Set<string>()
     const seenGoals = new Set<string>()
-    const seenServices = new Set<string>()
 
     interface PlannedService {
       id: string
@@ -758,6 +779,7 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
     }
 
     const planned: PlannedNeed[] = []
+    const serviceValues = new Map<string, PlannedService>()
     for (let i = 0; i < needs.length; i++) {
       const n = needs[i]
       const path = `needs[${i}]`
@@ -805,6 +827,7 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
         checkPeriod(gpath, from, to, problems)
 
         const services: PlannedService[] = []
+        const goalServiceIds = new Set<string>()
         for (let k = 0; k < (g.services ?? []).length; k++) {
           const x = g.services![k]
           const spath = `${gpath}.services[${k}]`
@@ -812,15 +835,14 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
           if (!content) problems.push({ path: `${spath}.content`, reason: 'required' })
           let serviceId = x.id ?? ''
           if (serviceId) {
-            const old = existingServices.get(serviceId)
-            if (!isUuid(serviceId) || !old || seenServices.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'unknown_id' })
-            else if (old.needId !== (n.id ?? '')) problems.push({ path: `${spath}.id`, reason: 'service_goal_mismatch' })
-            seenServices.add(serviceId)
+            if (!isUuid(serviceId) || !existingServiceIds.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'unknown_id' })
+            if (goalServiceIds.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'duplicate' })
           } else serviceId = randomUUID()
+          goalServiceIds.add(serviceId)
           const sFrom = x.periodFrom ?? plan.effectiveFrom
           const sTo = x.periodTo ?? plan.effectiveTo
           checkPeriod(spath, sFrom, sTo, problems)
-          services.push({
+          const service: PlannedService = {
             id: serviceId,
             content,
             insured: x.insured ?? true,
@@ -830,7 +852,13 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
             periodText: x.periodText ?? null,
             periodFrom: sFrom,
             periodTo: sTo,
-          })
+          }
+          const previous = serviceValues.get(serviceId)
+          if (previous && canonical(previous) !== canonical(service)) {
+            problems.push({ path: spath, reason: 'inconsistent_shared_service' })
+          }
+          serviceValues.set(serviceId, service)
+          services.push(service)
         }
         shorts.push({
           id: goalId, goal: goalText,
@@ -846,7 +874,9 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
     }
     if (problems.length) throw new PlanValidationFailed(problems)
 
-    // 先に更新・追加する（並べ替えは遅延可能な一意制約の中で行う）
+    // 最初の参照先をサービス本体の短期目標にし、残りを紐づけとして保存する。
+    await c.query('DELETE FROM care_plan_shared_service_goals WHERE plan_id = $1', [plan.id])
+    const writtenServices = new Set<string>()
     for (let i = 0; i < planned.length; i++) {
       const n = planned[i]
       await c.query(
@@ -860,16 +890,19 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
         await upsertGoal(c, plan.id, g.id, n.id, 'short', j + 1, g)
         for (let k = 0; k < g.services.length; k++) {
           const sv = g.services[k]
-          await upsertService(c, plan.id, sv.id, n.id, g.id, k + 1, sv)
+          if (writtenServices.has(sv.id)) await linkService(c, plan.id, sv.id, n.id, g.id, k + 1)
+          else {
+            await upsertService(c, plan.id, sv.id, n.id, g.id, k + 1, sv)
+            writtenServices.add(sv.id)
+          }
         }
       }
     }
 
     // 送られなかった行を消す（ニーズを消すと目標・サービス・枠も消える）
-    const serviceIds = planned.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((x) => x.id)))
     const goalIds = planned.flatMap((n) => [n.longGoal.id, ...n.shortGoals.map((g) => g.id)])
     const needIds = planned.map((n) => n.id)
-    await c.query('DELETE FROM care_plan_services WHERE plan_id = $1 AND NOT (id = ANY($2::uuid[]))', [plan.id, serviceIds])
+    await c.query('DELETE FROM care_plan_services WHERE plan_id = $1 AND NOT (id = ANY($2::uuid[]))', [plan.id, [...writtenServices]])
     await c.query('DELETE FROM care_plan_goals WHERE plan_id = $1 AND NOT (id = ANY($2::uuid[]))', [plan.id, goalIds])
     await c.query('DELETE FROM care_plan_needs WHERE plan_id = $1 AND NOT (id = ANY($2::uuid[]))', [plan.id, needIds])
 
@@ -1036,14 +1069,24 @@ export async function confirmCarePlan(db: Db, staff: Staff, planId: string, base
       revisions.push({ documentId: document.documentId, revisionId: latest.id, values: latest.values })
     }
     if (revisions.length !== 3) throw new PlanUnsavedChanges()
+    const scheduledServices = new Map<string, { service: ServiceView, needId: string, shortGoalId: string }>()
+    for (const need of view.needs) {
+      for (const goal of need.shortGoals) {
+        for (const service of goal.services) {
+          if (!scheduledServices.has(service.id)) {
+            scheduledServices.set(service.id, { service, needId: need.id, shortGoalId: goal.id })
+          }
+        }
+      }
+    }
     const snapshot = {
       schemaVersion: 1,
       plan: { id: view.id, clientId: view.clientId, effectiveFrom: view.effectiveFrom, effectiveTo: view.effectiveTo },
       plan1: revisions[0].values,
       needs: view.needs,
       slots: view.slots,
-      services: view.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services.map((s) => ({
-        serviceId: s.id, needId: n.id, shortGoalId: g.id, content: s.content, serviceKind: s.kind,
+      services: Array.from(scheduledServices.values(), ({ service: s, needId, shortGoalId }) => ({
+        serviceId: s.id, needId, shortGoalId, content: s.content, serviceKind: s.kind,
         provider: s.provider, insured: s.insured, frequencyText: s.frequency,
         periodFrom: s.periodFrom, periodTo: s.periodTo,
         weekly: view.slots.filter((slot) => slot.serviceId === s.id && slot.scheduleType === 'weekly').map((slot) => ({
@@ -1053,7 +1096,7 @@ export async function confirmCarePlan(db: Db, staff: Staff, planId: string, base
         other: view.slots.filter((slot) => slot.serviceId === s.id && slot.scheduleType === 'other').map((slot) => ({
           slotId: slot.id, note: slot.note, periodFrom: slot.periodFrom, periodTo: slot.periodTo,
         })),
-      })))),
+      })),
     }
     const hash = createHash('sha256').update(canonical(snapshot)).digest('hex')
     await c.query("UPDATE care_plans SET status = 'superseded', updated_at = now() WHERE client_id = $1 AND status = 'confirmed'", [plan.clientId])

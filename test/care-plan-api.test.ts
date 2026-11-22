@@ -389,6 +389,52 @@ test('第2表は stable ID のまま並べ替えられ、baseVersion と期間�
   assert.equal(badPeriod.status, 422)
 })
 
+test('同じサービスを複数の目標に紐づけても月間予定は1件ずつで、改定・紐づけ解除後も予定を保つ', { skip }, async () => {
+  let plan = await createPlan(clients.sato)
+  const path = `/api/care-plans/${plan.id}`
+  const initial = await put(`${path}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })
+  assert.equal(initial.status, 200)
+  plan = initial.body.plan
+  const needs = structuredClone(plan.needs!)
+  const service = needs[0].shortGoals[0].services[0]
+  const other = needPayload('（別のニーズ）')[0]
+  const additionalNeed = { ...other, shortGoals: [{ ...other.shortGoals[0], services: [service] }] }
+  const invalid = await put(`${path}/needs`, {
+    baseVersion: plan.lockVersion,
+    needs: [...needs, { ...additionalNeed, shortGoals: [{ ...additionalNeed.shortGoals[0], services: [{ ...service, content: '別の内容' }] }] }],
+  })
+  assert.equal(invalid.status, 422)
+  assert.match(JSON.stringify(invalid.body), /inconsistent_shared_service/)
+  const linked = await put(`${path}/needs`, { baseVersion: plan.lockVersion, needs: [...needs, additionalNeed] })
+  assert.equal(linked.status, 200, JSON.stringify(linked.body))
+  plan = linked.body.plan
+  assert.equal(plan.needs![1].shortGoals[0].services[0].id, service.id)
+  const scheduled = await put(`${path}/schedule`, {
+    baseVersion: plan.lockVersion,
+    slots: [{ serviceId: service.id, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '09:25' }],
+  })
+  assert.equal(scheduled.status, 200)
+  const saved = await savePlan(scheduled.body.plan)
+  assert.equal(saved.status, 200)
+  const confirmed = await post(`${path}/confirm`, { baseVersion: saved.body.plan.lockVersion })
+  assert.equal(confirmed.status, 200)
+
+  const preview = await post(`/api/clients/${plan.clientId}/care-plan-months/preview`, { planId: plan.id, month: '2026-06' })
+  assert.equal(preview.status, 200, JSON.stringify(preview.body))
+  assert.equal(preview.body.entries.length, 5)
+  assert.ok(preview.body.entries.every((entry: { serviceId: string }) => entry.serviceId === service.id))
+
+  const copy = await createPlan(plan.clientId, { copyFromPlanId: plan.id })
+  const copiedNeeds = copy.needs!
+  const copiedId = copiedNeeds[0].shortGoals[0].services[0].id
+  assert.notEqual(copiedId, service.id)
+  assert.equal(copiedNeeds[1].shortGoals[0].services[0].id, copiedId)
+  const unlinked = await put(`/api/care-plans/${copy.id}/needs`, { baseVersion: copy.lockVersion, needs: copiedNeeds.slice(1) })
+  assert.equal(unlinked.status, 200, JSON.stringify(unlinked.body))
+  assert.equal(unlinked.body.plan.needs[0].shortGoals[0].services[0].id, copiedId)
+  assert.deepEqual(unlinked.body.plan.slots, copy.slots)
+})
+
 test('保存は3表の版を一度に作り、第2表の射影は汎用の欄の直しから守る', { skip }, async () => {
   const plan = await createPlan(clients.sato)
   const withNeeds = (await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })).body as { plan: PlanBody }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { DocumentOutput } from '../document/DocumentOutput.tsx'
-import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail } from '../../../db/care-plans.ts'
+import type { CarePlanView, CarePlanSummary, NeedInput, ServiceInput, SlotInput, AiDraftDetail } from '../../../db/care-plans.ts'
 import { api, ApiError } from '../../lib/api.ts'
 import { downloadBlob } from '../../lib/download.ts'
 import { FormPage } from '../document/FormPage.tsx'
@@ -9,7 +9,7 @@ import { SheetToolbar } from '../document/SheetToolbar.tsx'
 import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import { useDocument } from '../document/useDocument.ts'
 import { DailyActivities } from './DocumentFields.tsx'
-import { OfficialPlanSheet } from './OfficialPlanSheet.tsx'
+import { OfficialPlanSheet, type PaperNeedTarget } from './OfficialPlanSheet.tsx'
 import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { savePlanEdits, documentDirty } from './save.ts'
 import './care-plan.css'
@@ -30,19 +30,48 @@ const message = (error: unknown) => {
     if (error.code === 'form_unavailable') return 'PDFの元の用紙がまだ用意されていません。管理者に確認してください。'
     if (error.code === 'validation_failed') {
       const detail = error.details as { problems?: { path: string, reason: string }[] }
-      const labels: Record<string, string> = { overlap: '時間帯が重なっています', duplicate: '同じ予定が重複しています', invalid_time: '曜日・開始・終了・翌日終了を確認してください', invalid_other: '週単位以外の予定には内容を入力してください', period_order: '期間の開始・終了を確認してください', unknown_service: 'サービスを選び直してください' }
+      const labels: Record<string, string> = { overlap: '時間帯が重なっています', duplicate: '同じ項目が重複しています', invalid_time: '曜日・開始・終了・翌日終了を確認してください', invalid_other: '週単位以外の予定には内容を入力してください', period_order: '期間の開始・終了を確認してください', unknown_service: 'サービスを選び直してください', inconsistent_shared_service: '紐づけたサービスの内容に違いがあります。内容を確認してください' }
       return `入力を確認してください。${detail.problems?.map((p) => labels[p.reason] ?? 'ニーズ・目標・サービスの必須欄を確認してください').filter((v, i, a) => a.indexOf(v) === i).join('。') ?? ''}`
     }
   }
   return error instanceof Error ? error.message : '操作を完了できませんでした。入力を残したまま再試行できます。'
 }
 
-function Modal({ title, onClose, children }: { title: string, onClose: () => void, children: ReactNode }) {
+function Modal({ title, onClose, focusField, children }: { title: string, onClose: () => void, focusField?: string, children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const dialog = ref.current!; dialog.showModal(); return () => dialog.close() }, [])
+  useEffect(() => {
+    const dialog = ref.current!
+    dialog.showModal()
+    if (focusField) {
+      const field = dialog.querySelector<HTMLElement>(`[data-cp-field="${focusField}"]`)
+      field?.scrollIntoView({ block: 'center' })
+      field?.focus({ preventScroll: true })
+    }
+    return () => dialog.close()
+  }, [focusField])
   return <dialog ref={ref} aria-label={title} className="cp-dialog" onCancel={(e) => { e.preventDefault(); onClose() }}>
     <header><h2>{title}</h2><button className="btn" onClick={onClose} type="button">閉じる</button></header>{children}
   </dialog>
+}
+
+function serviceChoices(needs: NeedInput[]) {
+  const choices = new Map<string, { id: string, service: ServiceInput, goals: string[], label: string }>()
+  for (const need of needs) {
+    for (const goal of need.shortGoals ?? []) {
+      for (const service of goal.services ?? []) {
+        if (!service.id) continue
+        const choice = choices.get(service.id) ?? { id: service.id, service, goals: [], label: '' }
+        choice.goals.push(goal.goal)
+        choices.set(service.id, choice)
+      }
+    }
+  }
+  for (const choice of choices.values()) {
+    const { service, goals } = choice
+    const details = [service.provider || '事業所未入力', service.frequency, goals.filter(Boolean).join('／')].filter(Boolean)
+    choice.label = `${service.content}（${details.join('・')}）`
+  }
+  return [...choices.values()]
 }
 
 export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, onClick: () => void }) {
@@ -176,6 +205,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [needIndex, setNeedIndex] = useState<number | null>(null)
+  const [needFocus, setNeedFocus] = useState<string>()
   const [slotIndex, setSlotIndex] = useState<number | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [activitiesOpen, setActivitiesOpen] = useState(false)
@@ -242,20 +272,45 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     setAiNeeds(new Set())
     await Promise.all(documents.map((d) => d.reload())); onUpdated(); setNotice('第1〜3表を保存しました')
   })
-  const updateNeed = (index: number, mutate: (need: NeedInput) => void) => {
+  const replaceNeeds = (next: NeedInput[], confirmAction?: string) => {
+    const ids = new Set(next.flatMap((n) => (n.shortGoals ?? []).flatMap((g) => (g.services ?? []).map((s) => s.id))))
+    const removedSlots = slots.filter((slot) => !ids.has(slot.serviceId) && slot.serviceId)
+    const prompt = [confirmAction, removedSlots.length ? `紐づく第3表の予定も${removedSlots.length}件削除されます。` : ''].filter(Boolean).join('\n')
+    if (prompt && !window.confirm(prompt)) return false
+    const removed = new Set(removedSlots)
+    if (removed.size) setSlots(slots.filter((slot) => !removed.has(slot)))
     setNotice('')
+    setNeeds(next)
+    return true
+  }
+  const updateNeed = (index: number, mutate: (need: NeedInput) => void) => {
     const next = structuredClone(needs)
     mutate(next[index])
-    const previousIds = needs[index].shortGoals?.flatMap((g) => g.services?.map((s) => s.id).filter(Boolean) ?? []) ?? []
-    const currentIds = new Set(next[index].shortGoals?.flatMap((g) => g.services?.map((s) => s.id) ?? []))
-    const removedIds = new Set(previousIds.filter((id) => !currentIds.has(id)))
-    if (removedIds.size) setSlots(slots.filter((s) => !removedIds.has(s.serviceId)))
+    replaceNeeds(next)
+  }
+  const updateService = (index: number, goalIndex: number, serviceIndex: number, change: Partial<ServiceInput>) => {
+    const next = structuredClone(needs)
+    const target = next[index].shortGoals![goalIndex].services![serviceIndex]
+    Object.assign(target, change)
+    if (target.id) {
+      for (const need of next) for (const goal of need.shortGoals ?? []) for (const service of goal.services ?? []) {
+        if (service.id === target.id) Object.assign(service, change)
+      }
+    }
     setNeeds(next)
+  }
+  const openNeed = ({ needIndex, goalIndex, serviceIndex }: PaperNeedTarget, field = 'ニーズ') => {
+    const serviceField = ['サービス内容', '保険給付', 'サービス種別', '提供事業所', '頻度', 'サービス期間'].includes(field)
+    if (serviceField && serviceIndex !== undefined) setNeedFocus(`service-${goalIndex}-${serviceIndex}`)
+    else if ((serviceField || field.startsWith('短期')) && goalIndex !== undefined) setNeedFocus(`goal-${goalIndex}`)
+    else setNeedFocus(field.startsWith('長期') ? 'long-goal' : 'need')
+    setNeedIndex(needIndex)
   }
   const updateSlot = (index: number, change: Partial<SlotInput>) => {
     setNotice(''); setSlots((old) => old.map((s, i) => i === index ? { ...s, ...change } : s))
   }
-  const services = plan.needs.flatMap((n) => n.shortGoals.flatMap((g) => g.services))
+  const services = serviceChoices(plan.needs)
+  const linkChoices = serviceChoices(needs)
   const saved = plan.documents.every((d) => d.latestRevision > 0)
   const saveStatus = dirty ? '保存していない変更があります' : saved ? 'すべて保存済み' : 'まだ保存されていません'
   const output = <DocumentOutput status={<>第1〜3表 · {saveStatus}</>} disabled={busy || !ready || dirty || !saved}
@@ -297,7 +352,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
         {(continuous?[1,2]:active>0?[active]:[]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={active===i}><h2>{names[i]}</h2>
           <OfficialPlanSheet state={i === 1 ? second : third} needs={needs} slots={slots} touch={touch}
             busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={i === 1 && aiNeeds.size > 0}
-            onNeed={setNeedIndex} onNeeds={() => setNeedsOpen(true)}
+            onNeed={openNeed} onNeeds={() => setNeedsOpen(true)}
             onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
         </section>)}
         </div>
@@ -305,19 +360,19 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     </div>
     {needsOpen && <Modal title="第2表・ニーズの追加と選択" onClose={() => setNeedsOpen(false)}>
       {needs.map((n, i) => <div className="cp-paper-actions" key={n.id ?? i}>
-        <button className="btn" disabled={busy} onClick={() => { setNeedsOpen(false); setNeedIndex(i) }}>{i + 1} {n.need || '未入力'}</button>
+        <button className="btn" disabled={busy} onClick={() => { setNeedsOpen(false); openNeed({ needIndex: i }) }}>{i + 1} {n.need || '未入力'}</button>
         {!readOnly && [-1, 1].map((d) => <button type="button" className="btn" key={d} disabled={busy || i + d < 0 || i + d >= needs.length} aria-label={`ニーズ${i + 1}を${d < 0 ? '上' : '下'}へ`} onClick={() => {
           const next = [...needs]; [next[i], next[i + d]] = [next[i + d], next[i]]; setNeeds(next)
         }}>{d < 0 ? '↑' : '↓'}</button>)}
       </div>)}
       <button className="btn" disabled={busy || readOnly} onClick={() => {
-        setNeeds([...needs, { need: '', longGoal: { goal: '' }, shortGoals: [] }]); setNeedsOpen(false); setNeedIndex(needs.length)
+        setNeeds([...needs, { need: '', longGoal: { goal: '' }, shortGoals: [] }]); setNeedsOpen(false); openNeed({ needIndex: needs.length })
       }}>＋ ニーズを追加</button>
     </Modal>}
     {scheduleOpen && <Modal title="第3表・予定の追加と選択" onClose={() => setScheduleOpen(false)}>
       <p>第2表でサービスを追加したら、一度保存してから予定を作れます。入力途中の予定もここから再開できます。</p>
       {slots.map((s, i) => <p key={s.id ?? i}><button className="btn" disabled={busy} onClick={() => { setScheduleOpen(false); setSlotIndex(i) }}>
-        {s.scheduleType === 'weekly' ? `${days[(s.weekday ?? 1) - 1]} ${s.start || '開始未入力'}–${s.endsNextDay ? '翌' : ''}${s.end || '終了未入力'}` : `週単位以外：${s.note || '未入力'}`} {services.find((v) => v.id === s.serviceId)?.content}
+        {s.scheduleType === 'weekly' ? `${days[(s.weekday ?? 1) - 1]} ${s.start || '開始未入力'}–${s.endsNextDay ? '翌' : ''}${s.end || '終了未入力'}` : `週単位以外：${s.note || '未入力'}`} {services.find((v) => v.id === s.serviceId)?.label}
       </button></p>)}
       <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
         setSlots([...slots, { serviceId: '', scheduleType: 'weekly', weekday: 1, start: '', end: '', endsNextDay: false }]); setScheduleOpen(false); setSlotIndex(slots.length)
@@ -329,21 +384,21 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     {activitiesOpen && <Modal title="第3表・主な日常生活上の活動" onClose={() => setActivitiesOpen(false)}>
       <DailyActivities state={third} disabled={busy || readOnly} />
     </Modal>}
-    {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
+    {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)} focusField={needFocus}>
       <p>入力はこの画面に保持します。各表の「保存」で第1〜3表をまとめて保存してください。</p>
       {!readOnly && <button className="btn" type="button" disabled={busy} onClick={() => { setNeedIndex(null); setNeedsOpen(true) }}>ニーズ一覧</button>}
       <fieldset disabled={readOnly || busy}>
-        <NeedFields need={needs[needIndex]} update={(change) => updateNeed(needIndex, change)} />
-        <button className="btn cp-danger" onClick={() => { if (window.confirm('ニーズと、その下の目標・サービス・週間予定を削除しますか？')) {
-          const ids = new Set(needs[needIndex].shortGoals?.flatMap((g) => g.services?.map((s) => s.id) ?? []))
-          setSlots(slots.filter((s) => !ids.has(s.serviceId))); setNeeds(needs.filter((_, i) => i !== needIndex)); setNeedIndex(null)
-        } }}>このニーズを削除</button>
+        <NeedFields need={needs[needIndex]} linkChoices={linkChoices} update={(change) => updateNeed(needIndex, change)}
+          updateService={(goal, service, change) => updateService(needIndex, goal, service, change)} />
+        <button className="btn cp-danger" onClick={() => {
+          if (replaceNeeds(needs.filter((_, i) => i !== needIndex), 'このニーズと、その目標を削除しますか？')) setNeedIndex(null)
+        }}>このニーズを削除</button>
       </fieldset>
     </Modal>}
     {slotIndex !== null && slots[slotIndex] && <Modal title="第3表・予定の編集" onClose={() => setSlotIndex(null)}>
       <fieldset disabled={readOnly || busy}>
         <label>第2表のサービス<select value={slots[slotIndex].serviceId} onChange={(e) => updateSlot(slotIndex, { serviceId: e.target.value })}>
-          <option value="">サービスを選ぶ</option>{services.map((s) => <option key={s.id} value={s.id}>{s.content}（{s.provider ?? '事業所未入力'}）</option>)}
+          <option value="">サービスを選ぶ</option>{services.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select></label>
         {slots[slotIndex].scheduleType === 'weekly' ? <>
           <label>曜日<select value={slots[slotIndex].weekday ?? 1} onChange={(e) => updateSlot(slotIndex, { weekday: Number(e.target.value) })}>{days.map((day, i) => <option value={i + 1} key={day}>{day}曜日</option>)}</select></label>
@@ -440,24 +495,44 @@ function PeriodFields({ value, update, text = true }: { value: Period, update: (
   </div>
 }
 
-function NeedFields({ need, update }: { need: NeedInput, update: (mutate: (need: NeedInput) => void) => void }) {
+function NeedFields({ need, update, updateService, linkChoices }: {
+  need: NeedInput,
+  update: (mutate: (need: NeedInput) => void) => void,
+  updateService: (goalIndex: number, serviceIndex: number, change: Partial<ServiceInput>) => void,
+  linkChoices: ReturnType<typeof serviceChoices>,
+}) {
   return <>
-    <label>生活全般の解決すべき課題（ニーズ）<textarea value={need.need} onChange={(e) => update((n) => { n.need = e.target.value })} /></label>
-    <label>長期目標<textarea value={need.longGoal.goal} onChange={(e) => update((n) => { n.longGoal.goal = e.target.value })} /></label>
+    <label>生活全般の解決すべき課題（ニーズ）<textarea data-cp-field="need" value={need.need} onChange={(e) => update((n) => { n.need = e.target.value })} /></label>
+    <label>長期目標<textarea data-cp-field="long-goal" value={need.longGoal.goal} onChange={(e) => update((n) => { n.longGoal.goal = e.target.value })} /></label>
     <PeriodFields value={need.longGoal} update={(p) => update((n) => Object.assign(n.longGoal, p))} />
-    {need.shortGoals?.map((goal, j) => <section className="cp-goal" key={goal.id ?? j}>
-      <label>短期目標 {j + 1}<textarea value={goal.goal} onChange={(e) => update((n) => { n.shortGoals![j].goal = e.target.value })} /></label>
-      <PeriodFields value={goal} update={(p) => update((n) => Object.assign(n.shortGoals![j], p))} />
-      {goal.services?.map((s, k) => <section className="cp-service" key={s.id ?? k}>
-        <label>サービス内容<input value={s.content} onChange={(e) => update((n) => { n.shortGoals![j].services![k].content = e.target.value })} /></label>
-        <div className="cp-fields">{(['kind', 'provider', 'frequency'] as const).map((key, i) => <label key={key}>{['サービス種別', '提供事業所', '頻度'][i]}<input value={s[key] ?? ''} onChange={(e) => update((n) => { n.shortGoals![j].services![k][key] = e.target.value })} /></label>)}</div>
-        <label className="cp-check"><input type="checkbox" checked={s.insured ?? true} onChange={(e) => update((n) => { n.shortGoals![j].services![k].insured = e.target.checked })} />保険給付の対象</label>
-        <PeriodFields value={s} update={(p) => update((n) => Object.assign(n.shortGoals![j].services![k], p))} />
-        <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals![j].services!.splice(k, 1) })}>サービスを削除</button>
-      </section>)}
-      <button className="btn" onClick={() => update((n) => { (n.shortGoals![j].services ??= []).push({ content: '', insured: true }) })}>＋ サービスを追加</button>
-      <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals!.splice(j, 1) })}>短期目標を削除</button>
-    </section>)}
+    {need.shortGoals?.map((goal, j) => {
+      const linkedIds = new Set(goal.services?.map((service) => service.id))
+      const available = linkChoices.filter((choice) => !linkedIds.has(choice.id))
+      return <section className="cp-goal" key={goal.id ?? j}>
+        <label>短期目標 {j + 1}<textarea data-cp-field={`goal-${j}`} value={goal.goal} onChange={(e) => update((n) => { n.shortGoals![j].goal = e.target.value })} /></label>
+        <PeriodFields value={goal} update={(p) => update((n) => Object.assign(n.shortGoals![j], p))} />
+        {goal.services?.map((s, k) => {
+          const shared = linkChoices.some((choice) => choice.id === s.id && choice.goals.length > 1)
+          return <section className="cp-service" key={s.id ?? k}>
+            <label>サービス内容<input data-cp-field={`service-${j}-${k}`} value={s.content} onChange={(e) => updateService(j, k, { content: e.target.value })} /></label>
+            {shared && <small>他の目標にも紐づいています。サービス内容の変更はすべての紐づけに反映されます。</small>}
+            <div className="cp-fields">{(['kind', 'provider', 'frequency'] as const).map((key, i) => <label key={key}>{['サービス種別', '提供事業所', '頻度'][i]}<input value={s[key] ?? ''} onChange={(e) => updateService(j, k, { [key]: e.target.value })} /></label>)}</div>
+            <label className="cp-check"><input type="checkbox" checked={s.insured ?? true} onChange={(e) => updateService(j, k, { insured: e.target.checked })} />保険給付の対象</label>
+            <PeriodFields value={s} update={(p) => updateService(j, k, p)} />
+            <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals![j].services!.splice(k, 1) })}>{shared ? 'この目標との紐づけを外す' : 'サービスを削除'}</button>
+          </section>
+        })}
+        <button className="btn" onClick={() => update((n) => { (n.shortGoals![j].services ??= []).push({ content: '', insured: true }) })}>＋ サービスを追加</button>
+        {available.length > 0 && <label>既存のサービスを紐づける<select value="" onChange={(e) => {
+          const selected = available.find((choice) => choice.id === e.target.value)
+          if (selected) update((n) => { (n.shortGoals![j].services ??= []).push({ ...selected.service }) })
+        }}>
+          <option value="">他の目標のサービスを選ぶ</option>
+          {available.map((choice) => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+        </select></label>}
+        <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals!.splice(j, 1) })}>短期目標を削除</button>
+      </section>
+    })}
     <button className="btn" onClick={() => update((n) => { (n.shortGoals ??= []).push({ goal: '', services: [] }) })}>＋ 短期目標を追加</button>
   </>
 }
