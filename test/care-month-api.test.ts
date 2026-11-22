@@ -51,7 +51,8 @@ test('第6表: 確定版から生成、予定/実績分離、保存再送、409�
  assert.equal((await call(`/api/documents/${month.documentId}/fields`,'PATCH',{changes:[{key:'monthly.details',value:'汎用APIで変更',base:null}]})).status,409)
  assert.equal((await call(`/api/documents/${month.documentId}/save`,'POST',{scope:'document'})).status,409)
  const regen=await call(path+'/preview','POST',{action:'regenerate',baseVersion:saved2.body.month.lockVersion});assert.equal(regen.status,200);assert.deepEqual(regen.body.entries,next)
- const january=await create('2024-01'),copied=await call(path+'/preview','POST',{action:'copy',baseVersion:saved2.body.month.lockVersion,sourceMonthId:january.id});assert.equal(copied.status,200);assert.ok(copied.body.added.every((e:{actual:unknown})=>e.actual===null));assert.deepEqual(copied.body.entries.slice(0,next.length),next)
+ const january=await create('2024-01');assert.equal((await call('/api/care-plan-months/'+january.id,'PUT',{baseVersion:january.lockVersion,requestId:randomUUID(),entries:january.entries})).status,200);const copied=await call(path+'/preview','POST',{action:'copy',baseVersion:saved2.body.month.lockVersion,sourceMonthId:january.id});assert.equal(copied.status,200);assert.ok(copied.body.added.every((e:{actual:unknown})=>e.actual===null));assert.deepEqual(copied.body.entries.slice(0,next.length),next);assert.equal(copied.body.added[0].copiedFrom.revision,1);assert.equal(copied.body.added[0].copiedFrom.monthId,january.id)
+ const copySaved=await call(path,'PUT',{baseVersion:saved2.body.month.lockVersion,requestId:randomUUID(),entries:copied.body.entries});assert.equal(copySaved.status,200);assert.equal(copySaved.body.month.entries.at(-1).copiedFrom.revision,1)
  const pdf=await call(`/api/documents/${month.documentId}/pdf?rev=1`);assert.equal(pdf.status,200)
  const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');const load=getDocument({data:new Uint8Array(pdf.body)}),d=await load.promise;let printed='';for(let i=1;i<=d.numPages;i++)printed+=(await(await d.getPage(i)).getTextContent()).items.map(t=>'str'in t?t.str:'').join('');await load.destroy();assert.match(printed,/10分変更/);assert.match(printed,/未実施/);assert.ok(!printed.includes('人が追記'))
  await assert.rejects(db.query("UPDATE care_plan_month_versions SET entries='[]' WHERE month_id=$1",[month.id]),{code:'23514'})
@@ -67,4 +68,23 @@ test('第6表: 未ログイン401・他事業所404・不正月400・未確定�
  const own=await create('2024-03')
  assert.equal((await call('/api/care-plan-months/'+own.id,'GET',undefined,'Bearer dev:other-months@example.com')).status,404)
  assert.equal((await call('/api/care-plan-months/'+own.id+'/revisions/1','GET',undefined,'Bearer dev:other-months@example.com')).status,404)
+})
+
+test('第6表: 保険者情報の先頭ゼロ・届出日を保存版に固定し、更新後も旧版PDFを再現する',{skip},async()=>{
+ const month=await create('2024-04'),path='/api/care-plan-months/'+month.id
+ const initial=await call(path,'PUT',{requestId:randomUUID(),baseVersion:month.lockVersion,entries:month.entries});assert.equal(initial.status,200)
+ const headers={insurerNumber:'001234',insurerName:'架空保険者',insuredNumber:'0000123456',submittedDate:'2024-04-02'}
+ const first=await call(path,'PUT',{requestId:randomUUID(),baseVersion:initial.body.month.lockVersion,entries:month.entries,headers})
+ assert.equal(first.status,200,JSON.stringify(first.body));assert.deepEqual(first.body.month.headers,headers)
+ assert.equal((await call(path+'/revisions/1')).body.month.headers,undefined)
+ const changed={...headers,insurerName:'架空の変更後保険者',submittedDate:'2024-04-03'}
+ const second=await call(path,'PUT',{requestId:randomUUID(),baseVersion:first.body.month.lockVersion,entries:month.entries,headers:changed})
+ assert.equal(second.status,200);assert.deepEqual((await call(path+'/revisions/2')).body.month.headers,headers)
+ assert.deepEqual((await call(path+'/revisions/3')).body.month.headers,changed)
+ const preserved=await call(path,'PUT',{requestId:randomUUID(),baseVersion:second.body.month.lockVersion,entries:month.entries});assert.equal(preserved.status,200);assert.deepEqual(preserved.body.month.headers,changed)
+ assert.equal((await call(path,'PUT',{requestId:randomUUID(),baseVersion:preserved.body.month.lockVersion,entries:month.entries,headers:{...headers,submittedDate:'2024-02-30'}})).status,400)
+ const pdf=await call(`/api/documents/${month.documentId}/pdf?rev=2`);assert.equal(pdf.status,200)
+ const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');const loading=getDocument({data:new Uint8Array(pdf.body)});const doc=await loading.promise
+ let text='';for(let p=1;p<=doc.numPages;p++)text+=(await(await doc.getPage(p)).getTextContent()).items.map(i=>'str'in i?i.str:'').join('')
+ await loading.destroy();assert.ok(text.includes('001234'));assert.ok(text.includes('0000123456'));assert.ok(text.includes('架空保険者'));assert.ok(!text.includes('架空の変更後保険者'))
 })

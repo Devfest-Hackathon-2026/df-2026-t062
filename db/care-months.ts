@@ -3,6 +3,7 @@ import { careMonthPrint } from '../core/care-month-print.ts'
 import { loadFormDef } from './forms.ts'
 import { z } from 'zod'
 import { ConfirmedScheduleSchema, expandMonth, mergeMonthGeneration, copyMonth, MonthEntrySchema, monthDays, type MonthEntry } from '../core/care-month.ts'
+import { MonthHeaders } from '../core/care-month-api.ts'
 import type { CareMonthView, CareMonthSummary, CareMonthSaved, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { audit, BadRequest, Conflict, createDocumentInTx, writeField, saveDocumentInTx, NotFound, type Staff } from './repo.ts'
@@ -25,9 +26,10 @@ export async function previewCareMonth(db:Q,officeId:string,clientId:string,plan
 export async function getCareMonth(db:Q,officeId:string,id:string,lock=false):Promise<CareMonthView> {
  const r=(await db.query(`SELECT m.*,p.version,(SELECT coalesce(max(rev),0) FROM revisions WHERE document_id=m.document_id) AS revision FROM care_plan_months m JOIN care_plans p ON p.id=m.plan_id WHERE m.id=$1 AND m.office_id=$2${lock?' FOR UPDATE OF m':''}`,[id,officeId])).rows[0]
  if(!r)throw new NotFound()
+ const header=(await db.query("SELECT value FROM field_values WHERE document_id=$1 AND key='monthly.header'",[r.document_id])).rows[0]
  const s=await source(db,officeId,r.client_id,r.plan_id)
  if(s.confirmationId!==r.confirmation_id || s.sourceHash!==r.source_hash)throw new Conflict('month_source')
- return {id:r.id,clientId:r.client_id,planId:r.plan_id,planVersion:Number(r.version),confirmationId:r.confirmation_id,sourceHash:r.source_hash,month:r.target_month,documentId:r.document_id,lockVersion:Number(r.lock_version),revision:Number(r.revision),services:s.snapshot.services.map(v=>({id:v.serviceId,content:v.content,provider:v.provider,serviceKind:v.serviceKind,insured:v.insured})),entries:z.array(MonthEntrySchema).parse(r.entries),unexpanded:expandMonth(r.target_month,r.confirmation_id,s.snapshot).unexpanded}
+ return {...(header?{headers:MonthHeaders.parse(header.value)}:{}),id:r.id,clientId:r.client_id,planId:r.plan_id,planVersion:Number(r.version),confirmationId:r.confirmation_id,sourceHash:r.source_hash,month:r.target_month,documentId:r.document_id,lockVersion:Number(r.lock_version),revision:Number(r.revision),services:s.snapshot.services.map(v=>({id:v.serviceId,content:v.content,provider:v.provider,serviceKind:v.serviceKind,insured:v.insured})),entries:z.array(MonthEntrySchema).parse(r.entries),unexpanded:expandMonth(r.target_month,r.confirmation_id,s.snapshot).unexpanded}
 }
 export async function listCareMonths(db:Q,officeId:string,clientId:string) {
  await client(db,officeId,clientId)
@@ -58,7 +60,13 @@ export async function previewMonthAction(db:Db,officeId:string,id:string,input:z
  }
  const from=await getCareMonth(db,officeId,input.sourceMonthId)
  if(from.clientId!==current.clientId || from.planId!==current.planId)throw new NotFound()
- try { return {...copyMonth(from.entries,current.month,current.entries),removed:[] as MonthEntry[]} } catch { throw new BadRequest('同じ計画版の前月を選択してください') }
+ if(!from.revision)throw new BadRequest('コピー元の前月を保存してください')
+ const saved=await careMonthSaved(db,officeId,from.id,from.revision)
+ try {
+  const result=copyMonth(saved.month.entries,current.month,current.entries),capturedAt=new Date().toISOString()
+  const added=result.added.map(e=>({...e,copiedFrom:{monthId:from.id,revision:from.revision,entryId:e.id.slice(('copy/'+current.month+'/').length),capturedAt}}))
+  return {entries:[...current.entries,...added],added,skipped:result.skipped,removed:[] as MonthEntry[]}
+ } catch { throw new BadRequest('同じ計画版の前月を選択してください') }
 }
 export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<typeof MonthSaveInput>) {
  return tx(db,async c=>{
@@ -69,7 +77,18 @@ export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<ty
   const s=await source(c,staff.officeId,current.clientId,current.planId),services=new Map(s.snapshot.services.map(s=>[s.serviceId,s]))
   const allowed=new Map(expandMonth(current.month,current.confirmationId,s.snapshot).entries.map(e=>[e.sourceKey,e])),ids=new Set<string>()
   const days=new Set(monthDays(current.month))
+  const existingRows=new Map(current.entries.map(e=>[e.id,e])),copiedSources=new Map<string,CareMonthSaved>()
   for(const e of input.entries) {
+   const old=existingRows.get(e.id)
+   if(old?.copiedFrom && canonical(old.copiedFrom)!==canonical(e.copiedFrom??null))throw new BadRequest('コピー元の保存版は変更できません')
+   if(e.copiedFrom && !old?.copiedFrom) {
+    const ref=e.copiedFrom,key=ref.monthId+'/'+ref.revision
+    let saved=copiedSources.get(key)
+    if(!saved){saved=await careMonthSaved(c,staff.officeId,ref.monthId,ref.revision);copiedSources.set(key,saved)}
+    const sourceRow=saved.month.entries.find(v=>v.id===ref.entryId),date=new Date(current.month+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()-1)
+    if(saved.month.clientId!==current.clientId || saved.month.planId!==current.planId || saved.month.month!==date.toISOString().slice(0,7) || !sourceRow || sourceRow.serviceId!==e.serviceId || e.id!=='copy/'+current.month+'/'+ref.entryId || e.sourceKey!==null)throw new BadRequest('コピー元の保存版と予定が一致しません')
+    e.copiedFrom={...ref,capturedAt:new Date().toISOString()}
+   }
    const original=e.sourceKey?allowed.get(e.sourceKey):undefined
    if(ids.has(e.id) || !days.has(e.plan.date) || (e.actual?.status==='provided' && !days.has(e.actual.date)) || !services.has(e.serviceId) || (e.sourceKey && (!original || original.id!==e.id || original.serviceId!==e.serviceId || original.slotId!==e.slotId)) || (!e.sourceKey && e.slotId!==null))throw new BadRequest('月間予定のID・日付・サービスが正しくありません')
    ids.add(e.id)
@@ -79,6 +98,7 @@ export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<ty
   await c.query('UPDATE care_plan_months SET entries=$1,lock_version=lock_version+1,updated_at=now() WHERE id=$2',[JSON.stringify(input.entries),id])
   const next=await getCareMonth(c,staff.officeId,id)
   const form=await loadFormDef(c,(await c.query('SELECT template_version_id FROM documents WHERE id=$1 FOR UPDATE',[current.documentId])).rows[0].template_version_id)
+  if(input.headers!==undefined)next.headers=input.headers
   const projection=careMonthPrint(next)
   if(Object.keys(projection).some(k=>!form.keys.includes(k)))throw new BadRequest('第6表の様式に必要な明細欄がありません')
   for(const [key,value] of Object.entries(projection))await writeField(c,staff.officeId,current.clientId,current.documentId,key,value,'cm',staff.id)
@@ -92,7 +112,9 @@ export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<ty
 /** Specific saved revision is the only future fee-calculation input; current drafts are excluded. */
 export async function careMonthSaved(db:Q,officeId:string,id:string,revision:number):Promise<CareMonthSaved> {
  const month=await getCareMonth(db,officeId,id)
- const r=(await db.query(`SELECT v.entries,v.lock_version,v.saved_at,r.rev FROM care_plan_month_versions v JOIN revisions r ON r.id=v.revision_id WHERE v.month_id=$1 AND r.office_id=$2 AND r.rev=$3`,[id,officeId,revision])).rows[0]
+ const r=(await db.query(`SELECT v.entries,v.lock_version,v.saved_at,r.rev,r."values" AS saved_values FROM care_plan_month_versions v JOIN revisions r ON r.id=v.revision_id WHERE v.month_id=$1 AND r.office_id=$2 AND r.rev=$3`,[id,officeId,revision])).rows[0]
  if(!r)throw new NotFound()
- return {month:{...month,entries:z.array(MonthEntrySchema).parse(r.entries),lockVersion:Number(r.lock_version),revision:Number(r.rev)},revision:Number(r.rev),savedAt:new Date(r.saved_at).toISOString()}
+ const {headers:_current,...snapshot}=month
+ const headers=r.saved_values['monthly.header']
+ return {month:{...snapshot,...(headers!==undefined?{headers:MonthHeaders.parse(headers)}:{}),entries:z.array(MonthEntrySchema).parse(r.entries),lockVersion:Number(r.lock_version),revision:Number(r.rev)},revision:Number(r.rev),savedAt:new Date(r.saved_at).toISOString()}
 }
