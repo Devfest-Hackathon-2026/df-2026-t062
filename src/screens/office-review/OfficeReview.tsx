@@ -83,7 +83,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   const finished = fix ? Object.keys(done).concat(unused.filter((n) => !(n in done))) : reviewSlots.filter((n) => isDone(n)).concat(unused.filter((n) => !reviewSlots.includes(n)))
   const noSlots = !!v && !v.formVersion.schemas.some((p) => p.length)
   const ready = !noSlots && (fix ? finished.length > 0 : open.length === 0)
-  const what = (name: string) => (unused.includes(name) && !exists(name) ? '何も印刷しない' : v?.slots[name]?.what ?? '（まだ決まっていません）')
+  const what = (name: string) => (unused.includes(name) && !exists(name) ? '何も入れない' : v?.slots[name]?.what ?? '（まだ決まっていません）')
   const labelOf = (name: string) => `「${name.replace(/^p\d+_/, '').replace(/_/g, ' ')}」の欄`
 
   const select = (name: string) => {
@@ -288,7 +288,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
           <section className="of-modal" role="dialog" aria-modal="true" aria-labelledby="of-pub-h">
             <h2 id="of-pub-h">{fix ? '直した書式を使い始めますか？' : 'この書式を使い始めますか？'}</h2>
             <p>これから作る{kindName}は、{fix ? '直した書式' : '事業所で上げた書式'}になります。</p>
-            <div className="gray">今ある{kindName}は、<strong>作ったときの書式のまま</strong>です。書き直したり、印刷が変わったりはしません。</div>
+            <div className="gray">今ある{kindName}は、<strong>作ったときの書式のまま</strong>です。書き直したり、欄の中身が変わったりはしません。</div>
             <p className="of-muted">使い始めたあとにずれを見つけたら、書類の設定の「直す」から直せます。</p>
             {publishError && <div role="alert" className="of-err">{publishError}</div>}
             <div className="of-modal-btns">
