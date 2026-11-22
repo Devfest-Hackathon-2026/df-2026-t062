@@ -93,3 +93,43 @@ test('既存チャットの道具経路を再利用し、日時の提案を拒�
   assert.deepEqual(r.proposals.map(p => p.key), ['progress.content'])
   assert.equal(r.proposals[0].before, null)
 })
+
+test('第4表AIは検討と未決定の課題を分けて候補にし、日時・出席者や他帳票のキーは採用しない', { skip }, async () => {
+  const doc = await createCareRecord(db, staff, client, { kind: 'care_plan_4', requestId: randomUUID() })
+  const draft = await createCareRecordDraft(db, staff, doc.id, { requestId: randomUUID(), instructions: '' }, async () => ({
+    guidance: '出席者と結論は確認してください。', proposals: [
+      { key: 'meeting.discussion', label: '検討内容', before: null, after: '回数の見直しを話し合った。' },
+      { key: 'meeting.remaining', label: '残された課題', before: null, after: '回数は未決定。本人の意向を確認する。' },
+    ],
+  }))
+  assert.equal(draft.status, 'ready')
+  const untouched = await getDocument(db, staff.officeId, doc.id)
+  assert.equal(untouched.fields['meeting.discussion'], undefined)
+  await applyCareRecordDraft(db, staff, doc.id, draft.id)
+  const result = await getDocument(db, staff.officeId, doc.id)
+  assert.equal(result.fields['meeting.remaining'].value, '回数は未決定。本人の意向を確認する。')
+  assert.equal(result.fields['meeting.conclusion'], undefined)
+  assert.equal(result.fields['meeting.attendees'], undefined)
+  assert.equal(result.rev, 0)
+  for (const key of ['meeting.attendees', 'meeting.date', 'progress.content']) {
+    const rejected = await createCareRecordDraft(db, staff, doc.id, { requestId: randomUUID(), instructions: '' }, async () => ({ guidance: '', proposals: [{ key, before: null, after: '未確認', label: key }] }) as never)
+    assert.equal(rejected.status, 'failed')
+  }
+})
+
+test('第4表のモデルへ結論の創作禁止を渡し、出席者のツール編集を拒否する', async () => {
+  let n = 0
+  const generate = careRecordDrafter(async ({ contents }) => {
+    if (n++ === 0) {
+      assert.match(contents[0].parts[0].text!, /合意が不明な場合は結論を提案せず/)
+      return [{ functionCall: { name: 'propose_edit', args: { key: 'meeting.attendees', value: [] } } }]
+    }
+    if (n === 2) {
+      assert.equal(contents.at(-1)!.parts[0].functionResponse!.response.ok, false)
+      return [{ functionCall: { name: 'propose_edit', args: { key: 'meeting.remaining', value: '合意は未確認。' } } }]
+    }
+    return [{ text: '出席状況と合意内容を確認してください。' }]
+  })
+  const result = await generate({ form: seedFormDef('care_plan_4'), current: {}, source: { capturedAt: '2026-11-22T00:00:00Z', instructions: '', documents: [], recordings: [] } })
+  assert.deepEqual(result.proposals.map(p => p.key), ['meeting.remaining'])
+})

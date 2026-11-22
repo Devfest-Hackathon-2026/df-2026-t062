@@ -1,7 +1,8 @@
 import { z } from 'zod'
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s => !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s)
-export const CareRecordCreate = z.object({ kind: z.literal('care_plan_5'), requestId: z.uuid() }).strict()
+export const CareRecordCreate = z.object({ kind: z.enum(['care_plan_4', 'care_plan_5']), requestId: z.uuid() }).strict()
 export const CareRecordQuery = z.object({
+  kind: z.enum(['care_plan_4', 'care_plan_5']).default('care_plan_5'),
   q: z.string().max(300).default(''), from: date.optional(), to: date.optional(),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 }).refine(q => !q.from || !q.to || q.from <= q.to)
@@ -10,9 +11,11 @@ export interface CareRecordSummary {
   id: string; seq: number; date: string | null; time: string | null; category: string | null; preview: string;
   revision: number; updatedAt: string
 }
-export interface CareRecordRevision { rev: number; savedAt: string; formVersionId: string; values: Record<string, unknown> }
+export interface CareRecordConfirmation { confirmedAt: string; confirmedBy: string; planId: string | null; planVersion: number | null; planConfirmationId: string | null }
+export const CareRecordConfirm = z.object({ baseRevision: z.number().int().positive(), relatedPlanId: z.uuid().nullable().default(null) }).strict()
+export interface CareRecordRevision { confirmation: CareRecordConfirmation | null; rev: number; savedAt: string; formVersionId: string; values: Record<string, unknown> }
 
-export interface CareRecordProposal { key: 'progress.content' | 'progress.category'; label: string; before: unknown; after: string }
+export interface CareRecordProposal { key: 'progress.content' | 'progress.category' | 'meeting.items' | 'meeting.discussion' | 'meeting.conclusion' | 'meeting.remaining'; label: string; before: unknown; after: string }
 export interface CareRecordSources { capturedAt: string; instructions: string; documents: { id: string, documentId: string, kind: string, rev: number, savedAt: string, formVersionId: string, values: Record<string, unknown> }[]; recordings: { id: string, recordedAt: string, utterances: unknown[] }[] }
 export type CareRecordDrafter = (input: { source: CareRecordSources, current: Record<string, unknown>, form: import('./form.ts').FormDef }) => Promise<{ guidance: string, proposals: CareRecordProposal[] }>
 export interface CareRecordDraftView {
@@ -20,3 +23,10 @@ export interface CareRecordDraftView {
   capturedAt: string; documentSources: { id: string, documentId: string, rev: number, savedAt: string }[]; recordingSources: { id: string, recordedAt: string }[]; appliedAt: string | null
 }
 export const CareRecordDraftCreate = z.object({ requestId: z.uuid(), instructions: z.string().trim().max(4000).default('') }).strict()
+
+export const careRecordConfig = {
+  care_plan_4: { title: 'サービス担当者会議の要点', short: '会議記録', number: 4, date: 'meeting.date', time: 'meeting.start', category: 'meeting.place', content: 'meeting.discussion' },
+  care_plan_5: { title: '居宅介護支援経過', short: '支援経過', number: 5, date: 'progress.date', time: 'progress.time', category: 'progress.category', content: 'progress.content' },
+} as const
+
+export const careRecordProposalKeys = { care_plan_4: ['meeting.items', 'meeting.discussion', 'meeting.conclusion', 'meeting.remaining'], care_plan_5: ['progress.content', 'progress.category'] } as const

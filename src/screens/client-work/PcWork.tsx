@@ -1,3 +1,6 @@
+import { CareFeeWork } from '../../components/care-fee/CareFeeWork.tsx'
+import { CareMonthWork } from '../../components/care-month/CareMonthWork.tsx'
+import type { CareRecordKind } from '../../../core/care-record.ts'
 import { CareRecordWork } from '../../components/care-record/CareRecordWork.tsx'
 // PC ② 作業画面（キャンバス Main）。新しい利用者は ③（PcNew）、2 回目からの書き換えのあとは ④（PcDiff）の印になる。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,7 +30,9 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
   const [carePlanOpen, setCarePlanOpen] = useState(false)
-  const [recordOpen, setRecordOpen] = useState(false)
+  const [feeOpen,setFeeOpen]=useState(false)
+  const [monthOpen,setMonthOpen]=useState(false)
+  const [recordOpen, setRecordOpen] = useState<CareRecordKind>()
   const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
   const [planDirty, setPlanDirty] = useState(false)
   const [planBusy, setPlanBusy] = useState(false)
@@ -61,7 +66,9 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
   const openKind = useCallback(async (key: string) => {
     if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
-    if (key === 'care_plan_5') { if (await state.flush()) { setNewOpen(false); setRecordOpen(true) }; return }
+    if (key === 'care_plan_7') { if (await state.flush()) { setNewOpen(false); setFeeOpen(true) }; return }
+    if (key === 'care_plan_6') { if (await state.flush()) { setNewOpen(false); setMonthOpen(true) }; return }
+    if ((key === 'care_plan_4' || key === 'care_plan_5')) { if (await state.flush()) { setNewOpen(false); setRecordOpen(key) }; return }
     setCarePlanOpen(false); setPlanDirty(false)
     setNewOpen(false)
     if (!client?.documents.some((d) => d.kind === key)) {
@@ -72,12 +79,15 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   }, [client, clientId, reloadClient, carePlanOpen, planDirty, planBusy, state.flush])
   // 何通も作れる種類は、押すたびに新しい書類を作る
   const createKind = useCallback(async (key: string) => {
-    if (key === 'care_plan_5') { if (await state.flush()) { setNewOpen(false); setRecordOpen(true) }; return }
+    if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
+    if (key === 'care_plan_7') { if (await state.flush()) { setNewOpen(false); setFeeOpen(true) }; return }
+    if (key === 'care_plan_6') { if (await state.flush()) { setNewOpen(false); setMonthOpen(true) }; return }
+    if ((key === 'care_plan_4' || key === 'care_plan_5')) { if (await state.flush()) { setNewOpen(false); setRecordOpen(key) }; return }
     setNewOpen(false)
     await api.createDocument(clientId, key)
     await reloadClient()
     setTab(key)
-  }, [clientId, reloadClient, state.flush])
+  }, [clientId, reloadClient, state.flush, planBusy, carePlanOpen, planDirty])
 
   const doc = state.doc
   const isPrimary = open.isPrimary
@@ -216,7 +226,9 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     )
   }
 
-  if (recordOpen) return <CareRecordWork key={clientId} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setRecordOpen(false); void reloadClient() }} />
+  if (feeOpen) return <CareFeeWork key={clientId} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setFeeOpen(false); void reloadClient() }} />
+  if (monthOpen) return <CareMonthWork key={clientId} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setMonthOpen(false); void reloadClient() }} />
+  if (recordOpen) return <CareRecordWork key={clientId + recordOpen} kind={recordOpen} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setRecordOpen(undefined); void reloadClient() }} />
 
   return (
     <div className="pc pc-work" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', fontSize: 14, lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>

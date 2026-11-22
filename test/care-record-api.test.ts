@@ -31,9 +31,11 @@ before(async () => {
   const { ensurePdf } = await import('../forms/admin/pdf.ts')
   const { putFormAssets } = await import('../forms/admin/assets.ts')
   const { readMeta } = await import('../forms/admin/files.ts')
-  const source = await ensurePdf('care_plan_5')
-  assert.ok(source.pdf)
-  await putFormAssets(new LocalStorage(root), readMeta('care_plan_5'), source.pdf, { images: false })
+  for (const kind of ['care_plan_4', 'care_plan_5']) {
+    const source = await ensurePdf(kind)
+    assert.ok(source.pdf)
+    await putFormAssets(new LocalStorage(root), readMeta(kind), source.pdf, { images: false })
+  }
   const server = createApiServer({ db: async () => db, verifier: () => new DevVerifier(), storage: () => new LocalStorage(root), devAuth: true, queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }) })
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); const address = server.address(); assert.ok(address && typeof address !== 'string'); origin = `http://127.0.0.1:${address.port}`
   stop = () => new Promise<void>(resolve => server.close(() => resolve()))
@@ -103,4 +105,81 @@ test('第5表の記録: 同日時の独立ID、再送の重複防止、時系列
   assert.ok(!printed.includes('人が訂正した文章'))
   await loading.destroy()
   assert.equal((await call(`/api/documents/${id}/pdf?rev=999`)).status, 404)
+})
+
+test('第4表: 複数会議の分離、出席者・検討と結論・残課題の保存、過去版と別事業所の遮断', { skip }, async () => {
+  const path = `/api/clients/${clientId}/care-records`
+  const requestId = randomUUID()
+  const first = await call(path, 'POST', { kind: 'care_plan_4', requestId })
+  assert.equal(first.status, 201)
+  const id = first.body.id
+  assert.equal((await call(path, 'POST', { kind: 'care_plan_4', requestId })).body.id, id)
+  assert.equal((await call(path, 'POST', { kind: 'care_plan_5', requestId })).status, 409)
+  const second = await call(path, 'POST', { kind: 'care_plan_4', requestId: randomUUID() })
+  assert.notEqual(id, second.body.id)
+  const values = {
+    'meeting.date': '2026-11-22', 'meeting.start': '14:00', 'meeting.end': '15:00', 'meeting.place': '架空会議室', 'meeting.number': 2,
+    'meeting.personAttended': '出席', 'meeting.familyAttended': '欠席', 'meeting.relationship': '妻',
+    'meeting.attendees': [{ id: randomUUID(), name: '架空 看護師', profession: '看護師', affiliation: '架空訪問看護' }],
+    'meeting.items': '外出時の不安', 'meeting.discussion': '頻度の見直しを検討したが、まだ合意していない。', 'meeting.conclusion': '次回に状況を確認することに合意。', 'meeting.remaining': '頻度は未決定。', 'meeting.nextDate': '来月調整',
+  }
+  assert.equal((await call(`/api/documents/${id}/fields`, 'PATCH', { changes: Object.entries(values).map(([key, value]) => ({ key, value, base: null })) })).status, 200)
+  assert.equal((await call(`/api/documents/${id}/save`, 'POST', { scope: 'document' })).status, 200)
+  const old = (await call(`/api/care-records/${id}/revisions/1`)).body.revision
+  for (const [key, value] of Object.entries(values)) assert.deepEqual(old.values[key], value)
+  const list = (await call(path + '?kind=care_plan_4&q=' + encodeURIComponent('まだ合意'))).body.records
+  assert.deepEqual(list.map((r: { id: string }) => r.id), [id])
+  assert.ok(!(await call(path)).body.records.some((r: { id: string }) => r.id === id))
+  assert.equal((await call(`/api/documents/${id}/fields`, 'PATCH', { changes: [{ key: 'meeting.remaining', base: values['meeting.remaining'], value: '人が追記した残課題。' }] })).status, 200)
+  await call(`/api/documents/${id}/save`, 'POST', { scope: 'document' })
+  assert.equal((await call(`/api/care-records/${id}/revisions/1`)).body.revision.values['meeting.remaining'], values['meeting.remaining'])
+  assert.equal((await call(`/api/care-records/${id}/revisions/1`, 'GET', undefined, 'Bearer dev:other-records@example.com')).status, 404)
+  const pdf = await call(`/api/documents/${id}/pdf?rev=1`)
+  assert.equal(pdf.status, 200)
+})
+
+test('第4/5表: 保存と明示確定を分離し、未保存変更/競合/越境を拒否して過去の確定を保持する', { skip }, async () => {
+  const id = (await call(`/api/clients/${clientId}/care-records`, 'POST', {kind:'care_plan_5',requestId:randomUUID()})).body.id
+  const confirm = (baseRevision:number,auth=token) => call(`/api/care-records/${id}/confirm`,'POST',{baseRevision,relatedPlanId:null},auth)
+  assert.equal((await confirm(1)).status,409)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:null,value:'架空の確認対象'}]})
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  assert.equal((await confirm(1,'Bearer dev:other-records@example.com')).status,404)
+  assert.equal((await confirm(1,'')).status,401)
+  const first=await confirm(1);assert.equal(first.status,200,JSON.stringify(first.body))
+  assert.ok(first.body.confirmation.confirmedAt)
+  assert.deepEqual((await confirm(1)).body.confirmation,first.body.confirmation)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:'架空の確認対象',value:'架空の修正'}]})
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  const second=(await call(`/api/care-records/${id}/revisions/2`)).body.revision
+  assert.equal(second.confirmation,null)
+  assert.equal((await confirm(1)).status,409)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:'架空の修正',value:'未保存の変更'}]})
+  assert.equal((await confirm(2)).status,409)
+  const old=(await call(`/api/care-records/${id}/revisions/1`)).body.revision
+  assert.deepEqual(old.confirmation,first.body.confirmation)
+  await assert.rejects(db.query('DELETE FROM care_record_confirmations WHERE document_id=$1',[id]),{code:'23514'})
+})
+
+test('第4表: 関連計画は同じ利用者の確定スナップショットだけを参照し、計画改定後も保持する', {skip}, async()=>{
+  const createPlan=async(id=clientId)=>{
+    const created=await call(`/api/clients/${id}/care-plans`,'POST',{effectiveFrom:'2026-11-01'});assert.equal(created.status,201)
+    const plan=created.body.plan
+    const saved=await call(`/api/care-plans/${plan.id}/save`,'POST',{baseVersion:plan.lockVersion});assert.equal(saved.status,200)
+    assert.equal((await call(`/api/care-plans/${plan.id}/confirm`,'POST',{baseVersion:saved.body.plan.lockVersion})).status,200)
+    return plan
+  }
+  const plan=await createPlan()
+  const other=(await call('/api/clients','POST',{name:'架空別利用者',sex:'女'})).body.id
+  const foreign=await createPlan(other)
+  const id=(await call(`/api/clients/${clientId}/care-records`,'POST',{kind:'care_plan_4',requestId:randomUUID()})).body.id
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  const confirm=(relatedPlanId:string)=>call(`/api/care-records/${id}/confirm`,'POST',{baseRevision:1,relatedPlanId})
+  assert.equal((await confirm(foreign.id)).status,404)
+  assert.equal((await confirm(randomUUID())).status,404)
+  const r=await confirm(plan.id);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.confirmation.planId,plan.id);assert.equal(r.body.confirmation.planVersion,plan.version)
+  await createPlan()
+  const past=(await call(`/api/care-records/${id}/revisions/1`)).body.revision
+  assert.deepEqual(past.confirmation,r.body.confirmation)
+  assert.equal((await confirm(foreign.id)).status,409)
 })
