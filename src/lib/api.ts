@@ -1,3 +1,6 @@
+import type { CareMonthView,CareMonthSummary,CareMonthSaved,MonthCreateInput,MonthSaveInput,MonthActionInput } from '../../core/care-month-api.ts'
+import type { MonthEntry } from '../../core/care-month.ts'
+import type { z } from 'zod'
 import type { CareRecordKind, CareRecordSummary, CareRecordRevision, CareRecordDraftView } from '../../core/care-record.ts'
 import type { DiagramDraft } from '../../api/chat.ts'
 import type { DiagramChatField } from '../../core/diagram/fields.ts'
@@ -130,6 +133,13 @@ export const api = {
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
+  careMonths:(clientId:string)=>req<{months:CareMonthSummary[]}>('GET',`/api/clients/${clientId}/care-plan-months`),
+  careMonth:(id:string)=>req<{month:CareMonthView}>('GET',`/api/care-plan-months/${id}`),
+  previewCareMonth:(clientId:string,planId:string,month:string)=>req<{confirmationId:string;sourceHash:string;planVersion:number;entries:MonthEntry[];unexpanded:CareMonthView['unexpanded']}>('POST',`/api/clients/${clientId}/care-plan-months/preview`,{planId,month}),
+  createCareMonth:(clientId:string,input:z.infer<typeof MonthCreateInput>)=>req<{month:CareMonthView;created:boolean}>('POST',`/api/clients/${clientId}/care-plan-months`,input),
+  saveCareMonth:(id:string,input:z.infer<typeof MonthSaveInput>)=>req<{month:CareMonthView}>('PUT',`/api/care-plan-months/${id}`,input),
+  previewMonthAction:(id:string,input:z.infer<typeof MonthActionInput>)=>req<{entries:MonthEntry[];added:MonthEntry[];removed:MonthEntry[];skipped:MonthEntry[]}>('POST',`/api/care-plan-months/${id}/preview`,input),
+  careMonthRevision:(id:string,rev:number)=>req<CareMonthSaved>('GET',`/api/care-plan-months/${id}/revisions/${rev}`),
   careRecords: (clientId: string, query: { kind?: CareRecordKind, q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
   createCareRecord: (clientId: string, kind: CareRecordKind, requestId: string) => req<{ id: string, created: boolean }>('POST', `/api/clients/${clientId}/care-records`, { kind, requestId }),
   careRecordDrafts: (id: string) => req<{ drafts: CareRecordDraftView[] }>('GET', `/api/care-records/${id}/ai-drafts`),

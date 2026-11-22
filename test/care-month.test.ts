@@ -79,3 +79,14 @@ test('第6表の印字は予定と未入力・未実施を分け、長文・実�
  const text=pages.filter(p=>p.sourceIndex===1).map(p=>p.input['明細']).join('').replaceAll('\n','')
  assert.ok(text.includes(entries[1].content));assert.ok(text.includes(entries[1].plan.note));assert.ok(text.includes(entries[1].id));assert.ok(pages.length>2)
 })
+
+import { monthOverlaps } from '../core/care-month.ts'
+test('同じサービスの重複は跨日も検出し、接する予定や取消・別サービスを重複扱いしない',()=>{
+ const a=expandMonth('2024-02','c1',snapshot()).entries[0],b=structuredClone(a),c=structuredClone(a)
+ a.plan={...a.plan,date:'2024-02-01',start:'23:30',end:'01:00',endDate:'2024-02-02'}
+ b.id='b';b.plan={...b.plan,date:'2024-02-02',start:'00:30',end:'01:30',endDate:'2024-02-02'}
+ c.id='c';c.plan={...c.plan,date:'2024-02-02',start:'01:30',end:'02:30',endDate:'2024-02-02'}
+ assert.deepEqual(monthOverlaps([a,b,c]),new Set([a.id,b.id]))
+ b.plan.status='cancelled';assert.equal(monthOverlaps([a,b,c]).size,0)
+ b.plan.status='scheduled';b.serviceId='other';assert.equal(monthOverlaps([a,b,c]).size,0)
+})

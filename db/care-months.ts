@@ -58,7 +58,13 @@ export async function previewMonthAction(db:Db,officeId:string,id:string,input:z
  }
  const from=await getCareMonth(db,officeId,input.sourceMonthId)
  if(from.clientId!==current.clientId || from.planId!==current.planId)throw new NotFound()
- try { return {...copyMonth(from.entries,current.month,current.entries),removed:[] as MonthEntry[]} } catch { throw new BadRequest('同じ計画版の前月を選択してください') }
+ if(!from.revision)throw new BadRequest('コピー元の前月を保存してください')
+ const saved=await careMonthSaved(db,officeId,from.id,from.revision)
+ try {
+  const result=copyMonth(saved.month.entries,current.month,current.entries),capturedAt=new Date().toISOString()
+  const added=result.added.map(e=>({...e,copiedFrom:{monthId:from.id,revision:from.revision,entryId:e.id.slice(('copy/'+current.month+'/').length),capturedAt}}))
+  return {entries:[...current.entries,...added],added,skipped:result.skipped,removed:[] as MonthEntry[]}
+ } catch { throw new BadRequest('同じ計画版の前月を選択してください') }
 }
 export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<typeof MonthSaveInput>) {
  return tx(db,async c=>{
@@ -69,7 +75,18 @@ export async function saveCareMonth(db:Db,staff:Staff,id:string,input:z.infer<ty
   const s=await source(c,staff.officeId,current.clientId,current.planId),services=new Map(s.snapshot.services.map(s=>[s.serviceId,s]))
   const allowed=new Map(expandMonth(current.month,current.confirmationId,s.snapshot).entries.map(e=>[e.sourceKey,e])),ids=new Set<string>()
   const days=new Set(monthDays(current.month))
+  const existingRows=new Map(current.entries.map(e=>[e.id,e])),copiedSources=new Map<string,CareMonthSaved>()
   for(const e of input.entries) {
+   const old=existingRows.get(e.id)
+   if(old?.copiedFrom && canonical(old.copiedFrom)!==canonical(e.copiedFrom??null))throw new BadRequest('コピー元の保存版は変更できません')
+   if(e.copiedFrom && !old?.copiedFrom) {
+    const ref=e.copiedFrom,key=ref.monthId+'/'+ref.revision
+    let saved=copiedSources.get(key)
+    if(!saved){saved=await careMonthSaved(c,staff.officeId,ref.monthId,ref.revision);copiedSources.set(key,saved)}
+    const sourceRow=saved.month.entries.find(v=>v.id===ref.entryId),date=new Date(current.month+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()-1)
+    if(saved.month.clientId!==current.clientId || saved.month.planId!==current.planId || saved.month.month!==date.toISOString().slice(0,7) || !sourceRow || sourceRow.serviceId!==e.serviceId || e.id!=='copy/'+current.month+'/'+ref.entryId || e.sourceKey!==null)throw new BadRequest('コピー元の保存版と予定が一致しません')
+    e.copiedFrom={...ref,capturedAt:new Date().toISOString()}
+   }
    const original=e.sourceKey?allowed.get(e.sourceKey):undefined
    if(ids.has(e.id) || !days.has(e.plan.date) || (e.actual?.status==='provided' && !days.has(e.actual.date)) || !services.has(e.serviceId) || (e.sourceKey && (!original || original.id!==e.id || original.serviceId!==e.serviceId || original.slotId!==e.slotId)) || (!e.sourceKey && e.slotId!==null))throw new BadRequest('月間予定のID・日付・サービスが正しくありません')
    ids.add(e.id)
