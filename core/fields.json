@@ -661,6 +661,7 @@
     {"key": "meeting.nextDate", "label": "次回の開催時期", "type": "text", "source": ["talk"]},
     {"key": "meeting.attendees", "label": "会議出席者", "type": "list", "rowKey": "id", "source": ["talk"], "note": "出席が確認できた人物だけを追加する。所属・職種・氏名を推測しない", "fields": [{"key": "id", "label": "行ID", "type": "text"}, {"key": "affiliation", "label": "所属", "type": "text"}, {"key": "profession", "label": "職種", "type": "text"}, {"key": "name", "label": "氏名", "type": "text"}]},
     {"group": "サービス利用票 第6表"},
+    {"key": "monthly.header", "label": "第6表の保険者情報と届出日", "type": "object", "fields": [{"key": "insurerNumber", "label": "保険者番号", "type": "text"}, {"key": "insurerName", "label": "保険者名", "type": "text"}, {"key": "insuredNumber", "label": "被保険者番号", "type": "text"}, {"key": "submittedDate", "label": "届出年月日", "type": "text"}]},
     {"key": "monthly.monthDate", "label": "対象月（1日で保持）", "type": "date"},
     {"key": "monthly.legend", "label": "利用票の印字凡例", "type": "text"},
     {"key": "monthly.details", "label": "利用票の全明細", "type": "longtext"},
