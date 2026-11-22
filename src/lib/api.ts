@@ -1,3 +1,4 @@
+import type { CareFeeCalculation,CareFeeSummary,FeeCalculateInput } from '../../core/care-fee-api.ts'
 import type { CareMonthView,CareMonthSummary,CareMonthSaved,MonthCreateInput,MonthSaveInput,MonthActionInput } from '../../core/care-month-api.ts'
 import type { MonthEntry } from '../../core/care-month.ts'
 import type { z } from 'zod'
@@ -133,6 +134,11 @@ export const api = {
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
+  careFees:(clientId:string)=>req<{fees:CareFeeSummary[]}>('GET',`/api/clients/${clientId}/care-plan-fees`),
+  careFee:(id:string,calculationId?:string)=>req<{calculation:CareFeeCalculation}>('GET',calculationId?`/api/care-plan-fees/${id}/calculations/${calculationId}`:`/api/care-plan-fees/${id}`),
+  careFeeHistory:(id:string)=>req<{history:{id:string;revision:number;createdAt:string}[]}>('GET',`/api/care-plan-fees/${id}/history`),
+  calculateCareFee:(monthId:string,input:z.infer<typeof FeeCalculateInput>)=>req<{calculation:CareFeeCalculation}>('POST',`/api/care-plan-months/${monthId}/fees`,input),
+  confirmCareFee:(id:string,calculationId:string,baseRevision:number)=>req<{calculation:CareFeeCalculation}>('POST',`/api/care-plan-fees/${id}/confirm`,{calculationId,baseRevision}),
   careMonths:(clientId:string)=>req<{months:CareMonthSummary[]}>('GET',`/api/clients/${clientId}/care-plan-months`),
   careMonth:(id:string)=>req<{month:CareMonthView}>('GET',`/api/care-plan-months/${id}`),
   previewCareMonth:(clientId:string,planId:string,month:string)=>req<{confirmationId:string;sourceHash:string;planVersion:number;entries:MonthEntry[];unexpanded:CareMonthView['unexpanded']}>('POST',`/api/clients/${clientId}/care-plan-months/preview`,{planId,month}),

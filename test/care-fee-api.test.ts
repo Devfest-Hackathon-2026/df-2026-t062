@@ -38,18 +38,22 @@ async function pdfText(data:ArrayBuffer){const{getDocument}=await import('pdfjs-
 test('第7表: 特定の第6表保存版・マスター・条件を固定し、再送/409/再計算/旧版PDFを保護する',{skip},async()=>{
  const month=await createMonth(),path='/api/care-plan-months/'+month.id+'/fees',service=month.services[0].id
  const input={masterId:FEE_MASTER.id,basis:'planned',region:'other',careLevel:'要介護1',copay:1,scopeConfirmed:true,codes:{[service]:'111111'},standardMinutes:{[service]:25},requestId:randomUUID(),sourceRevision:1,baseRevision:0}
- const first=await call(path,'POST',input);assert.equal(first.status,200,JSON.stringify(first.body));const calc=first.body.calculation
+ const first=await call(path,'POST',input);assert.equal(first.status,200,JSON.stringify(first.body));let calc=first.body.calculation
  assert.equal(calc.result.status,'calculated');assert.equal(calc.result.units,1220);assert.equal(calc.result.patient,1220);assert.equal(calc.sourceRevision,1);assert.equal(calc.revision,1)
  assert.equal((await call(path,'POST',input)).body.calculation.id,calc.id)
  assert.equal((await call(path,'POST',{...input,copay:2})).status,409)
  assert.equal((await call(path,'POST',{...input,requestId:randomUUID()})).status,409)
+ const confirmed=await call('/api/care-plan-fees/'+calc.groupId+'/confirm','POST',{calculationId:calc.id,baseRevision:1});assert.equal(confirmed.status,200);assert.ok(confirmed.body.calculation.confirmedAt);calc=confirmed.body.calculation
+ assert.equal((await call('/api/care-plan-fees/'+calc.groupId+'/confirm','POST',{calculationId:calc.id,baseRevision:1})).body.calculation.confirmedAt,calc.confirmedAt)
+ await assert.rejects(db.query('DELETE FROM care_fee_confirmations WHERE calculation_id=$1',[calc.id]),{code:'23514'})
+ assert.equal((await call('/api/care-plan-fees/'+calc.groupId+'/confirm','POST',{calculationId:calc.id,baseRevision:1},'Bearer dev:other-fees@example.com')).status,404)
  const entries=structuredClone(month.entries);entries[0].plan.status='cancelled';entries[0].actual={status:'not_provided',date:null,start:null,end:null,endDate:null,note:'架空の中止'}
  const changed=await call('/api/care-plan-months/'+month.id,'PUT',{requestId:randomUUID(),baseVersion:month.lockVersion,entries});assert.equal(changed.status,200)
  const unchanged=await call('/api/care-plan-fees/'+calc.groupId);assert.equal(unchanged.body.calculation.result.units,1220);assert.equal(unchanged.body.calculation.sourceHash,calc.sourceHash)
- const second=await call(path,'POST',{...input,requestId:randomUUID(),sourceRevision:2,baseRevision:1});assert.equal(second.status,200);assert.equal(second.body.calculation.revision,2);assert.equal(second.body.calculation.result.units,976);assert.notEqual(second.body.calculation.sourceHash,calc.sourceHash)
+ const second=await call(path,'POST',{...input,requestId:randomUUID(),sourceRevision:2,baseRevision:1});assert.equal(second.status,200);assert.equal(second.body.calculation.revision,2);assert.equal(second.body.calculation.result.units,976);assert.equal(second.body.calculation.confirmedAt,null);assert.notEqual(second.body.calculation.sourceHash,calc.sourceHash)
  const old=await call(`/api/care-plan-fees/${calc.groupId}/calculations/${calc.id}`);assert.deepEqual(old.body.calculation,calc)
  assert.equal((await call('/api/care-plan-fees/'+calc.groupId+'/history')).body.history.length,2)
- const pdf=await call(`/api/documents/${calc.documentId}/pdf?rev=1`);assert.equal(pdf.status,200,JSON.stringify(pdf.body));const printed=await pdfText(pdf.body);assert.ok(printed.includes('1220'));assert.ok(!printed.includes('976'))
+ const pdf=await call(`/api/documents/${calc.documentId}/pdf?rev=1`);assert.equal(pdf.status,200,JSON.stringify(pdf.body));const printed=await pdfText(pdf.body);assert.ok(printed.replace(/\s/g,'').includes('基本単位244×5回=1220単位'));assert.ok(!printed.replace(/\s/g,'').includes('基本単位244×4回=976単位'))
  assert.equal((await call(`/api/documents/${calc.documentId}/fields`,'PATCH',{changes:[{key:'fees.limit',base:16765,value:999999}]})).status,409)
  assert.equal((await call(`/api/documents/${calc.documentId}/save`,'POST',{scope:'document'})).status,409)
  await assert.rejects(db.query("UPDATE care_fee_masters SET body='{}' WHERE id=$1",[FEE_MASTER.id]),{code:'23514'})
@@ -58,7 +62,7 @@ test('第7表: 特定の第6表保存版・マスター・条件を固定し、�
  assert.equal((await call(path,'POST',input,'Bearer dev:other-fees@example.com')).status,404)
  assert.equal((await call('/api/care-plan-fees/'+calc.groupId,'GET',undefined,'')).status,401)
  const missing=await call(path,'POST',{...input,requestId:randomUUID(),basis:'actual',baseRevision:0,codes:{[service]:'UNKNOWN'},sourceRevision:2});assert.equal(missing.status,200);const review=missing.body.calculation
- assert.equal(review.result.status,'needs_review');assert.equal(review.result.gross,null);assert.equal(review.result.patient,null);assert.equal(review.result.units,null)
+ assert.equal((await call('/api/care-plan-fees/'+review.groupId+'/confirm','POST',{calculationId:review.id,baseRevision:1})).status,409);assert.equal(review.result.status,'needs_review');assert.equal(review.result.gross,null);assert.equal(review.result.patient,null);assert.equal(review.result.units,null)
  const raw=(await call('/api/documents/'+review.documentId)).body.document
  assert.equal(raw.saved['fees.row'].value.gross,'');assert.equal(raw.saved['fees.limit']?.value??null,null)
  const pendingPdf=await call(`/api/documents/${review.documentId}/pdf?rev=1`);assert.equal(pendingPdf.status,200,JSON.stringify(pendingPdf.body));assert.ok((await pdfText(pendingPdf.body)).includes('未計算'))
