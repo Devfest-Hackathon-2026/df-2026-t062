@@ -1,5 +1,27 @@
 import { test, expect, createPlan, openCareDocument, openPlan, headers } from './support/fixtures.ts'
 
+test('中央のスクロールだけで第1〜7表へ移動し、左の選択と未保存入力を保つ',async({page,ui})=>{
+ await createPlan(page,ui)
+ const policy=page.getByRole('textbox',{name:'総合的援助方針',exact:true})
+ await policy.fill('スクロール後も保持する未保存の方針');await policy.blur()
+ const container=page.getByRole('region',{name:'ケアプラン全用紙',exact:true})
+ await expect(container.locator('[data-care-table]')).toHaveCount(7)
+ await expect.poll(()=>container.getByRole('img').count()).toBeGreaterThanOrEqual(7)
+ const nav=page.getByRole('tablist',{name:'ケアプランの書類',exact:true})
+ await container.dispatchEvent('wheel')
+ await container.evaluate(e=>{e.scrollTop=e.scrollHeight})
+ await expect(nav.getByRole('tab',{name:'第7表 利用票別表',exact:true})).toHaveAttribute('aria-selected','true')
+ await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0)
+ await expect(nav).toBeInViewport()
+ await container.dispatchEvent('wheel')
+ await container.evaluate(e=>{e.scrollTop=0})
+ await expect(nav.getByRole('tab',{name:'第1表 基本情報と方針',exact:true})).toHaveAttribute('aria-selected','true')
+ await expect(policy).toHaveValue('スクロール後も保持する未保存の方針')
+ await nav.getByRole('tab',{name:'第6表 サービス利用票',exact:true}).click()
+ await expect(container.locator('[data-care-table="6"]')).toBeInViewport()
+ await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0)
+})
+
 test('ケアプランを開くと左の縦一覧から全7表の空用紙を閲覧でき、記録は作成しない',async({page,ui,clientId})=>{
  const writes:string[]=[]
  page.on('request',r=>{if(r.method()==='POST'&&/care-(plans|records|plan-months)/.test(r.url()))writes.push(r.url())})
@@ -35,7 +57,7 @@ test('第4〜7表の入口をケアプラン内に集約し、表の往復で未
   await policy.blur()
   await openCareDocument(page, ui, 4)
   await page.getByRole('button', { name: '＋ 会議記録を追加', exact: true }).click()
-  await page.getByRole('button', { name: '入力・修正', exact: true }).click()
+  await page.locator('.cp-area-panel[data-active=true]').getByRole('button', { name: '入力・修正', exact: true }).click()
   await page.getByLabel('検討内容', { exact: true }).fill('切り替えで失わない会議の未保存入力')
   await page.getByRole('button', { name: '用紙に戻る', exact: true }).click()
   await openCareDocument(page, ui, 5)
@@ -45,7 +67,7 @@ test('第4〜7表の入口をケアプラン内に集約し、表の往復で未
   await openCareDocument(page, ui, 7)
   await expect(page.getByRole('heading', { name: /さんのサービス利用票別表/ })).toBeVisible()
   await openCareDocument(page, ui, 4)
-  await page.getByRole('button', { name: '入力・修正', exact: true }).click()
+  await page.locator('.cp-area-panel[data-active=true]').getByRole('button', { name: '入力・修正', exact: true }).click()
   await expect(page.getByLabel('検討内容', { exact: true })).toHaveValue('切り替えで失わない会議の未保存入力')
   await page.getByRole('button', { name: '用紙に戻る', exact: true }).click()
   await page.getByRole('tablist', { name: 'ケアプランの書類', exact: true }).getByRole('tab', { name: '第1表 基本情報と方針', exact: true }).click()

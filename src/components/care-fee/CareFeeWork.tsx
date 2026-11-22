@@ -19,7 +19,7 @@ export function CareFeeWork({clientId,clientName,onBack,onDirtyChange,onBusyChan
  const active=useRef(true),acting=useRef(false),request=useRef<{id:string;fingerprint:string}|undefined>(undefined)
  const initialSelection=useRef(false)
  const refresh=async()=>{const [m,f]=await Promise.all([api.careMonths(clientId),api.careFees(clientId)]);if(active.current){setMonths(m.months.filter(v=>v.revision>0));setFees(f.fees);if(!initialSelection.current){initialSelection.current=true;if(!selectedSource&&f.fees[0])await run(()=>loadCalculation(f.fees[0].id))}}}
- useEffect(()=>{active.current=true;if(visible)void refresh().catch(e=>{if(active.current)setError(e instanceof Error?e.message:'一覧を取得できませんでした')});return()=>{active.current=false}},[clientId,visible])
+ useEffect(()=>{active.current=true;if(visible||!initialSelection.current)void refresh().catch(e=>{if(active.current)setError(e instanceof Error?e.message:'一覧を取得できませんでした')});return()=>{active.current=false}},[clientId,visible])
  useEffect(()=>{if(!dirty)return;const leave=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',leave);return()=>window.removeEventListener('beforeunload',leave)},[dirty])
  const run=async(fn:()=>Promise<void>)=>{if(acting.current)return;acting.current=true;setBusy(true);setError('');setNotice('');try{await fn()}catch(e){if(active.current)setError(e instanceof Error?e.message:'処理に失敗しました。入力条件は保持しています。')}finally{acting.current=false;if(active.current)setBusy(false)}}
  const mayDiscard=()=>!dirty||window.confirm('保存していない算定条件を破棄して移動しますか？')
@@ -79,7 +79,7 @@ export function CareFeeWork({clientId,clientName,onBack,onDirtyChange,onBusyChan
    {source&&<label>第6表の保存版<select aria-label="第6表の保存版" value={source.revision} disabled={busy} onChange={e=>{const rev=Number(e.target.value);void run(async()=>{setInput(v=>({...v,scopeConfirmed:false}));setDirty(true);await loadSource(source.month.id,rev)})}}>{revisions.map(r=><option key={r.rev} value={r.rev}>保存版 {r.rev}</option>)}</select></label>}
    <h2>保存済みの算定</h2>{!fees.length?<p>算定はまだありません。</p>:<ol>{fees.map(f=><li key={f.id}><button type="button" disabled={busy} aria-pressed={calculation?.groupId===f.id} onClick={()=>void run(async()=>{if(mayDiscard())await loadCalculation(f.id)})}>{f.month} ・ {f.basis==='planned'?'予定':'実績'}<small>保存版 {f.revision} ・ {f.status==='calculated'?'計算済み':'未計算'}</small></button></li>)}</ol>}
   </aside><section className="care-record-editor" aria-label="第7表の計算と保存結果">
-   {calculation && source ? <OfficialCareWorkspace documentId={calculation.documentId} revision={calculation.revision} values={{}} title="第7表・サービス利用票別表" status={sourceChanged || newerSource ? "以前の参照元による算定（再計算が必要）" : dirty ? '算定条件に未保存の変更があります' : '保存済みの算定結果'}>{editor}</OfficialCareWorkspace> : <OfficialCareWorkspace formKind="care_plan_7" values={{}} title="第7表・サービス利用票別表" status="算定前">{editor}</OfficialCareWorkspace>}
+   {calculation && source ? <OfficialCareWorkspace disabled={busy} documentId={calculation.documentId} revision={calculation.revision} values={{}} title="第7表・サービス利用票別表" status={sourceChanged || newerSource ? "以前の参照元による算定（再計算が必要）" : dirty ? '算定条件に未保存の変更があります' : '保存済みの算定結果'}>{editor}</OfficialCareWorkspace> : <OfficialCareWorkspace disabled={busy} formKind="care_plan_7" values={{}} title="第7表・サービス利用票別表" status="算定前">{editor}</OfficialCareWorkspace>}
   </section></div>
  </main>
 }

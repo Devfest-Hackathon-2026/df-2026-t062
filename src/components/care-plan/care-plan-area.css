@@ -16,3 +16,23 @@
 .cp-area .cp-area-panel .care-record-list{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;max-height:160px;height:auto;overflow:auto;padding:10px}
 .cp-area-panel .care-record-list h2{font-size:13px;margin:4px}.cp-area-panel .care-record-list label{font-size:12px;width:155px;margin:0}.cp-area-panel .care-record-list ol{display:flex;gap:6px;margin:0}.cp-area-panel .care-record-list li{min-width:145px}.cp-area-panel .care-record-list li button{padding:7px;margin:0;font-size:12px;gap:3px}.cp-area-panel .care-record-list .care-record-dates{gap:6px}.cp-area-panel .care-record-list p{font-size:12px;margin:4px}.cp-area-panel .care-record-header{padding:10px;gap:8px}.cp-area-panel .care-record-header h1{font-size:16px}
 @media(max-width:620px){.cp-area{grid-template-columns:125px minmax(0,1fr);gap:8px}.cp-area-tabs{padding:4px}.cp-area-tabs>button{padding:10px 6px;font-size:12px}}
+
+.cp-area-continuous{grid-template-rows:minmax(0,1fr)}
+.cp-area-scroll{grid-column:2;grid-row:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain}
+.cp-area-flow{display:flex;flex-direction:column;gap:28px;min-width:0;padding-bottom:24px}
+.cp-area-flow .cp-area-panel{flex:none;overflow:visible;display:block}
+.cp-area-flow .cp-area-panel>.cp-work,.cp-area-flow .cp-area-panel>.care-record-work{height:auto;overflow:visible;flex:none}
+.cp-area-flow .cp-layout,.cp-area-flow .cp-canvas,.cp-area-flow .cp-sheet-scroll,.cp-area-flow .cp-first-scroll{height:auto;overflow:visible;flex:none}
+.cp-area-flow .care-record-columns{flex:none}
+.cp-area-flow .care-record-editor{overflow:visible;display:block}
+.cp-area-flow .care-paper-workspace{flex:none;display:block}
+.cp-area-flow .care-paper-scroll{overflow:visible;flex:none}
+.cp-plan-paper{margin-bottom:24px;min-width:0}
+.cp-plan-paper>h2{font-size:16px;margin:16px 0 8px}
+.cp-area-flow .cp-canvas>.sheet-toolbar,.cp-area-flow .care-paper-toolbar{position:sticky;top:0;z-index:3;background:#fff}
+.cp-area-flow .cp-work>.cp-header{position:sticky;top:0;z-index:4;background:#fff}
+.cp-area-flow .cp-work:not(.cp-embedded) .cp-canvas>.sheet-toolbar{top:var(--cp-header-height,68px)}
+.cp-area-flow .sheet-save-actions>.document-output{width:auto;margin:0;gap:0}
+.cp-area-flow .sheet-save-actions>.document-output .document-output-status{display:none}
+.cp-area-flow>.cp-area-panel:last-child{min-height:100dvh}
+.cp-area-flow .cp-plan-paper .care-paper-size{width:100%}

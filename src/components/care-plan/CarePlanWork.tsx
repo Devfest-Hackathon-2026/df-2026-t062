@@ -50,13 +50,19 @@ export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, o
   </button>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false }: {
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false, continuous=false }: {
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
-  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean, selectedTable?:number, hideNavigation?:boolean,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean, selectedTable?:number, hideNavigation?:boolean, continuous?:boolean,
 }) {
   const [plans, setPlans] = useState<CarePlanSummary[]>([])
   const [selected, setSelected] = useState<CarePlanView | null>(null)
   const [listLoaded,setListLoaded]=useState(false)
+  const work=useRef<HTMLDivElement>(null)
+  useEffect(()=>{
+    const root=work.current,header=root?.querySelector<HTMLElement>(':scope > .cp-header')
+    if(!root||!header)return
+    const observer=new ResizeObserver(()=>root.style.setProperty('--cp-header-height',`${header.getBoundingClientRect().height}px`));observer.observe(header);return()=>observer.disconnect()
+  },[!!selected,continuous])
   const [busy, setBusy] = useState(false)
   const [childBusy, setChildBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -108,7 +114,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       {!embedded && selected && <PlanHistoryButton disabled={busy || childBusy} onClick={openHistory} />}
       {!selected && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { setCopyFrom(undefined); setCreating(true) }}>＋ 計画を作る</button>}
     </header>
-  return <div className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
+  return <div ref={work} className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
 
     {(!embedded || !selected) && controls}
     {error && <div role="alert" className="cp-error">{error}</div>}
@@ -146,14 +152,14 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
         <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
       </form>
     </Modal>}
-    {selected ? <PlanEditor key={selected.id} initial={selected} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+    {selected ? <PlanEditor key={selected.id} initial={selected} continuous={continuous} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
-      : listLoaded && hideNavigation ? <OfficialCareWorkspace formKind={`care_plan_${selectedTable+1}`} values={{}} title={names[selectedTable]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
+      : listLoaded && hideNavigation ? <>{(continuous?[0,1,2]:[selectedTable]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={selectedTable===i}><OfficialCareWorkspace formKind={`care_plan_${i+1}`} values={{}} title={names[i]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace></section>)}</> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false }: {
-  selectedTable?:number,hideNavigation?:boolean,
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false, continuous=false }: {
+  selectedTable?:number,hideNavigation?:boolean,continuous?:boolean,
   outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
   onBusy: (busy: boolean) => void, onUpdated: () => void,
@@ -271,9 +277,8 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
         <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
           aiLabel="AI原案から" status={saveStatus}
           saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save}
-          actions={<button type="button" className="btn" disabled={busy || !ready || readOnly || dirty || !saved} onClick={() => setConfirming(true)}>計画を確定</button>} />
+          actions={<><button type="button" className="btn" disabled={busy || !ready || readOnly || dirty || !saved} onClick={() => setConfirming(true)}>計画を確定</button>{!outputTarget&&output}</>} />
         <div className="cp-sheet-scroll">
-          {!outputTarget && output}
           {readOnly && <div className="cp-info">この計画は{statusText(plan.status)}のため編集できません。訂正する場合は改定版を作ってください。
             {plan.confirmation && <span> 確定日時：{new Date(plan.confirmation.confirmedAt).toLocaleString('ja-JP')}</span>}
           </div>}
@@ -283,22 +288,22 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
           {!ready && <div role="status" className="cp-info">第1〜3表の入力を読み込んでいます…</div>}
           {dirty && <div className="cp-info">保存すると、確定・PDF出力・AI原案を利用できます。保存と確定は別の操作です。</div>}
           {documents.map((d, i) => <FieldConflicts key={i} state={d} />)}
-        {active === 0 && <>
+        {(continuous || active === 0) && <section className="cp-plan-paper" data-care-table="1" data-current={active===0}>
           <div className="cp-first-scroll"><div className="cp-first" style={{ width: `${zoom}%`, maxWidth: Math.round(1120 * zoom / 100) }}>
             {first.pages.map((page) => <FormPage key={page.no} page={page} state={first} touch={touch} disabled={busy || readOnly} batchLabel="ケアプランのAI原案" combinedSave />)}
           </div></div>
-        </>}
-        {active > 0 && <>
+        </section>}
+        {(continuous?[1,2]:active>0?[active]:[]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={active===i}><h2>{names[i]}</h2>
           <div className="cp-paper-actions">
-            <button className="btn" disabled={busy} onClick={() => active === 1 ? setNeedsOpen(true) : setScheduleOpen(true)}>{active === 1 ? 'ニーズを追加・編集' : '予定を追加・編集'}</button>
-            {active === 2 && <button className="btn" disabled={busy} onClick={() => setActivitiesOpen(true)}>主な日常生活上の活動を編集</button>}
+            <button className="btn" disabled={busy} onClick={() => i === 1 ? setNeedsOpen(true) : setScheduleOpen(true)}>{i === 1 ? 'ニーズを追加・編集' : '予定を追加・編集'}</button>
+            {i === 2 && <button className="btn" disabled={busy} onClick={() => setActivitiesOpen(true)}>主な日常生活上の活動を編集</button>}
             <small>厚生労働省の公式様式。欄を押して入力します。</small>
           </div>
-          <OfficialPlanSheet state={active === 1 ? second : third} needs={needs} slots={slots} touch={touch}
-            busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={active === 1 && aiNeeds.size > 0}
+          <OfficialPlanSheet state={i === 1 ? second : third} needs={needs} slots={slots} touch={touch}
+            busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={i === 1 && aiNeeds.size > 0}
             onNeed={(i) => needs[i] ? setNeedIndex(i) : setNeedsOpen(true)}
             onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
-        </>}
+        </section>)}
         </div>
       </main>
     </div>

@@ -14,8 +14,8 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   await addNeed(page)
   await addSchedule(page)
   // 第2・3表の氏名は第1表から独立し、生活リズムも保存される。
-  await page.getByRole('textbox', { name: /^利用者名（/ }).fill('確認 花子')
-  await page.getByRole('textbox', { name: /^利用者名（/ }).blur()
+  await page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ }).fill('確認 花子')
+  await page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ }).blur()
   await page.getByRole('button', { name: '主な日常生活上の活動を編集', exact: true }).click()
   const activities = page.getByRole('dialog', { name: '第3表・主な日常生活上の活動', exact: true })
   await activities.getByRole('button', { name: '＋ 生活時間を追加' }).click()
@@ -34,11 +34,11 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   await openPlan(page, ui)
   await expect(page.getByRole('button', { name: '計画を確定', exact: true })).toBeEnabled()
   await expect(policy).toHaveValue('地域で安全に暮らせるよう支援する。')
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
   await table(page, 2)
   await expect(page.getByRole('button', { name: 'サービス内容（押して編集）', exact: true })).toHaveText('入浴介助')
   await table(page, 3)
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue('確認 花子')
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue('確認 花子')
   await expect(page.getByRole('button', { name: '週間枠（押して編集）', exact: true })).toContainText('09:00')
 
   const pdfResponse = page.waitForResponse((r) => r.url().includes(`/api/care-plans/${persisted.id}/pdf`))
@@ -57,7 +57,7 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   expect((await getPlan(page, clientId)).status).toBe('confirmed')
   for (const number of [1, 2, 3]) {
     await table(page, number)
-    await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
+    await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
     await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeDisabled()
   }
   const openHistory = () => page.getByRole('button', { name: '計画の履歴', exact: true }).click()
@@ -161,7 +161,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   await createPlan(page, ui)
   const initialCanvas = (await page.locator('.cp-canvas').boundingBox())!
   expect(initialCanvas.y).toBeLessThan(ui === 'pad' ? viewport.height * .45 : viewport.height - 220)
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
   // CIのLinuxでは上部の描画寸法に2px差が出る。そこまでを許容し、大きな配置ずれは検出する。
   if (ui === 'pc') expect(Math.abs((await page.locator('.cp-area-tabs').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
   const metrics = { browser: browser.version(), project: info.project.name, viewport, displays: [] as unknown[] }
