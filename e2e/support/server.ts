@@ -43,7 +43,7 @@ try {
   await admin.query(`CREATE SCHEMA ${schema}`)
   await migrate(db)
   await seed(db, { email: 'e2e@example.com', officeName: 'E2E架空事業所' })
-  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3']) {
+  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_5']) {
     const { pdf, message } = await ensurePdf(kind)
     if (!pdf) throw new Error(message)
     await putFormAssets(storage, readMeta(kind), pdf)

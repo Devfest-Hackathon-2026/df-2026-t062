@@ -1,3 +1,4 @@
+import type { CareRecordKind, CareRecordSummary, CareRecordRevision } from '../../core/care-record.ts'
 import type { DiagramDraft } from '../../api/chat.ts'
 import type { DiagramChatField } from '../../core/diagram/fields.ts'
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
@@ -129,6 +130,9 @@ export const api = {
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
+  careRecords: (clientId: string, query: { q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
+  createCareRecord: (clientId: string, kind: CareRecordKind, requestId: string) => req<{ id: string, created: boolean }>('POST', `/api/clients/${clientId}/care-records`, { kind, requestId }),
+  careRecordRevision: (id: string, rev: number) => req<{ revision: CareRecordRevision }>('GET', `/api/care-records/${id}/revisions/${rev}`),
   document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
@@ -175,9 +179,9 @@ export const api = {
   fixDraft: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/draft`, {}),
   revertForm: (kind: string) => req<{ kinds: KindFormState[] }>('POST', `/api/office/forms/${encodeURIComponent(kind)}/revert`, {}),
   reuseForm: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/reuse`, {}),
-  async pdf(id: string): Promise<Blob> {
+  async pdf(id: string, revision?: number): Promise<Blob> {
     const token = await tokenSource()
-    const res = await fetch(`/api/documents/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    const res = await fetch(`/api/documents/${id}/pdf${revision === undefined ? '' : '?rev=' + revision}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
     if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
     return res.blob()
   },

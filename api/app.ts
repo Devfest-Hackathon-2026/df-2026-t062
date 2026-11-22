@@ -1,3 +1,5 @@
+import { CareRecordCreate, CareRecordQuery } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -389,6 +391,21 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
 
+  app.get('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
+    const query = CareRecordQuery.safeParse(c.req.query())
+    if (!query.success) throw new repo.BadRequest('検索条件が正しくありません')
+    return json(c, await listCareRecords(db, staff.officeId, c.req.param('id')!, query.data))
+  }))
+  app.post('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
+    const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
+    return json(c, record, record.created ? 201 : 200)
+  }))
+  app.get('/api/care-records/:id/revisions/:rev', staffRoute('care.work', async (c, staff, db) => {
+    const rev = z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if (!rev.success) throw new repo.NotFound()
+    return json(c, { revision: await careRecordRevision(db, staff.officeId, c.req.param('id')!, rev.data) })
+  }))
+
   app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
     const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
     const rows = await db.query('SELECT id, rev, saved_at FROM revisions WHERE document_id = $1 ORDER BY rev DESC', [document.id])
@@ -508,7 +525,12 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id/pdf', staffRoute('care.work', async (c, staff, db) => {
     const doc = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
-    const rev = await repo.latestRevision(db, staff.officeId, doc.id)
+    const requestedRev = c.req.query('rev')
+    const selectedRev = requestedRev === undefined ? undefined : z.coerce.number().int().positive().safeParse(requestedRev)
+    if (selectedRev && !selectedRev.success) throw new repo.BadRequest('保存版の番号が正しくありません')
+    const rev = selectedRev?.success
+      ? await careRecordRevision(db, staff.officeId, doc.id, selectedRev.data)
+      : await repo.latestRevision(db, staff.officeId, doc.id)
     const version = await forms.loadVersion(db, rev.formVersionId)
     const pdf = await makePdf(deps.storage(), version, rev.values)
     const path = `exports/${staff.officeId}/${doc.id}/rev${rev.rev}-${Date.now()}.pdf`

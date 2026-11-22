@@ -38,3 +38,14 @@
 pages[].print={type:flow,slots:[同一フィールドの同寸法text欄]}で文章を左列→右列→次ページに送る。宣言された領域だけを分割し、名前・日付・項目等は各ページに残す。段組の入力値・寸法が異なる様式は公開時に拒否。第1〜3表のtable/timeline印字、既存のtext欄のoverflow拒否は変えない。元PDFはGitに含めず、既存ensurePdfで公式通知をハッシュ検証して抽出する。
 
 第4〜7表を1つの巨大コンポーネントに詰めない。画面はscreens/client-work、記録機能はcomponents/care-record、計算はcore、API/DBは既存の層へ置く。新しいURLや新しい保存基盤は不要。
+
+## 第5表の手入力ワークフロー（2本目）
+
+- API: GET/POST `/api/clients/:id/care-records`、GET `/api/care-records/:id/revisions/:rev`。検索・日付範囲・50件単位のページング。並びは記録年月日・時刻・seq・idの降順で同日時も区別。
+- POSTはリクエストUUIDを保持し、care_record_creationsの一意制約と利用者ロックで再送を同じdocuments.idへ戻す。追加表は本文を持たない。DBトリガーもoffice/client/document/kindの一致を確認。
+- 作業画面はcomponents/care-record。PC/iPadの既存書類メニューから入り、日時・項目・内容・記載者を入力。既存useDocument・PATCH・save/revisions・競合表示・ダウンロードを再利用。過去版は閲覧専用。
+- PDFのrevクエリはこの記録の保存版を指定し、その当時のtemplate_version_idとvaluesから出力。最新版や他文書からの自動同期は行わない。
+- 保存失敗時の入力保持、再送、保存後に失敗メッセージが消えること、移動時の保存確認、ページ離脱時の警告を実装。
+- 第5表の「保存済み」は最終確定とは別。独立した最終確定API・AI下書き・正式な候補採用は後続PRで実装する。この段階だけでIssue全体を完了扱いにしない。
+- 検証: 型・様式・build成功。ローカルPostgreSQLの全389テスト成功（skip 0）。記録APIでは401、他事業所404、競合409、時刻形式、DB所属整合、再送、履歴、保存版1の日本語PDF再現を確認。サイト管理者しか登録されていないアカウントは既存仕様どおり401で利用者情報を取得できない。
+- 全Playwright: 32成功、4スキップ（既存のPC専用相談往復テストをiPad4サイズで実行しない設定）。第5表はChromium PC2サイズとWebKit iPad相当4サイズすべて成功。実端末では未確認。初回のラベル再特定失敗をaria-labelで修正し、コード固定の最終実行では失敗0。
