@@ -16,7 +16,7 @@
 |[#178](https://github.com/cloud0327/df-2026-t062-dev/pull/178)|第7表の一次資料/限定範囲/独立検算した期待値|codex/96-verified-fee-engine|
 |[#181](https://github.com/cloud0327/df-2026-t062-dev/pull/181)|第7表の決定的な限定算定エンジン|codex/96-fee-calculator|
 |[#183](https://github.com/cloud0327/df-2026-t062-dev/pull/183)|第7表の版付き保存API・不変マスター・公式PDF|codex/96-fee-storage|
-|作成予定|第7表のPC/iPad条件入力・再計算/履歴・明示確定・横断E2E|codex/96-fee-workflow|
+|[#184](https://github.com/cloud0327/df-2026-t062-dev/pull/184)|第7表のPC/iPad条件入力・再計算/履歴・明示確定・横断E2E|codex/96-fee-workflow|
 
 各PRは直前のブランチがbase。依存順にレビューし、承認なしにmainへマージしない。#178で示した限定範囲についてユーザーの継続指示を受け、#181以降で実装。実務者レビューと本番適用は未実施。
 
@@ -38,7 +38,7 @@
 - 横断Playwright50成功、既存PC専用4件はiPad4サイズでスキップ。Chromium PC2サイズ/WebKit iPad相当4サイズ。最後に第6表テストへアセスメント/入院時情報提供書の独立値と保存版の保持を追加し、6サイズ全て成功。
 - 第4/5/6表の日本語PDFと継続ページを合成データで生成。第4表の本表/続頁、第6/7表の本表/明細を画像確認。第6表の明細付き原紙は同じメタデータから同じSHAで再構築できる。
 - 401/事業所404/保存409/入力400、再送、過去版の不変、AI候補の非自動適用、日時/出席者の不正AI提案拒否、取消/削除時の実績保持、コピー元の保存版、保存失敗復旧、算定の明示確定/確定記録の不変/再計算版への非継承を検証。
-- GitHubの#167〜176および#183のブラウザCI成功、#178のCI/CD Verify成功/Deploy Hostingスキップを確認。最新UIブランチのCIはPR作成後に記録する。本番デプロイ条件はmain限定。
+- GitHubの#167〜176および#183のブラウザCI成功、#178のCI/CD Verify成功/Deploy Hostingスキップを確認。最新UIブランチのCI/CD実行は [44994445060](https://github.com/cloud0327/df-2026-t062-dev/actions/runs/44994445060)。ブラウザCIと最終状態はPR #184のChecksを参照。本番デプロイ条件はmain限定。
 - 実機Safari・実Geminiの文章品質・現場レビューは未実施。E2EのAIは明示的な注入モデルで、実APIの生成成功とは報告しない。非公開の入院時情報提供書の原紙PDFは今回のE2E対象外。
 
 ## 残作業と優先度
