@@ -248,6 +248,15 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
         errors.push(`ページ ${p.no} の表の印字設定が不正`)
       }
       if (!formKeys(input.bindings).includes(print.key)) errors.push(`ページ ${p.no} の表が対応のないkeyを読む`)
+      if (print.groupSlots !== undefined) {
+        const groups = print.groupSlots
+        if (!Array.isArray(groups) || !Array.isArray(print.nested) || !Array.isArray(print.slots) ||
+            groups.length > print.nested.length ||
+            groups.some(group => !Array.isArray(group) || !group.length || group.some(name => !print.slots.includes(name))) ||
+            new Set(groups.flat()).size !== groups.flat().length) {
+          errors.push(`ページ ${p.no} の表のまとめ方が不正`)
+        }
+      }
     }
     if (print.type === 'timeline') {
       if (!namesOnPage.has(print.slot) || !Array.isArray(print.days) || !print.days.length ||

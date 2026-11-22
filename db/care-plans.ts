@@ -748,7 +748,7 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
     const problems: { path: string, reason: string }[] = []
     const existingNeeds = new Map(s.needs.map((n) => [n.id, n]))
     const existingGoals = new Map(s.goals.map((g) => [g.id, g]))
-    const existingServiceIds = new Set(s.services.map((service) => service.id))
+    const existingServices = new Map(s.services.map((service) => [service.id, service]))
     const seenNeeds = new Set<string>()
     const seenGoals = new Set<string>()
 
@@ -835,7 +835,7 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
           if (!content) problems.push({ path: `${spath}.content`, reason: 'required' })
           let serviceId = x.id ?? ''
           if (serviceId) {
-            if (!isUuid(serviceId) || !existingServiceIds.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'unknown_id' })
+            if (!isUuid(serviceId) || !existingServices.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'unknown_id' })
             if (goalServiceIds.has(serviceId)) problems.push({ path: `${spath}.id`, reason: 'duplicate' })
           } else serviceId = randomUUID()
           goalServiceIds.add(serviceId)
@@ -845,7 +845,7 @@ export async function saveCarePlanNeeds(db: Db, staff: Staff, planId: string, ba
           const service: PlannedService = {
             id: serviceId,
             content,
-            insured: x.insured ?? true,
+            insured: x.insured ?? existingServices.get(serviceId)?.insured ?? false,
             kind: x.kind ?? null,
             provider: x.provider ?? null,
             frequency: x.frequency ?? null,
@@ -1375,7 +1375,7 @@ export async function applyCarePlanAiDraft(
           const serviceId = randomUUID()
           await insertService(c, plan.id, serviceId, needId, goalId, k + 1, {
             content,
-            insured: typeof sv.insured === 'boolean' ? sv.insured : true,
+            insured: sv.insured === true,
             kind: typeof sv.kind === 'string' ? sv.kind : null,
             provider: typeof sv.provider === 'string' ? sv.provider : null,
             frequency: typeof sv.frequency === 'string' ? sv.frequency : null,

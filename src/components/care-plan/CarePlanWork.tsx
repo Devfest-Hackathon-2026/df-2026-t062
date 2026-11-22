@@ -516,13 +516,13 @@ function NeedFields({ need, update, updateService, linkChoices }: {
           return <section className="cp-service" key={s.id ?? k}>
             <label>サービス内容<input data-cp-field={`service-${j}-${k}`} value={s.content} onChange={(e) => updateService(j, k, { content: e.target.value })} /></label>
             {shared && <small>他の目標にも紐づいています。サービス内容の変更はすべての紐づけに反映されます。</small>}
-            <div className="cp-fields">{(['kind', 'provider', 'frequency'] as const).map((key, i) => <label key={key}>{['サービス種別', '提供事業所', '頻度'][i]}<input value={s[key] ?? ''} onChange={(e) => updateService(j, k, { [key]: e.target.value })} /></label>)}</div>
-            <label className="cp-check"><input type="checkbox" checked={s.insured ?? true} onChange={(e) => updateService(j, k, { insured: e.target.checked })} />保険給付の対象</label>
+            <label className="cp-check"><input type="checkbox" checked={s.insured ?? false} onChange={(e) => updateService(j, k, { insured: e.target.checked })} />保険給付の対象（※1 対象内は○）</label>
+            <div className="cp-fields">{(['kind', 'provider', 'frequency'] as const).map((key, i) => <label key={key}>{['サービス種別', 'サービス提供を行う事業所（※2）', '頻度'][i]}<input value={s[key] ?? ''} onChange={(e) => updateService(j, k, { [key]: e.target.value })} /></label>)}</div>
             <PeriodFields value={s} update={(p) => updateService(j, k, p)} />
             <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals![j].services!.splice(k, 1) })}>{shared ? 'この目標との紐づけを外す' : 'サービスを削除'}</button>
           </section>
         })}
-        <button className="btn" onClick={() => update((n) => { (n.shortGoals![j].services ??= []).push({ content: '', insured: true }) })}>＋ サービスを追加</button>
+        <button className="btn" onClick={() => update((n) => { (n.shortGoals![j].services ??= []).push({ content: '', insured: false }) })}>＋ サービスを追加</button>
         {available.length > 0 && <label>既存のサービスを紐づける<select value="" onChange={(e) => {
           const selected = available.find((choice) => choice.id === e.target.value)
           if (selected) update((n) => { (n.shortGoals![j].services ??= []).push({ ...selected.service }) })

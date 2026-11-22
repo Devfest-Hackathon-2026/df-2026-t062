@@ -17,6 +17,7 @@ const PROMPT = `あなたは日本の居宅介護支援のケアマネジャー�
 根拠がないことは書かないでください。意向・サービス・頻度・費用・日時を推測で決めないでください。
 第1表は plan.intentionAnalysis（課題分析の結果）と plan.overallPolicy（総合的な援助の方針）を中心に、根拠がある場合だけ候補を出してください。
 第2表は、ニーズごとに長期目標を1つ、短期目標を0個以上、短期目標ごとにサービスを0個以上出してください。
+本人の取組や家族による援助も、根拠があるときはサービス内容と種別に記載してください。保険給付の対象内であることが根拠に明記されている場合だけ insured を true にしてください。
 出力は次の形の JSON だけにしてください。説明文や Markdown は付けないでください。
 {
   "plan1": { "plan.intentionAnalysis": "…", "plan.overallPolicy": "…" },
@@ -26,7 +27,7 @@ const PROMPT = `あなたは日本の居宅介護支援のケアマネジャー�
       "longGoal": { "goal": "長期目標", "periodText": "期間（表示用）" },
       "shortGoals": [
         { "goal": "短期目標", "periodText": "期間（表示用）", "services": [
-          { "content": "サービス内容", "insured": true, "kind": "サービス種別", "provider": "事業所", "frequency": "週1回", "periodText": "期間" }
+          { "content": "サービス内容", "insured": false, "kind": "サービス種別", "provider": "サービス提供を行う事業所", "frequency": "週1回", "periodText": "期間" }
         ] }
       ]
     }

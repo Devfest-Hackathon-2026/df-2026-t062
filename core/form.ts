@@ -40,6 +40,8 @@ export interface FormPage {
     key: string
     nested: string[]
     slots: string[]
+    /** 親から順に、同じ項目の続きでは同じページ内で再掲しない欄。 */
+    groupSlots?: string[][]
     rowsPerPage: number
     rowHeight: number
   } | {

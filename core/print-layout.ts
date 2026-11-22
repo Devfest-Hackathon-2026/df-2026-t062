@@ -20,11 +20,14 @@ export class PdfOverflow extends Error {
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 
 /** 子が空でも親のニーズ・目標を落とさない。1つの葉を元と同じ入れ子の形で返す。 */
-function leaves(value: unknown, nested: string[]): unknown[] {
+function leaves(value: unknown, nested: string[]): { value: unknown, path: number[] }[] {
   const rows = Array.isArray(value) && value.length ? value : [{}]
-  if (!nested.length) return rows
+  if (!nested.length) return rows.map((value, index) => ({ value, path: [index] }))
   const [key, ...rest] = nested
-  return rows.flatMap((row) => leaves(record(row)[key], rest).map((child) => ({ ...record(row), [key]: [child] })))
+  return rows.flatMap((row, index) => leaves(record(row)[key], rest).map((child) => ({
+    value: { ...record(row), [key]: [child.value] },
+    path: [index, ...child.path],
+  })))
 }
 
 export function expandPrintLayout(
@@ -61,16 +64,21 @@ export function expandPrintLayout(
     if (layout.type === 'table') {
       const rows = leaves(values[layout.key], layout.nested)
       const names = new Set(layout.slots)
+      const slots = schemas.filter((s) => names.has(s.name))
+      const groupDepth = new Map(layout.groupSlots?.flatMap((names, depth) => names.map((name) => [name, depth] as const)))
       const pages: PrintPage[] = []
       if (!Number.isInteger(layout.rowsPerPage) || layout.rowsPerPage < 1 || layout.rowHeight <= 0) throw new Error('印字の表の設定が不正です')
       for (let offset = 0; offset < rows.length; offset += layout.rowsPerPage) {
         const page: PrintPage = { sourceIndex, schemas: schemas.filter((s) => !names.has(s.name)), input: { ...rendered } }
         for (const [i, row] of rows.slice(offset, offset + layout.rowsPerPage).entries()) {
-          const rowValues = renderAll(form.bindings, { ...values, [layout.key]: [row] })
-          for (const slot of schemas.filter((s) => names.has(s.name))) {
+          const rowValues = renderAll(form.bindings, { ...values, [layout.key]: [row.value] })
+          const previous = i > 0 ? rows[offset + i - 1] : undefined
+          for (const slot of slots) {
             const name = `${slot.name}__row${i}`
             page.schemas.push({ ...slot, name, position: { x: slot.position.x, y: slot.position.y + i * layout.rowHeight } })
-            page.input[name] = rowValues[slot.name]
+            const depth = groupDepth.get(slot.name)
+            const repeated = previous && depth !== undefined && row.path.slice(0, depth + 1).every((index, j) => previous.path[j] === index)
+            page.input[name] = repeated ? '' : rowValues[slot.name]
           }
         }
         pages.push(page)

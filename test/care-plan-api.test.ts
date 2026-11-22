@@ -389,6 +389,26 @@ test('第2表は stable ID のまま並べ替えられ、baseVersion と期間�
   assert.equal(badPeriod.status, 422)
 })
 
+test('第2表の保険給付は明示した場合だけ新規行を対象にし、省略更新では登録済みの区分を保つ', { skip }, async () => {
+  const plan = await createPlan(clients.sato)
+  const path = `/api/care-plans/${plan.id}/needs`
+  const [need] = needPayload()
+  const [firstGoal, ...otherGoals] = need.shortGoals
+  const needs = [{ ...need, shortGoals: [
+    { ...firstGoal, services: [...firstGoal.services, { content: '家族の見守り', kind: '家族による援助' }] },
+    ...otherGoals,
+  ] }]
+  const first = await put(path, { baseVersion: plan.lockVersion, needs })
+  assert.equal(first.status, 200, JSON.stringify(first.body))
+  const saved = first.body.plan
+  const services = saved.needs[0].shortGoals[0].services
+  assert.deepEqual(services.map((s: { insured: boolean }) => s.insured), [true, false])
+  for (const service of services) delete service.insured
+  const next = await put(path, { baseVersion: saved.lockVersion, needs: saved.needs })
+  assert.equal(next.status, 200, JSON.stringify(next.body))
+  assert.deepEqual(next.body.plan.needs[0].shortGoals[0].services.map((s: { insured: boolean }) => s.insured), [true, false])
+})
+
 test('同じサービスを複数の目標に紐づけても月間予定は1件ずつで、改定・紐づけ解除後も予定を保つ', { skip }, async () => {
   let plan = await createPlan(clients.sato)
   const path = `/api/care-plans/${plan.id}`
