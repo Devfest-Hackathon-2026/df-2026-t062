@@ -15,8 +15,6 @@ export interface FormMeta {
   /** 公開通知から様式だけを取り出す場合の、元ファイルのハッシュと1始まりページ番号 */
   sourcePdfSha256?: string
   sourcePages?: number[]
-  /** 公式用紙に続く明細用の白紙。mm。元通知には含まない。 */
-  blankPages?: {width:number,height:number}[]
   basePdfSha256: string
   pages: FormPage[]
 }

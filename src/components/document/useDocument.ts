@@ -430,7 +430,6 @@ export function useDocument(docId: string | undefined) {
     if (!docId || !(await flush()) || pending.conflicts.size) return false
     try {
       const r = await api.save(docId, body)
-      setError('')
       publish(r.document)
       return true
     } catch (e) {
