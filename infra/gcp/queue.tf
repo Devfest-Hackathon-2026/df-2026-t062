@@ -48,10 +48,11 @@ resource "google_cloud_scheduler_job" "reconcile" {
 }
 
 resource "google_cloud_scheduler_job" "recording_cleanup" {
-  name             = "t062-recording-cleanup"
+  name             = var.recording_cleanup_scheduler_job_name
   region           = var.region
   description      = "録音原本の保全同期・未完了upload整理・期限削除を実行する"
   schedule         = var.recording_cleanup_schedule
+  paused           = true
   time_zone        = "Etc/UTC"
   attempt_deadline = "180s"
 

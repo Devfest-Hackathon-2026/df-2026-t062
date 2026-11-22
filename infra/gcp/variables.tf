@@ -182,10 +182,33 @@ variable "recording_cleanup_schedule" {
   default     = "*/15 * * * *"
 }
 
+variable "recording_cleanup_scheduler_job_name" {
+  description = "Cloud Scheduler job name for the recording cleanup invocation."
+  type        = string
+  default     = "t062-recording-cleanup"
+}
+
 variable "source_recording_lifecycle_enabled" {
   description = "readiness確認後だけ有効化するsource録音のLifecycle安全弁。"
   type        = bool
   default     = false
+}
+
+variable "monitoring_notification_channel_ids" {
+  description = "Cloud Monitoring notification channel IDs. Keep addresses and webhooks outside this repository."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_environment" {
+  description = "Environment label used by recording cleanup metrics and alerts."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,31}$", var.monitoring_environment))
+    error_message = "Use a lowercase environment label with letters, digits and hyphens."
+  }
 }
 
 variable "billing_account_id" {
@@ -198,4 +221,10 @@ variable "budget_amount_jpy" {
   description = "予算アラートの月額（円）。billing_account_id を指定したときだけ使う。"
   type        = number
   default     = 10000
+}
+
+variable "recording_cleanup_alerts_enabled" {
+  description = "録音Cleanupの監視アラートを有効化するか"
+  type        = bool
+  default     = false
 }

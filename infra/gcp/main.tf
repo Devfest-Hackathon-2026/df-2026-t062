@@ -8,6 +8,8 @@ resource "google_project_service" "required" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "identitytoolkit.googleapis.com",
+    "logging.googleapis.com",
+    "monitoring.googleapis.com",
     "run.googleapis.com",
     "speech.googleapis.com",
     "sqladmin.googleapis.com",
