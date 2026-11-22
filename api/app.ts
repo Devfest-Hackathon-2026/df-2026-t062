@@ -768,6 +768,7 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => {
     const clientId = c.req.param('id')!
+    await repo.getClient(db, staff.officeId, clientId)
     const jobs = await repo.activeJobs(db, staff.officeId, clientId)
     await accessAudit(c, db, staff, {
       clientId, resourceType: 'job', accessMode: 'list', action: 'job.view', resultCount: jobs.length,
