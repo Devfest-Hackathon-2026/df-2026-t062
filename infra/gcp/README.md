@@ -69,9 +69,12 @@ recording_cleanup_alerts_enabled      = true
 monitoring_notification_channel_ids   = ["projects/<project-id>/notificationChannels/<channel-id>"]
 monitoring_environment                 = "production"
 recording_cleanup_scheduler_job_name   = "t062-recording-cleanup"
+recording_cleanup_scheduler_paused    = false
 ```
 
 通知チャネルIDが空のままアラートを有効化した場合、Terraformのpreconditionで適用を停止します。通知チャネルの作成・変更はTerraformの対象外とし、宛先の変更時はCloud Monitoring側の管理記録と監視Runbookを更新します。
+
+`recording_cleanup_scheduler_paused` の既定値は `true` です。正式イメージのデプロイ、DBマイグレーション、readiness確認、通知確認が完了し、責任者が稼働を承認した後だけ、本番の環境設定で `false` にします。手動の `gcloud scheduler jobs resume` だけで運用せず、Terraformの設定と実リソースを一致させます。
 
 ### サービスアカウントと権限
 

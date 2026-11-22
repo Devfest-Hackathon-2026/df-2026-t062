@@ -247,6 +247,7 @@ run "private_service_with_scoped_deployer" {
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].timeout == "900s" &&
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].max_retries == 0 &&
       google_cloud_scheduler_job.recording_cleanup.schedule == "*/15 * * * *" &&
+      google_cloud_scheduler_job.recording_cleanup.paused &&
       google_cloud_scheduler_job.recording_cleanup.http_target[0].oauth_token[0].service_account_email == "tasks-invoker@mock-project.iam.gserviceaccount.com"
     )
     error_message = "The recording cleanup Job must use its dedicated service account and run every 15 minutes through Scheduler."
@@ -326,6 +327,23 @@ run "private_service_with_scoped_deployer" {
   assert {
     condition     = length(google_billing_budget.monthly) == 0
     error_message = "No budget is created without billing_account_id."
+  }
+}
+
+run "recording_cleanup_scheduler_can_be_enabled_explicitly" {
+  command = plan
+
+  variables {
+    project_id                         = "mock-project"
+    github_repository_id               = "1447301909"
+    github_repository_owner_id         = "234936919"
+    app_origins                        = []
+    recording_cleanup_scheduler_paused = false
+  }
+
+  assert {
+    condition     = !google_cloud_scheduler_job.recording_cleanup.paused
+    error_message = "The recording cleanup Scheduler must be resumable only through an explicit Terraform variable."
   }
 }
 

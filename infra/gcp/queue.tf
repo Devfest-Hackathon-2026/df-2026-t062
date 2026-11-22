@@ -52,7 +52,7 @@ resource "google_cloud_scheduler_job" "recording_cleanup" {
   region           = var.region
   description      = "録音原本の保全同期・未完了upload整理・期限削除を実行する"
   schedule         = var.recording_cleanup_schedule
-  paused           = true
+  paused           = var.recording_cleanup_scheduler_paused
   time_zone        = "Etc/UTC"
   attempt_deadline = "180s"
 
