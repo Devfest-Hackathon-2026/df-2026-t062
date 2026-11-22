@@ -6,6 +6,17 @@ import { createPool, tx, type Db } from '../db/pool.ts'
 import { migrate } from '../db/migrate.ts'
 import { seed } from '../db/seed.ts'
 import { applyBatch, completeRecording, createClient, createRecording, activeJobs, type Staff } from '../db/repo.ts'
+import {
+  beginSourceDeletion,
+  claimExpiredSourceRecordings,
+  getRecordingRetention,
+  markExpiredSourceRecordingsEligible,
+  RECORDING_MAX_RETENTION_DAYS,
+  RECORDING_SUCCESS_RETENTION_HOURS,
+  releaseExpiredRecordingRetentionHolds,
+  releaseRecordingRetentionHold,
+  setRecordingRetentionHold,
+} from '../db/recording-retention.ts'
 import { FakeSpeakers, FakeStt, FakeSummarizer, fakeFormImport } from '../worker/fake.ts'
 import { reconcile, runJob, type WorkerDeps } from '../worker/jobs.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
@@ -42,7 +53,7 @@ async function job() {
   await storage.write('source', rec.objectPath, bytes)
   const jobId = await completeRecording(db, staff, rec.id, 60_000, bytes.byteLength, (path) => storage.size('source', path))
   assert.ok(jobId)
-  return { jobId, clientId: client.id, documentId: client.documentId }
+  return { jobId, recordingId: rec.id, clientId: client.id, documentId: client.documentId }
 }
 
 const providers = (write: Providers['recording']['writer']['write']): Providers => ({
@@ -53,9 +64,19 @@ const value = { 'intake.method': { value: '電話', cite: [] } }
 const result = { values: value, usage: ZERO_USAGE, failed: [] as string[], incompleteFields: [] as string[] }
 const status = async (id: string) => (await db.query('SELECT status, attempts, run_token FROM jobs WHERE id = $1', [id])).rows[0]
 const batches = async (id: string) => Number((await db.query('SELECT count(*) AS n FROM batches WHERE job_id = $1', [id])).rows[0].n)
+const HOUR_MS = 60 * 60 * 1000
+
+function assertExpiryNear(iso: string, startedAt: number, hours: number) {
+  const expiresAt = new Date(iso).getTime()
+  const toleranceMs = 10_000
+  assert.ok(expiresAt >= startedAt + hours * HOUR_MS - toleranceMs)
+  assert.ok(expiresAt <= Date.now() + hours * HOUR_MS + toleranceMs)
+}
 
 test('一時失敗後に再配信で再開し、同じジョブの二重配信は一度しか反映しない', { skip }, async () => {
   const j = await job()
+  const before = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(before)
   let calls = 0
   const p = providers(async () => {
     calls++
@@ -64,8 +85,14 @@ test('一時失敗後に再配信で再開し、同じジョブの二重配信�
   })
   await assert.rejects(runJob(deps(p), j.jobId), /injected transient error/)
   assert.equal((await status(j.jobId)).status, 'queued')
+  assert.deepEqual((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceExpiresAt, before.sourceExpiresAt)
+  const successStartedAt = Date.now()
   await Promise.all([runJob(deps(p), j.jobId), runJob(deps(p), j.jobId)])
   assert.equal((await status(j.jobId)).status, 'succeeded')
+  const after = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(after)
+  assertExpiryNear(after.sourceExpiresAt, successStartedAt, RECORDING_SUCCESS_RETENTION_HOURS)
+  assert.ok(new Date(after.sourceExpiresAt).getTime() < new Date(before.sourceExpiresAt).getTime())
   assert.equal((await status(j.jobId)).attempts, 2)
   assert.equal(await batches(j.jobId), 1)
   await runJob(deps(p), j.jobId)
@@ -74,8 +101,13 @@ test('一時失敗後に再配信で再開し、同じジョブの二重配信�
 
 test('部分失敗を API のジョブ情報で伝え、再配信でも二重反映しない', { skip }, async () => {
   const j = await job()
+  const successStartedAt = Date.now()
   await runJob(deps(providers(async () => ({ ...result, failed: ['check:3'], incompleteFields: ['assessment.lifeHistory'] }))), j.jobId)
   assert.equal((await status(j.jobId)).status, 'partial')
+  const retention = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(retention)
+  assert.equal(retention.sourceDeleteStatus, 'pending')
+  assertExpiryNear(retention.sourceExpiresAt, successStartedAt, RECORDING_SUCCESS_RETENTION_HOURS)
   const view = (await activeJobs(db, staff.officeId, j.clientId))[0]
   assert.deepEqual(view.incompleteFields, ['assessment.lifeHistory'])
   assert.equal(view.batch?.changes, 2) // AI の欄と初回面談日
@@ -83,6 +115,80 @@ test('部分失敗を API のジョブ情報で伝え、再配信でも二重反
   assert.equal((await activeJobs(db, staff.officeId, j.clientId))[0].status, 'partial')
   await runJob(deps(providers(async () => { throw new Error('should not run') })), j.jobId)
   assert.equal(await batches(j.jobId), 1)
+})
+
+test('期限付き保全は削除開始前まで候補を取り消し、削除開始後は設定できない', { skip }, async () => {
+  const j = await job()
+  await db.query("UPDATE recordings SET recorded_at = now() - interval '8 days', source_expires_at = now() - interval '1 day', source_delete_status = 'pending' WHERE id = $1", [j.recordingId])
+  const holdUntil = new Date(Date.now() + 60_000)
+  await setRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id }, holdUntil, 'legal_request')
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.retentionHold, true)
+  await markExpiredSourceRecordingsEligible(db)
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
+  await releaseRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id })
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'eligible')
+  const candidates = await claimExpiredSourceRecordings(db)
+  assert.ok(candidates.some((candidate) => candidate.recordingId === j.recordingId))
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'requested')
+
+  const renewedUntil = new Date(Date.now() + 120_000)
+  await setRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id }, renewedUntil, 'renewed_legal_request')
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
+  assert.equal(await beginSourceDeletion(db, j.recordingId, staff.officeId), null)
+  await releaseRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id })
+  assert.ok((await claimExpiredSourceRecordings(db)).some((candidate) => candidate.recordingId === j.recordingId))
+  assert.equal((await beginSourceDeletion(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'deleting')
+  await assert.rejects(
+    setRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id }, new Date(Date.now() + 180_000), 'too_late'),
+    /recording_deletion_in_progress/,
+  )
+
+  const events = (await db.query(
+    "SELECT action, detail FROM audit_events WHERE detail->>'recordingId' = $1 ORDER BY occurred_at",
+    [j.recordingId],
+  )).rows
+  const actions = events.map((row) => row.action)
+  assert.ok(actions.includes('recording.retention_set'))
+  assert.ok(actions.includes('recording.retention_hold_set'))
+  assert.ok(actions.includes('recording.retention_hold_released'))
+  assert.ok(actions.includes('recording.delete_requested'))
+  const firstHold = events.find((event) => event.action === 'recording.retention_hold_set')
+  const firstRelease = events.find((event) => event.action === 'recording.retention_hold_released')
+  assert.ok(firstHold)
+  assert.ok(firstRelease)
+  assert.equal(firstHold.detail.holdUntil, holdUntil.toISOString())
+  assert.equal(firstHold.detail.reasonCode, 'legal_request')
+  assert.equal(firstRelease.detail.holdUntil, holdUntil.toISOString())
+  assert.equal(firstRelease.detail.reasonCode, 'legal_request')
+})
+
+test('期限切れ保全は自動解除され、解除理由を監査ログに残す', { skip }, async () => {
+  const j = await job()
+  await db.query("UPDATE recordings SET source_expires_at = now() - interval '1 day' WHERE id = $1", [j.recordingId])
+  await setRecordingRetentionHold(
+    db,
+    j.recordingId,
+    { officeId: staff.officeId, actorStaffId: staff.id },
+    new Date(Date.now() + 60_000),
+    'temporary_investigation',
+  )
+  await db.query(
+    `UPDATE recordings
+        SET retention_hold_set_at = now() - interval '2 days',
+            retention_hold_until = now() - interval '1 day'
+      WHERE id = $1`,
+    [j.recordingId],
+  )
+  assert.ok((await releaseExpiredRecordingRetentionHolds(db)) >= 1)
+  const retention = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.equal(retention?.retentionHold, false)
+  assert.equal(retention?.sourceDeleteStatus, 'eligible')
+  const audit = (await db.query(
+    "SELECT detail FROM audit_events WHERE action = 'recording.retention_hold_released' AND detail->>'recordingId' = $1 ORDER BY occurred_at DESC LIMIT 1",
+    [j.recordingId],
+  )).rows[0]
+  assert.equal(audit.detail.trigger, 'expired')
+  assert.equal(audit.detail.reasonCode, 'temporary_investigation')
 })
 
 test('反映の transaction が失敗すれば書き込みは残らず、再実行で一度だけ確定する', { skip }, async () => {
@@ -104,6 +210,8 @@ test('反映の transaction が失敗すれば書き込みは残らず、再実�
 
 test('試行上限に達したジョブは failed になり、次の配信で再実行しない', { skip }, async () => {
   const j = await job()
+  const before = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(before)
   const broken = deps(providers(async () => { throw new Error('injected permanent error') }))
   for (let i = 0; i < 3; i++) await assert.rejects(runJob(broken, j.jobId), /injected permanent error/)
   assert.equal((await status(j.jobId)).status, 'failed')
@@ -111,6 +219,7 @@ test('試行上限に達したジョブは failed になり、次の配信で再
   await runJob(broken, j.jobId)
   assert.equal((await status(j.jobId)).attempts, 3)
   assert.equal(await batches(j.jobId), 0)
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceExpiresAt, before.sourceExpiresAt)
 })
 
 test('古い実行トークンでは反映できず、引き継いだ実行だけが確定できる', { skip }, async () => {
@@ -131,6 +240,7 @@ test('古い実行トークンでは反映できず、引き継いだ実行だ�
 
 test('変更が0件でも完了し、試行上限に達したリース切れジョブは見回りで終了する', { skip }, async () => {
   const empty = await job()
+  await db.query("UPDATE recordings SET recorded_at = now() - interval '6 days', source_expires_at = now() + interval '1 day' WHERE id = $1", [empty.recordingId])
   const token = randomUUID()
   await db.query("UPDATE jobs SET status = 'processing', attempts = 1, run_token = $2, lease_until = now() + interval '30 minutes' WHERE id = $1", [empty.jobId, token])
   const r = await applyBatch(db, {
@@ -139,6 +249,11 @@ test('変更が0件でも完了し、試行上限に達したリース切れジ�
   })
   assert.equal(r.batchId, null)
   assert.equal((await status(empty.jobId)).status, 'succeeded')
+  const cap = (await db.query(
+    'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
+    [empty.recordingId],
+  )).rows[0]
+  assert.equal(Number(cap.seconds), RECORDING_MAX_RETENTION_DAYS * 24 * 60 * 60)
 
   const expired = await job()
   await db.query("UPDATE jobs SET status = 'processing', attempts = 3, run_token = $2, lease_until = now() - interval '1 minute' WHERE id = $1", [expired.jobId, randomUUID()])
