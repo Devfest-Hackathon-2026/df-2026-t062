@@ -81,7 +81,9 @@ test('書類の種類の最初の行: アセスメントが主な書類で、必
   const { REQUIRED_ASSESS } = await import('../core/fields.ts')
   assert.deepEqual(assess.required, REQUIRED_ASSESS)
   assert.deepEqual(adm.required, [])
-  assert.deepEqual(adm.topics, [])
+  // #152 で入院時情報提供書も録音から書く（項目は 0009。中身は summary-job.test.ts）
+  assert.deepEqual(adm.topics.map((t: { id: string }) => t.id), ['basic', 'family', 'wishes', 'homeOutlook', 'conference'])
+  assert.equal(adm.summary_mode, 'single')
   const topics = assess.topics as { id: string, name: string, by: string, last: boolean, keys?: { first: string, later: string } }[]
   assert.equal(topics.filter((t) => t.by === 'ai' && !t.last).length, 23, '課題分析標準項目 23 項目')
   assert.equal(new Set(topics.map((t) => t.id)).size, topics.length, '項目の id は重ならない')

@@ -109,7 +109,8 @@ export function useRecorder(clientId: string, onSent: () => void) {
     }
   }, [clientId, run, sendPending])
 
-  const start = useCallback(async () => {
+  /** documentId: 録音をつなぐ書類（開いている書類） */
+  const start = useCallback(async (documentId?: string) => {
     const current = scope.current
     if (!current) return
     await run(current, async () => {
@@ -121,7 +122,7 @@ export function useRecorder(clientId: string, onSent: () => void) {
           return
         }
         setStorageWarning(false)
-        current.capture = captureRecording(stream, current.clientId, saveRecording, (saved) => {
+        current.capture = captureRecording(stream, current.clientId, documentId, saveRecording, (saved) => {
           if (!current.disposed) setStorageWarning(!saved)
         })
       } catch (e) {

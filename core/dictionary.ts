@@ -54,12 +54,12 @@ const fromRecording = (s: string) => s === 'talk' || s === 'draft' || s.startsWi
 
 /**
  * AI が書いてよい欄か（AI の書き込みの計画で使う）。出どころがケアマネの判断・事業所の設定・その場で聞くことだけの欄は書かない。
- * その様式だけの欄は、説明書き（note）があるものだけ
+ * その様式だけの欄は書く（説明書きがなくても、名前を手がかりにする。#152）
  */
 export function aiMayWrite(key: string, dict: FieldDict = GLOBAL_DICT): boolean {
   const f = dict.get(key)
   if (!f) return false
-  if (f.local) return !!f.note
+  if (f.local) return true // 説明書きがなくても書く（名前を手がかりにする。#152）
   const src = f.source ?? []
   if (src.length === 0) return true
   return src.some((s) => s === 'talk' || s.startsWith('doc:') || s === 'draft' || s === 'derived')
@@ -67,13 +67,14 @@ export function aiMayWrite(key: string, dict: FieldDict = GLOBAL_DICT): boolean 
 
 /**
  * 録音から AI が書いてよい欄（docs/再設計/16 の「録音から AI が書く欄」）。
- * 録音がつながった書類の様式の版が読む欄のうち、出どころに会話・書類・案がある欄（図は除く）。その様式だけの欄は、説明書き（note）があるもの。
+ * 録音がつながった書類の様式の版が読む欄のうち、出どころに会話・書類・案がある欄と、その様式だけの欄（図は除く）。
+ * その様式だけの欄は、説明書き（note）がなくても書く（名前を手がかりにする。#152）。
  * 並びは fields.json の順、そのあとに local_fields の順（AI への指示文の並びを変えないため）
  */
 export function writableFields(form: { keys: readonly string[], localFields?: readonly LocalField[] }): FieldSpec[] {
   const keys = new Set(form.keys)
   return fieldDict(form.localFields).list.filter((f) => {
     if (!keys.has(f.key) || f.type === 'image') return false
-    return f.local ? !!f.note : (f.source ?? []).some(fromRecording)
+    return f.local ? true : (f.source ?? []).some(fromRecording)
   })
 }
