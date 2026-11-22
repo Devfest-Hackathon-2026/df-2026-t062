@@ -41,6 +41,13 @@ resource "google_service_account" "worker" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_service_account" "recording_cleanup" {
+  account_id   = "cloud-run-recording-cleanup"
+  display_name = "Cloud Run recording cleanup job"
+
+  depends_on = [google_project_service.required]
+}
+
 # Cloud Tasks と Cloud Scheduler が worker を呼ぶときの OIDC の身元。worker の run.invoker だけを持つ。
 resource "google_service_account" "tasks_invoker" {
   account_id   = "tasks-invoker"

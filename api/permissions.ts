@@ -1,7 +1,7 @@
 // 役割ごとにしてよい操作（docs/再設計/14_認可.md の権限表）。権限表はここにだけ置く。
 // API の入口は、それぞれ操作を 1 つ宣言する（api/app.ts の staffRoute・siteRoute）。
 
-export const OPERATIONS = ['care.work', 'staff.manage', 'form.manage', 'site.manage'] as const
+export const OPERATIONS = ['care.work', 'staff.manage', 'form.manage', 'site.manage', 'recording.retention.manage'] as const
 export type Operation = typeof OPERATIONS[number]
 
 /** 事業所に属する役割（staff.role）。足すときは staff.role の CHECK にも足す */
@@ -20,6 +20,7 @@ const PERMISSIONS: Readonly<Record<Operation, readonly Role[]>> = {
   'form.manage': ['admin'],
   // 事業所と最初の責任者の登録、書類の種類と全体の様式の登録
   'site.manage': ['siteAdmin'],
+  'recording.retention.manage': ['admin'],
 }
 
 /** その役割にその操作を許すか。表にない役割は何もできない */

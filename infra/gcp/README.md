@@ -53,10 +53,10 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 
 | ファイル | 作るもの | 要点 |
 |---|---|---|
-| `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー2つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
-| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。`forms` は様式の元の PDF とページの画像（全体は `pdf/<元の PDF の sha256>/…`、事業所の様式は `offices/<office_id>/pdf/<sha256>/…`）。画面には期限つきの URL で渡す。責任者・サイト管理者が上げた PDF は `imports/`（事業所は `offices/<office_id>/imports/`）にブラウザから直接送るので、`app_origins` からの CORS（PUT/POST/OPTIONS）を付ける。自動削除はない（上げた PDF は worker が消す） |
+| `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー3つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
+| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`source` はSoft Delete 3日、Lifecycleはreadiness確認後にだけ`recordings/`のlive objectへ14日安全弁を付ける。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。 |
 | `queue.tf` | Cloud Tasksキュー `t062-jobs`、Schedulerジョブ `t062-reconcile` | 同時配信3、最大5回まで間隔を広げて再試行。Schedulerは5分ごとにworkerの `/tasks/reconcile` をOIDCつきでPOST |
-| `worker.tf` | workerのCloud Runサービス、DB移行のCloud Runジョブ | workerは非公開（`invoker_iam_disabled=false`）、タイムアウト1800秒、最小0・最大2、1 CPU・1Gi。移行ジョブはapiの実行用サービスアカウントで動き、DB の移行と様式の登録（`node db/migrate.ts --forms`）を流す |
+| `worker.tf` | workerのCloud Runサービス、DB移行Job、録音Cleanup Job | Cleanup Jobは専用サービスアカウント、1 task、900秒、max retries 0で`node worker/recording-cleanup.ts`を実行する。 |
 | `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは、責任者が職員を登録するとき・サイト管理者が最初の責任者を登録するときに api が作る（本人はパスワードを決めるメールから決める） |
 | `budget.tf` | 予算アラート（任意） | `billing_account_id` を指定したときだけ作る |
 | `main.tf` | apiを更新、サービスアカウント追加 | apiは公開（`invoker_iam_disabled=true`。アプリがFirebaseのIDトークンを検証する）、1Gi、タイムアウト900秒、環境変数つき |
@@ -83,7 +83,7 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
 
 ## DBの初期設定（初回に一度だけ）
 
-IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTerraformが作りますが、テーブルを作る権限（`CREATE`）は持っていません。管理者が次の手順で、共通のロール `app` を作って両方を所属させ、スキーマの持ち主にします。`ALTER ROLE ... SET role` により、どちらのユーザーで接続しても `app` として動くので、どちらが作ったテーブルも両方が使えます。
+ IAM認証のDBユーザー（api・worker・録音Cleanupのサービスアカウント）はTerraformが作りますが、テーブルを作る権限（`CREATE`）は持っていません。管理者が次の手順で、`app` とCleanup専用の `recording_cleanup` ロールを作ります。Cleanupロールは録音状態の参照・更新と監査イベントの追記だけを持ち、他テーブルやDDLにはアクセスできません。
 
 1. `terraform output -raw bootstrap_sql` でSQLを出します（ユーザー名が入っています）。
 2. 組み込みの `postgres` ユーザーにパスワードを付けて接続します。作業後はパスワードを使い捨ての値に変えます。

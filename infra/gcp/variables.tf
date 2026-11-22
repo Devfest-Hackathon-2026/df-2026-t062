@@ -70,6 +70,12 @@ variable "migrate_job_name" {
   default     = "t062-migrate"
 }
 
+variable "recording_cleanup_job_name" {
+  description = "録音原本の保全・削除を行うCloud Run Job名。"
+  type        = string
+  default     = "t062-recording-cleanup"
+}
+
 variable "sql_instance_name" {
   description = "Cloud SQL インスタンス名。削除後 1 週間ほど同じ名前を再利用できない。"
   type        = string
@@ -168,6 +174,18 @@ variable "reconcile_schedule" {
   description = "worker の /tasks/reconcile を呼ぶ cron（Asia/Tokyo）。"
   type        = string
   default     = "*/5 * * * *"
+}
+
+variable "recording_cleanup_schedule" {
+  description = "録音原本の保全同期・未完了upload整理・削除Jobのcron。"
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "source_recording_lifecycle_enabled" {
+  description = "readiness確認後だけ有効化するsource録音のLifecycle安全弁。"
+  type        = bool
+  default     = false
 }
 
 variable "billing_account_id" {

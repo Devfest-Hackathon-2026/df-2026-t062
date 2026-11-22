@@ -93,6 +93,45 @@ export async function writeBusinessAudit(
   )
 }
 
+export async function writeBusinessAuditBatch(
+  db: AuditDb,
+  inputs: Array<{ officeId: string | null, actorStaffId?: string | null, action: string, ids?: AuditIds, detail?: Record<string, unknown>, outcome?: AuditOutcome, context?: AuditContext }>,
+) {
+  if (!inputs.length) return
+  const rows = inputs.map((input) => {
+    const ids = input.ids ?? {}
+    const context = common(input.context)
+    return {
+      officeId: input.officeId,
+      actorStaffId: input.actorStaffId ?? null,
+      clientId: ids.clientId ?? null,
+      documentId: ids.documentId ?? null,
+      action: input.action,
+      outcome: input.outcome ?? 'success',
+      requestId: context.requestId,
+      correlationId: context.correlationId,
+      traceId: context.traceId,
+      source: context.source,
+      route: context.route,
+      detail: JSON.parse(safeDetail(input.detail ?? {})),
+    }
+  })
+  await db.query(
+    `INSERT INTO audit_events
+       (office_id, staff_id, client_id, document_id, action, outcome, request_id, correlation_id, trace_id, source, route, schema_version, detail)
+     SELECT office_id, staff_id, client_id, document_id, action, outcome, request_id, correlation_id, trace_id, source, route, 1, detail
+       FROM jsonb_to_recordset($1::jsonb) AS r(
+         office_id uuid, staff_id uuid, client_id uuid, document_id uuid, action text, outcome text,
+         request_id uuid, correlation_id uuid, trace_id text, source text, route text, detail jsonb
+       )`,
+    [JSON.stringify(rows.map((row) => ({
+      office_id: row.officeId, staff_id: row.actorStaffId, client_id: row.clientId, document_id: row.documentId,
+      action: row.action, outcome: row.outcome, request_id: row.requestId, correlation_id: row.correlationId,
+      trace_id: row.traceId, source: row.source, route: row.route, detail: row.detail,
+    })))],
+  )
+}
+
 export async function writeAccessAudit(
   db: AuditDb,
   input: AccessAuditInput,

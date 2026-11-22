@@ -9,6 +9,7 @@ import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.
 import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
 import type { ChatMessage, ChatReply } from '../../api/chat.ts'
 import type { InspectionSummary, InspectionView } from '../../db/inspections.ts'
+import type { FillView } from '../../db/document-fills.ts'
 import { readChatStream } from './chatStream.ts'
 import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail } from '../../db/care-plans.ts'
 import type { KindFormState } from '../../db/forms.ts'
@@ -154,6 +155,9 @@ export const api = {
     req<{ rev: number, document: DocumentView }>('POST', `/api/documents/${id}/save`, body),
   jobs: (clientId: string) => req<{ jobs: JobView[] }>('GET', `/api/clients/${clientId}/jobs`),
   /** AI 点検（#113）。始める・これまでの点検・1 回の結果 */
+  /** 書類を作るときに、元の書類から AI が書く（#195） */
+  startFill: (documentId: string) => req<{ fillId: string }>('POST', `/api/documents/${documentId}/fill`, {}),
+  documentFill: (documentId: string) => req<{ fill: FillView | null }>('GET', `/api/documents/${documentId}/fill`),
   startInspection: (clientId: string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {}),
   inspections: (clientId: string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections`),
   inspection: (id: string) => req<{ inspection: InspectionView }>('GET', `/api/inspections/${id}`),

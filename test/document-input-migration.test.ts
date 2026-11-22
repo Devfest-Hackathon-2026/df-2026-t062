@@ -50,6 +50,17 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0021_recording_retention_constraints.sql',
       '0022_recording_delete_candidates_index.sql',
       '0023_recording_retention_holds_index.sql',
+      '0024_recording_source_cleanup.sql',
+      '0025_recording_source_cleanup_constraints.sql',
+      '0026_recording_cleanup_due_index.sql',
+      '0027_recording_cleanup_retry_index.sql',
+      '0028_recording_cleanup_lease_index.sql',
+      '0029_recording_hold_sync_index.sql',
+      '0030_recording_hold_sync_lease_index.sql',
+      '0031_recording_upload_cleanup_index.sql',
+      '0032_recording_upload_cleanup_lease_index.sql',
+      '0033_recording_generation_backfill_index.sql',
+      '0034_document_fills.sql',
     ])
     const backfilled = (await db.query(
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',

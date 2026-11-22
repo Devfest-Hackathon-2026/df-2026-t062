@@ -39,9 +39,41 @@ interface Props {
   verifiedSources: ReadonlySet<string>
   /** 書き方の相談（開いている書類。アセスメントでも入院時情報提供書でも使える） */
   chat: { documentId: string | undefined, current: Record<string, unknown>, saved?: Record<string, unknown>, onSet: (key: string, value: unknown, mode: 'edit' | 'revert') => void, onDiagramApply?: (key: string, value: unknown, base: unknown) => Promise<void>, dict?: FieldDict }
+  /** 書類を作るときに AI が書く（#195）。元の書類から書ける書類を開いているときだけ */
+  fill?: PetFill
 }
 
-export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest }: Props) {
+export type PetFill =
+  | { phase: 'offer', sourceName: string, onRun: () => void, error?: string }
+  | { phase: 'working', step: string, onShow: () => void }
+  | { phase: 'done', sourceName: string, changes: number }
+
+/** 猫の欄の「AI が書く」の知らせ（試作の .cw-pet のことば） */
+function PetFillNote({ fill }: { fill: PetFill }) {
+  if (fill.phase === 'working') return (
+    <div className="assistant-fill" role="status">
+      <p><strong>AI が書いています</strong><br />{fill.step}…</p>
+      <button type="button" className="assistant-primary" onClick={fill.onShow}>様子を見る</button>
+    </div>
+  )
+  if (fill.phase === 'done') return (
+    <div className="assistant-fill" role="status">
+      {fill.changes > 0
+        ? <p><strong>書き終わりました。</strong><br />緑の下線のところが、AI が書いたところです。押すと、前の文と比べられます。</p>
+        : <p><strong>書き終わりました。</strong><br />{fill.sourceName}から書き直す欄・書ける欄はありませんでした。</p>}
+      <p>{fill.sourceName}から分からなかった欄は、空けてあります。</p>
+    </div>
+  )
+  return (
+    <div className="assistant-fill">
+      <p>{fill.sourceName}から、AI が書くこともできます。</p>
+      <button type="button" className="assistant-primary" onClick={fill.onRun}>AI に書いてもらう</button>
+      {fill.error && <p className="assistant-error" role="alert">{fill.error}</p>}
+    </div>
+  )
+}
+
+export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
 
   const [menu, setMenu] = useState<Menu | null>(null)
   const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
@@ -92,6 +124,7 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
         {!menu && (
           <>
             <PetMessage home>今日は何から<br />一緒に進めましょうか？</PetMessage>
+            {fill && <PetFillNote fill={fill} />}
             <div className="assistant-stack assistant-menu">
               {menus.filter(({ id }) => id !== 'inspect' || clientId).map(({ id, icon, title }) => (
                 <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className="assistant-card" onClick={() => open(id)}>
