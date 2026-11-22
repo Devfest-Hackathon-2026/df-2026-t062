@@ -60,7 +60,7 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
     await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
     await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeDisabled()
   }
-  const openHistory = () => page.getByRole('button', { name: '履歴', exact: true }).click()
+  const openHistory = () => page.getByRole('button', { name: '計画の履歴', exact: true }).click()
   const history = page.getByRole('dialog', { name: '計画の履歴', exact: true })
   await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('確定済み')
   await openHistory()
@@ -235,9 +235,9 @@ test('左側は用紙の選択だけにし、確定は保存の横から明示�
   await expect(context).toContainText('下書き')
   await expect(context).toContainText('2026-04-01 〜 2027-03-31')
   await expect(page.getByText('計画メニュー', { exact: true })).toHaveCount(0)
-  const historyButton = page.getByRole('button', { name: '履歴', exact: true })
+  const historyButton = page.getByRole('button', { name: '計画の履歴', exact: true })
   await expect(historyButton).toBeVisible()
-  await expect(page.locator('.cp-canvas').getByRole('button', { name: '履歴', exact: true })).toHaveCount(0)
+  await expect(page.locator('.cp-canvas').getByRole('button', { name: '計画の履歴', exact: true })).toHaveCount(0)
   if (ui === 'pc') {
     const createBox = (await page.getByRole('tab', { name: 'ケアプランを作成', exact: true }).boundingBox())!
     const historyBox = (await historyButton.boundingBox())!

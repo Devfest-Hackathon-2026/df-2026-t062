@@ -129,7 +129,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             ))}
             <div className="care-plan-menu-section">
               <div className="care-plan-menu-title">ケアプラン</div>
-              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
+              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>ケアプランを作成</button>}
             </div>
           </div>
         )}
