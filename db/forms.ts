@@ -227,6 +227,7 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
     const namesOnPage = new Set(slots.map((s) => s.name))
     if (!['text', 'table', 'timeline', 'flow'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
     if (print.type === 'flow') {
+      if (!Array.isArray(print.slots)) { errors.push(`ページ ${p.no} の文章の継続領域が不正`); continue }
       const slots = print.slots?.map(n => input.schemas[p.pdfIndex].find(s => s.name === n)) ?? []
       if (!slots.length || slots.length > 8 || new Set(print.slots).size !== slots.length || slots.some(s => !s || s.type !== 'text')) errors.push(`ページ ${p.no} の文章の継続領域が不正`)
       const first = slots[0]
