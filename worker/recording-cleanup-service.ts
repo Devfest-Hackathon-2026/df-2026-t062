@@ -17,6 +17,10 @@ import {
 } from '../db/recording-upload-cleanup.ts'
 import { RETRYABLE_SOURCE_OBJECT_ERROR_CODES, type DecimalString, type MetadataResult, type SourceObjectControl } from '../storage/source-object-control.ts'
 import type { WorkerDeps } from './jobs.ts'
+import {
+  getRecordingRetentionObservability,
+  listRetentionHoldVerificationCandidates,
+} from '../db/recording-retention.ts'
 
 const asDecimal = (value: string): DecimalString => value as DecimalString
 
@@ -24,25 +28,50 @@ function retryable(code: string) {
   return RETRYABLE_SOURCE_OBJECT_ERROR_CODES.has(code as never)
 }
 
+export interface CleanupMetrics {
+  successCount: number
+  failureCount: number
+  retryCount: number
+  finalFailureCount: number
+  deletionSuccessCount: number
+  deletionFailureCount: number
+  deletionRetryCount: number
+  deletionFinalFailureCount: number
+}
+
+const emptyMetrics = (): CleanupMetrics => ({
+  successCount: 0,
+  failureCount: 0,
+  retryCount: 0,
+  finalFailureCount: 0,
+  deletionSuccessCount: 0,
+  deletionFailureCount: 0,
+  deletionRetryCount: 0,
+  deletionFinalFailureCount: 0,
+})
+
 async function metadataFor(storage: SourceObjectControl, path: string): Promise<MetadataResult> {
   const result = await storage.getLiveObjectMetadata(path)
   return result
 }
 
-async function syncCandidate(deps: WorkerDeps, candidate: HoldSyncCandidate) {
+async function syncCandidate(deps: WorkerDeps, candidate: HoldSyncCandidate, metrics?: CleanupMetrics) {
   const db = await deps.db()
   const control = deps.storage().sourceObjects()
   const metadata = await metadataFor(control, candidate.objectPath)
   if (metadata.kind === 'not_found') {
     await failRetentionHoldSync(db, candidate, 'object_missing')
+    if (metrics) { metrics.failureCount++; metrics.retryCount++ }
     return
   }
   if (metadata.kind === 'error') {
     await failRetentionHoldSync(db, candidate, metadata.code)
+    if (metrics) { metrics.failureCount++; metrics.retryCount++ }
     return
   }
   if (candidate.generation && candidate.generation !== metadata.metadata.generation) {
     await failRetentionHoldSync(db, candidate, 'generation_mismatch')
+    if (metrics) { metrics.failureCount++; metrics.retryCount++ }
     return
   }
   const generation = candidate.generation ?? metadata.metadata.generation
@@ -50,9 +79,11 @@ async function syncCandidate(deps: WorkerDeps, candidate: HoldSyncCandidate) {
   const result = await control.setTemporaryHold(candidate.objectPath, generation, metageneration, candidate.target)
   if (result.kind === 'updated') {
     await completeRetentionHoldSync(db, candidate, result.metadata)
+    if (metrics) metrics.successCount++
     return
   }
   await failRetentionHoldSync(db, candidate, result.kind === 'not_found' ? 'object_missing' : result.code)
+  if (metrics) { metrics.failureCount++; metrics.retryCount++ }
 }
 
 export async function synchronizeRetentionHold(deps: WorkerDeps, recordingId: string, operationVersion: string) {
@@ -61,37 +92,56 @@ export async function synchronizeRetentionHold(deps: WorkerDeps, recordingId: st
   if (candidate) await syncCandidate(deps, candidate)
 }
 
-export async function synchronizeRetentionHolds(deps: WorkerDeps, limit = 100) {
+export async function synchronizeRetentionHolds(deps: WorkerDeps, limit = 100, metrics?: CleanupMetrics) {
   const db = await deps.db()
   const candidates = await (await import('../db/recording-retention.ts')).claimRetentionHoldSyncCandidates(db, limit)
-  for (const candidate of candidates) await syncCandidate(deps, candidate)
+  for (const candidate of candidates) await syncCandidate(deps, candidate, metrics)
   return candidates.length
 }
 
-async function deleteCandidate(deps: WorkerDeps, candidate: ClaimedDeletionCandidate) {
+async function deleteCandidate(deps: WorkerDeps, candidate: ClaimedDeletionCandidate, metrics?: CleanupMetrics) {
   const db = await deps.db()
   const control = deps.storage().sourceObjects()
   const result = await control.deleteObjectGeneration(candidate.objectPath, candidate.generation)
   if (result.kind === 'deleted') {
     await markRecordingSourceDeleted(db, candidate)
+    if (metrics) { metrics.successCount++; metrics.deletionSuccessCount++ }
     return
   }
   if (result.kind === 'not_found') {
     const live = await metadataFor(control, candidate.objectPath)
     if (live.kind === 'not_found') {
       await markRecordingSourceDeleted(db, candidate)
+      if (metrics) { metrics.successCount++; metrics.deletionSuccessCount++ }
       return
     }
     await markRecordingSourceDeleteFailed(db, candidate, 'generation_mismatch', false)
+    if (metrics) {
+      metrics.failureCount++
+      metrics.finalFailureCount++
+      metrics.deletionFailureCount++
+      metrics.deletionFinalFailureCount++
+    }
     return
   }
   await markRecordingSourceDeleteFailed(db, candidate, result.code, retryable(result.code))
+  if (metrics) {
+    metrics.failureCount++
+    metrics.deletionFailureCount++
+    if (retryable(result.code)) {
+      metrics.retryCount++
+      metrics.deletionRetryCount++
+    } else {
+      metrics.finalFailureCount++
+      metrics.deletionFinalFailureCount++
+    }
+  }
 }
 
-export async function deleteExpiredSourceRecordings(deps: WorkerDeps, limit = 100) {
+export async function deleteExpiredSourceRecordings(deps: WorkerDeps, limit = 100, metrics?: CleanupMetrics) {
   const db = await deps.db()
   const candidates = await claimRecordingDeletionCandidates(db, limit)
-  for (const candidate of candidates) await deleteCandidate(deps, candidate)
+  for (const candidate of candidates) await deleteCandidate(deps, candidate, metrics)
   return candidates.length
 }
 
@@ -136,6 +186,16 @@ export interface CleanupSummary {
   holds: number
   uploads: number
   deletions: number
+  metrics: CleanupMetrics
+  overdueCount: number
+  holdMismatchCount: number
+  holdVerificationErrorCount: number
+  holdVerificationTruncated: boolean
+  eligibleStuckCount: number
+  deletingStuckCount: number
+  failedPastRetryCount: number
+  unsyncedHoldCount: number
+  escalatedHoldCount: number
 }
 
 const MAX_BATCHES = 10
@@ -157,9 +217,44 @@ async function runBatched(
 
 export async function runRecordingCleanup(deps: WorkerDeps, limit = 100): Promise<CleanupSummary> {
   const startedAt = Date.now()
+  const metrics = emptyMetrics()
   await runBatched((batchLimit) => backfillRecordingSourceMetadata(deps, batchLimit), limit, startedAt)
-  const holds = await runBatched((batchLimit) => synchronizeRetentionHolds(deps, batchLimit), limit, startedAt)
+  const holds = await runBatched((batchLimit) => synchronizeRetentionHolds(deps, batchLimit, metrics), limit, startedAt)
   const uploads = await runBatched((batchLimit) => cancelStaleUploadSessions(deps, batchLimit), limit, startedAt)
-  const deletions = await runBatched((batchLimit) => deleteExpiredSourceRecordings(deps, batchLimit), limit, startedAt)
-  return { holds, uploads, deletions }
+  const deletions = await runBatched((batchLimit) => deleteExpiredSourceRecordings(deps, batchLimit, metrics), limit, startedAt)
+  const dbSummary = await getRecordingRetentionObservability(await deps.db())
+  let holdMismatchCount = 0
+  let holdVerificationErrorCount = 0
+  let afterId: string | undefined
+  let hasMore = true
+  let verificationPages = 0
+  const maxVerificationPages = 10
+  while (hasMore && verificationPages < maxVerificationPages && Date.now() - startedAt < MAX_RUNTIME_MS) {
+    const page = await listRetentionHoldVerificationCandidates(await deps.db(), limit, afterId)
+    verificationPages++
+    for (const candidate of page.candidates) {
+      const metadata = await deps.storage().sourceObjects().getLiveObjectMetadata(candidate.objectPath)
+      if (metadata.kind === 'found') {
+        if (metadata.metadata.temporaryHold !== candidate.expectedHold) holdMismatchCount++
+      } else holdVerificationErrorCount++
+      afterId = candidate.recordingId
+    }
+    hasMore = page.hasMore
+    if (!page.candidates.length) break
+  }
+  return {
+    holds,
+    uploads,
+    deletions,
+    metrics,
+    overdueCount: dbSummary.overdueCount,
+    holdMismatchCount,
+    holdVerificationErrorCount,
+    holdVerificationTruncated: hasMore,
+    eligibleStuckCount: dbSummary.eligibleStuckCount,
+    deletingStuckCount: dbSummary.deletingStuckCount,
+    failedPastRetryCount: dbSummary.failedPastRetryCount,
+    unsyncedHoldCount: dbSummary.unsyncedHoldCount,
+    escalatedHoldCount: dbSummary.escalatedHoldCount,
+  }
 }

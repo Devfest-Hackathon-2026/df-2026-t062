@@ -68,6 +68,8 @@ run "private_service_with_scoped_deployer" {
     github_repository_id       = "1447301909"
     github_repository_owner_id = "234936919"
     app_origins                = []
+    recording_cleanup_alerts_enabled    = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
   assert {
@@ -257,6 +259,34 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket_iam_member.recording_cleanup_source.condition[0].expression == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-source/objects/recordings/\")"
     )
     error_message = "The source bucket must use three-day Soft Delete and keep Lifecycle disabled until readiness is verified."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_success.name == "recording_cleanup_success_count" &&
+      google_logging_metric.recording_cleanup_failure.name == "recording_cleanup_failure_count" &&
+      google_logging_metric.recording_cleanup_overdue.name == "recording_cleanup_overdue_count" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.name == "recording_cleanup_hold_mismatch_count" &&
+      google_logging_metric.recording_cleanup_final_failure.name == "recording_cleanup_final_failure_count" &&
+      google_logging_metric.recording_cleanup_failure_rate_breach.name == "recording_cleanup_failure_rate_breach_count" &&
+      google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
+      length(google_monitoring_alert_policy.recording_cleanup_overdue[0].notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_final_failure[0].notification_channels) == 1 &&
+      google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
+    )
+    error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_overdue.value_extractor == "EXTRACT(jsonPayload.overdue_count)" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.value_extractor == "EXTRACT(jsonPayload.hold_alert_count)" &&
+      google_logging_metric.recording_cleanup_stuck.value_extractor == "EXTRACT(jsonPayload.stuck_count)" &&
+      google_monitoring_alert_policy.recording_cleanup_overdue[0].enabled &&
+      google_monitoring_alert_policy.recording_cleanup_overdue[0].conditions[0].condition_threshold[0].duration == "900s" &&
+      google_monitoring_alert_policy.recording_cleanup_no_success[0].conditions[0].condition_absent[0].duration == "7200s"
+    )
+    error_message = "Monitoring must extract aggregate values and preserve the documented alert thresholds."
   }
 
   assert {
