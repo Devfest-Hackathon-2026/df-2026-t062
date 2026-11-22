@@ -221,7 +221,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             <button type="button" onClick={() => void recorder.stop()} className="pill" style={{ pointerEvents: 'auto', border: 0, background: '#D93A2B', color: '#FFFFFF', cursor: 'pointer', boxShadow: '0 8px 24px rgba(217,58,43,0.35)' }}><span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 3, background: '#FFFFFF' }} />止める<span style={{ fontWeight: 500, fontSize: 18, opacity: 0.9 }}>{recorder.elapsed}</span></button>
           </>
         ) : phase === 'idle' || phase === 'done' ? (
-          <button type="button" onClick={() => { void recorder.start(); setTab('') }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
+          <button type="button" onClick={() => { void recorder.start(docId) }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
         ) : null}
       </div>
     </div>

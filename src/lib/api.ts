@@ -157,8 +157,9 @@ export const api = {
   startInspection: (clientId: string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {}),
   inspections: (clientId: string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections`),
   inspection: (id: string) => req<{ inspection: InspectionView }>('GET', `/api/inspections/${id}`),
-  startRecording: (clientId: string, mime: string, deviceRecordingId: string, expiredUploadUrl?: string) =>
-    req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl }),
+  /** documentId: 録音を始めた書類（省けば主な書類） */
+  startRecording: (clientId: string, mime: string, deviceRecordingId: string, expiredUploadUrl?: string, documentId?: string) =>
+    req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl, documentId }),
   completeRecording: (id: string, durationMs: number, bytes: number) =>
     req<{ jobId: string, status: string }>('POST', `/api/recordings/${id}/complete`, { durationMs, bytes }),
   // ---------- 責任者の書類の設定（#102） ----------

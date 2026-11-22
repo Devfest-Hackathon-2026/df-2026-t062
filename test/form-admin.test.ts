@@ -152,7 +152,7 @@ test('版に、印字欄ごとの入る内容の言葉と、録音から書く�
   const v = await version(d.id)
   assert.equal(v.slots.p1_氏名.what, name.label)
   assert.equal(v.slots.p1_氏名.rec, true, '氏名は会話から書ける欄')
-  assert.deepEqual(v.slots.p1_開催場所, { what: '開催場所', rec: false }, '説明書きのない、その様式だけの欄は録音から書かない')
+  assert.deepEqual(v.slots.p1_開催場所, { what: '開催場所', rec: true }, '説明書きのない、その様式だけの欄も録音から書く（#152）')
   assert.deepEqual(v.review, DRAFT.review)
   await call(`/api/office/form-versions/${d.id}`, ADMIN_A, { method: 'DELETE' })
 })

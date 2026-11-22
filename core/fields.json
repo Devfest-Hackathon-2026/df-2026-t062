@@ -616,29 +616,29 @@
     {"key": "admission.enclosedOther", "label": "その他の同封書類", "type": "text", "source": ["event"], "forms": {"adm": "4. □その他（　）"}},
     {"key": "admission.intentionPersonSeePlan", "label": "本人の意向は「同封の居宅サービス計画（1）参照」とする", "type": "bool", "source": ["event"], "forms": {"adm": "3. 本人の意向 □同封の居宅サービス計画（1）参照"}},
     {"key": "admission.intentionFamilySeePlan", "label": "家族の意向は「同封の居宅サービス計画（1）参照」とする", "type": "bool", "source": ["event"], "forms": {"adm": "3. 家族の意向 □同封の居宅サービス計画（1）参照"}},
-    {"key": "outlook.requirements", "label": "在宅生活に必要な要件", "type": "longtext", "source": ["judge"], "forms": {"adm": "5. 在宅生活に必要な要件"}},
-    {"key": "outlook.household", "label": "退院後の世帯状況", "type": "object", "source": ["judge"], "forms": {"adm": "5. 退院後の世帯状況"}, "note": "household.* を初期値にして、変わるかをケアマネに聞く", "fields": [
+    {"key": "outlook.requirements", "label": "在宅生活に必要な要件", "type": "longtext", "source": ["talk", "judge"], "forms": {"adm": "5. 在宅生活に必要な要件"}},
+    {"key": "outlook.household", "label": "退院後の世帯状況", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 退院後の世帯状況"}, "note": "household.* を初期値にして、変わるかをケアマネに聞く", "fields": [
       {"key": "type", "label": "世帯", "type": "enum", "choices": "世帯"},
       {"key": "memberCount", "label": "家族構成員数", "type": "number"},
       {"key": "daytimeAlone", "label": "日中独居", "type": "bool"},
       {"key": "other", "label": "その他の内容", "type": "text", "requires": {"type": ["その他"]}}
     ]},
-    {"key": "outlook.householdConsideration", "label": "世帯に対する配慮", "type": "object", "source": ["judge"], "forms": {"adm": "5. 世帯に対する配慮（不要・必要（　））"}, "fields": [
+    {"key": "outlook.householdConsideration", "label": "世帯に対する配慮", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 世帯に対する配慮（不要・必要（　））"}, "fields": [
       {"key": "needed", "label": "必要", "type": "bool"},
       {"key": "detail", "label": "内容", "type": "text", "requires": {"needed": [true]}}
     ]},
-    {"key": "outlook.caregiver", "label": "退院後の主介護者", "type": "object", "source": ["judge"], "forms": {"adm": "5. 退院後の主介護者（本シート2に同じ・左記以外（氏名・続柄・年齢））"}, "fields": [
+    {"key": "outlook.caregiver", "label": "退院後の主介護者", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 退院後の主介護者（本シート2に同じ・左記以外（氏名・続柄・年齢））"}, "fields": [
       {"key": "sameAsNow", "label": "今の主介護者と同じ", "type": "bool"},
       {"key": "name", "label": "氏名", "type": "text", "requires": {"sameAsNow": [false]}},
       {"key": "relationship", "label": "続柄", "type": "text", "requires": {"sameAsNow": [false]}},
       {"key": "age", "label": "年齢", "type": "number", "requires": {"sameAsNow": [false]}}
     ]},
-    {"key": "outlook.careCapacity", "label": "介護力", "type": "enum", "choices": ["介護力が見込める（十分）", "介護力が見込める（一部）", "介護力は見込めない", "家族や支援者はいない"], "source": ["judge"], "forms": {"adm": "5. 介護力"}},
-    {"key": "outlook.abuseSuspicion", "label": "家族や同居者等による虐待の疑い", "type": "object", "of": "HasDetail", "source": ["judge"], "forms": {"adm": "5. 家族や同居者等による虐待の疑い（なし・あり（　））"}},
-    {"key": "outlook.notes", "label": "今後の在宅生活の展望の特記事項", "type": "longtext", "source": ["judge"], "forms": {"adm": "5. 特記事項"}},
-    {"key": "conference.inHospital", "label": "「院内の多職種カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 院内の多職種カンファレンスへの参加"}},
-    {"key": "conference.preDischarge", "label": "「退院前カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前カンファレンスへの参加"}},
-    {"key": "conference.preDischargeRequest", "label": "退院前カンファレンスへの具体的な要望", "type": "text", "source": ["judge"], "forms": {"adm": "6. ・具体的な要望（　）"}},
-    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}}
+    {"key": "outlook.careCapacity", "label": "介護力", "type": "enum", "choices": ["介護力が見込める（十分）", "介護力が見込める（一部）", "介護力は見込めない", "家族や支援者はいない"], "source": ["talk", "judge"], "forms": {"adm": "5. 介護力"}},
+    {"key": "outlook.abuseSuspicion", "label": "家族や同居者等による虐待の疑い", "type": "object", "of": "HasDetail", "source": ["talk", "judge"], "forms": {"adm": "5. 家族や同居者等による虐待の疑い（なし・あり（　））"}},
+    {"key": "outlook.notes", "label": "今後の在宅生活の展望の特記事項", "type": "longtext", "source": ["talk", "judge"], "forms": {"adm": "5. 特記事項"}},
+    {"key": "conference.inHospital", "label": "「院内の多職種カンファレンス」への参加希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 院内の多職種カンファレンスへの参加"}},
+    {"key": "conference.preDischarge", "label": "「退院前カンファレンス」への参加希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 退院前カンファレンスへの参加"}},
+    {"key": "conference.preDischargeRequest", "label": "退院前カンファレンスへの具体的な要望", "type": "text", "source": ["talk", "judge"], "forms": {"adm": "6. ・具体的な要望（　）"}},
+    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}}
   ]
 }
