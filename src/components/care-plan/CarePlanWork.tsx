@@ -43,9 +43,15 @@ function Modal({ title, onClose, children }: { title: string, onClose: () => voi
   </dialog>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget }: {
+export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, onClick: () => void }) {
+  return <button type="button" className="btn cp-history-trigger" aria-haspopup="dialog" disabled={disabled} onClick={onClick}>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.7-6.4L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></svg>履歴
+  </button>
+}
+
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0 }: {
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
-  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number,
 }) {
   const [plans, setPlans] = useState<CarePlanSummary[]>([])
   const [selected, setSelected] = useState<CarePlanView | null>(null)
@@ -62,6 +68,15 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(busy || childBusy) }, [busy, childBusy, onBusyChange])
   const loadList = () => api.carePlans(clientId).then((r) => { setPlans(r.plans); return r.plans })
+  const openHistory = () => { setHistoryOpen(true); void loadList().catch((e) => setError(message(e))) }
+  useEffect(() => {
+    if (!historyRequest) return
+    let alive = true
+    setHistoryOpen(true)
+    api.carePlans(clientId).then(r => { if (alive) setPlans(r.plans) }).catch(e => { if (alive) setError(message(e)) })
+    return () => { alive = false }
+  }, [historyRequest, clientId])
+
   useEffect(() => {
     let alive = true
     api.carePlans(clientId).then(async (r) => {
@@ -83,9 +98,11 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
     try { const r = await api.carePlan(id); if (request.current === token) { setSelected(r.plan); setDirty(false); setHistoryOpen(false) } }
     catch (e) { setError(message(e)) } finally { if (request.current === token) setBusy(false) }
   }
+  const displayedPlan = plans.find(p => p.id === selected?.id)
   const controls = <header className="cp-header">
       {!embedded && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { if (mayLeave()) onBack() }}>← 書類に戻る</button>}
       {!embedded && <h1>{clientName} さん <small>ケアプラン</small></h1>}
+      {!embedded && selected && <PlanHistoryButton disabled={busy || childBusy} onClick={openHistory} />}
       {!selected && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { setCopyFrom(undefined); setCreating(true) }}>＋ 計画を作る</button>}
     </header>
   return <div className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
@@ -101,6 +118,12 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
           <span>{p.effectiveFrom} 〜 {p.effectiveTo ?? '終了日未設定'}</span>
         </button>)}
       </div>
+      {!plans.length && <p>計画の履歴はありません。</p>}
+      {displayedPlan && <div className="cp-history-footer">
+        <button type="button" className="btn" disabled={busy || childBusy || dirty || displayedPlan.status === 'draft'}
+          title={displayedPlan.status === 'draft' ? '計画を確定すると改定版を作れます' : dirty ? '先に入力内容を保存してください' : undefined}
+          onClick={() => { setCopyFrom(displayedPlan.id); setFrom(displayedPlan.effectiveFrom); setTo(displayedPlan.effectiveTo ?? ''); setHistoryOpen(false); setCreating(true) }}>この計画から改定版を作る</button>
+      </div>}
       {error && <p role="alert" className="cp-error">{error}</p>}
     </Modal>}
     {creating && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
@@ -121,17 +144,15 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       </form>
     </Modal>}
     {selected ? <PlanEditor key={selected.id} initial={selected} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
-      onHistory={() => { setHistoryOpen(true); void loadList().catch((e) => setError(message(e))) }}
-      onUpdated={() => { void loadList().catch((e) => setError(message(e))) }}
-      onCopy={(plan) => { setCopyFrom(plan.id); setFrom(plan.effectiveFrom); setTo(plan.effectiveTo ?? ''); setCreating(true) }} />
+      onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
       : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, onCopy, onHistory, outputTarget }: {
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget }: {
   outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
-  onBusy: (busy: boolean) => void, onUpdated: () => void, onCopy: (plan: CarePlanView) => void, onHistory: () => void,
+  onBusy: (busy: boolean) => void, onUpdated: () => void,
 }) {
   const [plan, setPlan] = useState(initial)
   const [needs, setNeeds] = useState<NeedInput[]>(initial.needs)
@@ -142,7 +163,6 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
   const [needIndex, setNeedIndex] = useState<number | null>(null)
   const [slotIndex, setSlotIndex] = useState<number | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -242,16 +262,6 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
             <strong>第{plan.version}版</strong><span className={`cp-status cp-${plan.status}`}>{statusText(plan.status)}</span>
             <span>{plan.effectiveFrom} 〜 {plan.effectiveTo ?? '終了日未設定'}</span>
           </div>
-          <details className="cp-plan-menu" open={menuOpen} onToggle={(e) => setMenuOpen(e.currentTarget.open)}
-            onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); e.currentTarget.querySelector('summary')?.focus() } }}>
-            <summary>計画メニュー</summary>
-            <div className="cp-menu-items" role="group" aria-label="計画の操作">
-              <button type="button" disabled={busy || !ready} onClick={() => { setMenuOpen(false); onHistory() }}>計画の履歴・切り替え</button>
-              <button type="button" disabled={busy || !ready || dirty || !readOnly}
-                title={!readOnly ? '計画を確定すると改定版を作れます' : undefined}
-                onClick={() => { setMenuOpen(false); onCopy(plan) }}>改定版を作る</button>
-            </div>
-          </details>
         </div>
         <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
           aiLabel="AI原案から" status={saveStatus}

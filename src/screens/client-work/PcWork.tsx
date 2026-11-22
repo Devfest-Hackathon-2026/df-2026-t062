@@ -24,7 +24,7 @@ import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { PetHelper } from '../../components/assistant/PetHelper.tsx'
 import { countText } from '../../components/document/changes.ts'
 import { downloadBlob } from '../../lib/download.ts'
-import { CarePlanWork, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { CarePlanWork, PlanHistoryButton, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -33,6 +33,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const [feeOpen,setFeeOpen]=useState(false)
   const [monthOpen,setMonthOpen]=useState(false)
   const [recordOpen, setRecordOpen] = useState<CareRecordKind>()
+  const [planHistoryRequest, setPlanHistoryRequest] = useState(0)
   const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
   const [planDirty, setPlanDirty] = useState(false)
   const [planBusy, setPlanBusy] = useState(false)
@@ -248,7 +249,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           {(kinds ?? []).filter((k) => !isPlanKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
             <button key={k.key} className={`dtab${!carePlanOpen && k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={!carePlanOpen && k.key === open.key} disabled={planBusy} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
-          {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`dtab${carePlanOpen ? ' dtab-on' : ''}`} role="tab" aria-selected={carePlanOpen} type="button" disabled={planBusy || !state.doc} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
+          {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`dtab${carePlanOpen ? ' dtab-on' : ''}`} role="tab" aria-selected={carePlanOpen} type="button" disabled={planBusy || !state.doc} onClick={async () => { if (await state.flush()) { setNewOpen(false); setPlanHistoryRequest(0); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
+          {carePlanOpen && <PlanHistoryButton disabled={planBusy} onClick={() => setPlanHistoryRequest(n => n + 1)} />}
           <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -268,7 +270,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
       </div>
 
       <div className="pc-work-layout">
-        {carePlanOpen ? <CarePlanWork embedded outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
+        {carePlanOpen ? <CarePlanWork embedded historyRequest={planHistoryRequest} outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
           onDirtyChange={setPlanDirty} onBusyChange={setPlanBusy} onBack={() => { setCarePlanOpen(false); setPlanDirty(false) }} /> : <>
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
