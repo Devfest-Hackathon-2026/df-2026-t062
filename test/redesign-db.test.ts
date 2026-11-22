@@ -70,7 +70,7 @@ test('移行の前と後で、どの書類にも同じ値が見え、利用者�
 test('書類の種類の最初の行: アセスメントが主な書類で、必須の欄は fields.json と同じ', { skip }, async () => {
   const rows = (await db.query('SELECT key, per_client, is_primary, create_from, required, topics, summary_mode FROM form_kinds ORDER BY key')).rows
   // care_plan_1〜3 は #90 で足した全体の種類（第1表だけアセスメントから写す）
-  assert.deepEqual(rows.map((r) => r.key), ['admission', 'assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5'])
+  assert.deepEqual(rows.map((r) => r.key), ['admission', 'assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5', 'care_plan_6'])
   const assess = rows.find((r) => r.key === 'assessment')!
   const adm = rows.find((r) => r.key === 'admission')!
   assert.equal(assess.is_primary, true)

@@ -1,3 +1,5 @@
+import * as months from '../db/care-months.ts'
+import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
 import { careRecordDrafter } from './care-record-ai.ts'
 import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
 import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate } from '../core/care-record.ts'
@@ -392,6 +394,24 @@ export function createApp(deps: ApiDeps) {
     json(c, await assetsOf(await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)))))
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
+
+  app.get('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => json(c, { months: await months.listCareMonths(db,staff.officeId,c.req.param('id')!) })))
+  app.post('/api/clients/:id/care-plan-months/preview', staffRoute('care.work', async (c, staff, db) => {
+    const input=await body(c,MonthPreviewInput)
+    return json(c,await months.previewCareMonth(db,staff.officeId,c.req.param('id')!,input.planId,input.month))
+  }))
+  app.post('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => {
+    const r=await months.createCareMonth(db,staff,c.req.param('id')!,await body(c,MonthCreateInput))
+    return json(c,r,r.created?201:200)
+  }))
+  app.get('/api/care-plan-months/:id', staffRoute('care.work', async(c,staff,db)=>json(c,{month:await months.getCareMonth(db,staff.officeId,c.req.param('id')!)})))
+  app.put('/api/care-plan-months/:id', staffRoute('care.work', async(c,staff,db)=>json(c,{month:await months.saveCareMonth(db,staff,c.req.param('id')!,await body(c,MonthSaveInput))})))
+  app.post('/api/care-plan-months/:id/preview', staffRoute('care.work', async(c,staff,db)=>json(c,await months.previewMonthAction(db,staff.officeId,c.req.param('id')!,await body(c,MonthActionInput)))))
+  app.get('/api/care-plan-months/:id/revisions/:rev', staffRoute('care.work', async(c,staff,db)=>{
+    const rev=z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if(!rev.success)throw new repo.BadRequest('保存版が正しくありません')
+    return json(c,await months.careMonthSaved(db,staff.officeId,c.req.param('id')!,rev.data))
+  }))
 
   app.get('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
     const query = CareRecordQuery.safeParse(c.req.query())
