@@ -142,7 +142,16 @@ after(async () => close())
 
 test('ログインしていないと 401、ほかの事業所の利用者は見えない', { skip }, async () => {
   assert.equal((await call('/api/clients', { token: '' })).status, 401)
+  const before = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
+    [ids.kai],
+  )).rows[0].n
   assert.equal((await call(`/api/clients/${ids.kai}`, { token: OTHER })).status, 404)
+  const after = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
+    [ids.kai],
+  )).rows[0].n
+  assert.equal(after, before)
   const list = (await call('/api/clients', { token: OTHER })).body as { clients: { name: string }[] }
   assert.ok(!list.clients.some((c) => c.name === '甲斐' && false))
   assert.equal(list.clients.length, 4)
