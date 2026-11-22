@@ -156,7 +156,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const firstDirty = documents.some(documentDirty)
   const dirty = structuralDirty || firstDirty || plan.hasUnsavedChanges
   const readOnly = plan.status !== 'draft'
-  useEffect(() => { onDirty(dirty); if (dirty) setNotice('') }, [dirty, onDirty])
+  useEffect(() => { onDirty(dirty); if (dirty) setNotice(current => current === '第1〜3表を保存しました' ? '' : current) }, [dirty, onDirty])
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload', warn)

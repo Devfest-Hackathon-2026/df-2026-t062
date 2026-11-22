@@ -161,7 +161,7 @@ test('ケアプランの種類は行で登録され、第1表だけアセスメ�
   const rows = await all<{ key: string, per_client: string, is_primary: boolean, create_from: string | null, required: unknown[] }>(
     "SELECT key, per_client, is_primary, create_from, required FROM form_kinds WHERE key LIKE 'care_plan\\_%' ORDER BY key",
   )
-  assert.deepEqual(rows.map((r) => r.key), ['care_plan_1', 'care_plan_2', 'care_plan_3'])
+  assert.deepEqual(rows.map((r) => r.key), ['care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7'])
   for (const r of rows) {
     assert.equal(r.per_client, 'many')
     assert.equal(r.is_primary, false)
@@ -170,6 +170,7 @@ test('ケアプランの種類は行で登録され、第1表だけアセスメ�
   assert.equal(rows[0].create_from, 'assessment')
   assert.equal(rows[1].create_from, null)
   assert.equal(rows[2].create_from, null)
+  assert.equal(rows[3].create_from, 'assessment')
 
   // ケアプランの書類は、計画版に1つずつ結び付く
   const plan = await makePlan()

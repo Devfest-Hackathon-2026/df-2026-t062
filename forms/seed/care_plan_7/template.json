@@ -1,0 +1,609 @@
+{
+  "basePdf": "base.pdf",
+  "schemas": [
+    [
+      {
+        "name": "利用者名",
+        "type": "text",
+        "position": {
+          "x": 66,
+          "y": 15
+        },
+        "width": 57,
+        "height": 4.8,
+        "fontSize": 7,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 7,
+          "max": 7,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "計算状態",
+        "type": "text",
+        "position": {
+          "x": 125,
+          "y": 15
+        },
+        "width": 165,
+        "height": 4.8,
+        "fontSize": 7,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 7,
+          "max": 7,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_y",
+        "type": "text",
+        "position": {
+          "x": 258,
+          "y": 8
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_m",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 8
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成日_d",
+        "type": "text",
+        "position": {
+          "x": 280.5,
+          "y": 8
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "事業所",
+        "type": "text",
+        "position": {
+          "x": 5.5,
+          "y": 30.3
+        },
+        "width": 16.4,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "内容",
+        "type": "text",
+        "position": {
+          "x": 34.5,
+          "y": 30.3
+        },
+        "width": 16.3,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "コード",
+        "type": "text",
+        "position": {
+          "x": 51.6,
+          "y": 30.3
+        },
+        "width": 15.5,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "単位",
+        "type": "text",
+        "position": {
+          "x": 90.5,
+          "y": 30.3
+        },
+        "width": 8,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "回数",
+        "type": "text",
+        "position": {
+          "x": 114.2,
+          "y": 30.3
+        },
+        "width": 11.5,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "サービス単位",
+        "type": "text",
+        "position": {
+          "x": 126.8,
+          "y": 30.3
+        },
+        "width": 11.6,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "管理単位",
+        "type": "text",
+        "position": {
+          "x": 139,
+          "y": 30.3
+        },
+        "width": 11.3,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "限度超過",
+        "type": "text",
+        "position": {
+          "x": 175.5,
+          "y": 30.3
+        },
+        "width": 11.3,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "限度内",
+        "type": "text",
+        "position": {
+          "x": 187.7,
+          "y": 30.3
+        },
+        "width": 11.5,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "単価",
+        "type": "text",
+        "position": {
+          "x": 200.1,
+          "y": 30.3
+        },
+        "width": 12,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "総額",
+        "type": "text",
+        "position": {
+          "x": 210.4,
+          "y": 30.3
+        },
+        "width": 13.8,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "給付率",
+        "type": "text",
+        "position": {
+          "x": 225.5,
+          "y": 30.3
+        },
+        "width": 8.2,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "給付額",
+        "type": "text",
+        "position": {
+          "x": 234.8,
+          "y": 30.3
+        },
+        "width": 12,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "負担額",
+        "type": "text",
+        "position": {
+          "x": 262.6,
+          "y": 30.3
+        },
+        "width": 14.5,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "全額負担",
+        "type": "text",
+        "position": {
+          "x": 278.4,
+          "y": 30.3
+        },
+        "width": 11.8,
+        "height": 4.7,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_サービス単位",
+        "type": "text",
+        "position": {
+          "x": 126.8,
+          "y": 121
+        },
+        "width": 11.6,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_管理単位",
+        "type": "text",
+        "position": {
+          "x": 139,
+          "y": 121
+        },
+        "width": 11.3,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_限度超過",
+        "type": "text",
+        "position": {
+          "x": 175.5,
+          "y": 121
+        },
+        "width": 11.3,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_限度内",
+        "type": "text",
+        "position": {
+          "x": 187.7,
+          "y": 121
+        },
+        "width": 11.5,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_総額",
+        "type": "text",
+        "position": {
+          "x": 210.4,
+          "y": 121
+        },
+        "width": 13.8,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_給付額",
+        "type": "text",
+        "position": {
+          "x": 234.8,
+          "y": 121
+        },
+        "width": 12,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_負担額",
+        "type": "text",
+        "position": {
+          "x": 262.6,
+          "y": 121
+        },
+        "width": 14.5,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "合計_全額負担",
+        "type": "text",
+        "position": {
+          "x": 278.4,
+          "y": 121
+        },
+        "width": 11.8,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "区分限度",
+        "type": "text",
+        "position": {
+          "x": 68,
+          "y": 121
+        },
+        "width": 12,
+        "height": 5,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      }
+    ],
+    [
+      {
+        "name": "算定の明細",
+        "type": "text",
+        "position": {
+          "x": 12,
+          "y": 12
+        },
+        "width": 186,
+        "height": 272,
+        "fontSize": 8,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      }
+    ]
+  ]
+}
