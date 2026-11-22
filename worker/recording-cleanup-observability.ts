@@ -13,6 +13,8 @@ export interface CleanupSummaryLog {
   operation: string
   result: CleanupResult
   duration_ms?: number
+  metadata_count?: number
+  hold_count?: number
   candidate_count?: number
   success_count?: number
   failure_count?: number
@@ -47,7 +49,7 @@ const ALLOWED_ERROR_CODES = new Set([
   'invalid_request', 'generation_mismatch', 'object_held', 'object_missing',
   'upload_cancel_failed', 'database_error', 'unknown',
 ])
-const ALLOWED_OPERATIONS = new Set(['readiness', 'cleanup', 'delete', 'check', 'verify'])
+const ALLOWED_OPERATIONS = new Set(['readiness', 'metadata_sync', 'cleanup', 'delete', 'check', 'verify'])
 const ALLOWED_MISMATCH_TYPES = new Set(['db_gcs_hold_state', 'gcs_hold_verification_failed'])
 
 export function safeErrorCode(code: string | undefined): string {
@@ -60,6 +62,8 @@ export function writeCleanupLog(payload: CleanupSummaryLog) {
     operation: ALLOWED_OPERATIONS.has(payload.operation) ? payload.operation : 'cleanup',
     result: payload.result,
     ...(payload.duration_ms === undefined ? {} : { duration_ms: payload.duration_ms }),
+    ...(payload.metadata_count === undefined ? {} : { metadata_count: payload.metadata_count }),
+    ...(payload.hold_count === undefined ? {} : { hold_count: payload.hold_count }),
     ...(payload.candidate_count === undefined ? {} : { candidate_count: payload.candidate_count }),
     ...(payload.success_count === undefined ? {} : { success_count: payload.success_count }),
     ...(payload.failure_count === undefined ? {} : { failure_count: payload.failure_count }),
