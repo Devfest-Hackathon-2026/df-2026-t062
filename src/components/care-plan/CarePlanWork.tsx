@@ -49,9 +49,9 @@ export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, o
   </button>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0 }: {
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true }: {
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
-  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean,
 }) {
   const [plans, setPlans] = useState<CarePlanSummary[]>([])
   const [selected, setSelected] = useState<CarePlanView | null>(null)
@@ -72,7 +72,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   useEffect(() => {
     if (!historyRequest) return
     let alive = true
-    setHistoryOpen(true)
+    setHistoryOpen(true); setCreating(false)
     api.carePlans(clientId).then(r => { if (alive) setPlans(r.plans) }).catch(e => { if (alive) setError(message(e)) })
     return () => { alive = false }
   }, [historyRequest, clientId])
@@ -109,7 +109,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
 
     {(!embedded || !selected) && controls}
     {error && <div role="alert" className="cp-error">{error}</div>}
-    {historyOpen && <Modal title="計画の履歴" onClose={() => setHistoryOpen(false)}>
+    {historyOpen && active && <Modal title="計画の履歴" onClose={() => setHistoryOpen(false)}>
       <div className="cp-history-list">
         {plans.map((p) => <button type="button" className="cp-history-item" key={p.id}
           aria-current={p.id === selected?.id ? 'true' : undefined} disabled={busy || childBusy}
@@ -126,7 +126,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
       </div>}
       {error && <p role="alert" className="cp-error">{error}</p>}
     </Modal>}
-    {creating && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
+    {creating && active && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
       <form onSubmit={async (e) => {
         e.preventDefault()
         if (!mayLeave()) return

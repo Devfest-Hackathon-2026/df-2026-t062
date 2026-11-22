@@ -12,7 +12,7 @@ import { useDocument } from '../document/useDocument.ts'
 import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import './CareRecordWork.css'
 
-export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onBack }: { clientId: string, clientName: string, kind?: CareRecordKind, onBack: () => void }) {
+export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onBack, onDirtyChange, onBusyChange }: { clientId: string, clientName: string, kind?: CareRecordKind, onBack: () => void, onDirtyChange?: (v: boolean) => void, onBusyChange?: (v: boolean) => void }) {
   const config = careRecordConfig[kind]
   const [id, setId] = useState<string>()
   const [records, setRecords] = useState<CareRecordSummary[]>([])
@@ -30,6 +30,8 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
   const state = useDocument(id)
   const ready = !!id && state.doc?.id === id
   const dirty = ready && (state.hasLocalEdits || !sameValue(state.current, state.saved))
+  useEffect(() => { onDirtyChange?.(!!dirty) }, [dirty, onDirtyChange])
+  useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
   const values = past?.values ?? state.current
   const text = (key: string) => typeof values[key] === 'string' ? values[key] as string : ''
   const editable = ready && !past && !busy
@@ -87,7 +89,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
     downloadBlob(await api.pdf(id, past?.rev), config.title + '_' + clientName + '.pdf')
   })
   return <main className="care-record-work">
-    <header className="care-record-header"><button className="btn" type="button" disabled={busy} onClick={() => void run(async () => { if (await preserve()) onBack() })}>書類に戻る</button><h1>{clientName} さんの{config.short}</h1><button type="button" className="savebtn" disabled={busy} onClick={create}>＋ {config.short}を追加</button></header>
+    <header className="care-record-header"><button className="btn" type="button" disabled={busy} onClick={() => void run(async () => { if (await preserve()) onBack() })}>ケアプランに戻る</button><h1>{clientName} さんの{config.short}</h1><button type="button" className="savebtn" disabled={busy} onClick={create}>＋ {config.short}を追加</button></header>
     <div className="care-record-columns">
       <aside className="care-record-list" aria-label={config.short + 'の記録一覧'}>
         <label>記録を検索<input type="search" value={filters.q} onChange={e => setFilters(f => ({ ...f, q: e.target.value, offset: 0 }))} /></label>

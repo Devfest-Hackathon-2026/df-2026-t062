@@ -1,10 +1,7 @@
-import { test, expect, headers } from './support/fixtures.ts'
+import { test, expect, headers, openCareDocument } from './support/fixtures.ts'
 
 test('第5表: 追加→保存→再表示→履歴→PDF。保存失敗でも本文を失わない', async ({ page, ui, clientId }, info) => {
-  if (ui === 'pad') {
-    await page.getByRole('button', { name: 'アセスメント', exact: true }).click()
-  } else await page.getByRole('button', { name: '＋ 書類を作る', exact: true }).click()
-  await page.getByRole('menuitem', { name: /居宅介護支援経過 第5表/ }).click()
+  await openCareDocument(page, ui, 5)
   await expect(page.getByRole('heading', { name: /さんの支援経過/ })).toBeVisible()
   await page.getByRole('button', { name: '＋ 支援経過を追加', exact: true }).click()
   await expect(page.getByRole('img', { name: /第5表.*原紙/ }).first()).toBeVisible()
@@ -81,8 +78,8 @@ test('第5表: 追加→保存→再表示→履歴→PDF。保存失敗でも�
   await page.getByLabel('修正履歴').selectOption('')
   await page.getByRole('button', { name: '用紙に戻る', exact: true }).click()
   await expect(page.locator('.care-paper-field').filter({hasText:'確定後の架空の追記'}).first()).toBeVisible()
-  await page.getByRole('button', { name: '書類に戻る', exact: true }).click()
-  await expect(page.getByRole('tablist', { name: '書類' }).or(page.getByRole('button', { name: 'アセスメント', exact: true }))).toBeVisible()
+  await page.getByRole('button', { name: 'ケアプランに戻る', exact: true }).click()
+  await expect(page.getByRole('tablist', { name: 'ケアプランの書類', exact: true })).toBeVisible()
 })
 
 test('第4表: 出席者・検討内容・結論・残課題を分けて保存し、過去版を再現する', async ({ page, ui, clientId }, info) => {
@@ -92,9 +89,7 @@ test('第4表: 出席者・検討内容・結論・残課題を分けて保存�
   const saved = await page.request.post(`/api/care-plans/${plan.id}/save`, {headers,data:{baseVersion:plan.lockVersion}})
   expect(saved.ok()).toBeTruthy()
   expect((await page.request.post(`/api/care-plans/${plan.id}/confirm`, {headers,data:{baseVersion:(await saved.json()).plan.lockVersion}})).ok()).toBeTruthy()
-  if (ui === 'pad') await page.getByRole('button', { name: 'アセスメント', exact: true }).click()
-  else await page.getByRole('button', { name: '＋ 書類を作る', exact: true }).click()
-  await page.getByRole('menuitem', { name: /サービス担当者会議の要点 第4表/ }).click()
+  await openCareDocument(page, ui, 4)
   await page.getByRole('button', { name: '＋ 会議記録を追加', exact: true }).click()
   await expect(page.getByRole('img', { name: /第4表.*原紙/ }).first()).toBeVisible()
   await page.getByRole('button', { name: '開催場所（入力・修正）', exact: true }).click()

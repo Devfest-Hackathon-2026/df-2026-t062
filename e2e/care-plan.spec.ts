@@ -152,7 +152,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   let assessmentTop = 0
   if (ui === 'pc') {
     assessmentTop = (await page.locator('.sheet-toolbar').boundingBox())!.y
-    const entry = page.getByRole('tab', { name: 'ケアプランを作成', exact: true })
+    const entry = page.getByRole('tab', { name: 'ケアプラン', exact: true })
     expect(await entry.evaluate((e) => e.closest('[role="tablist"]') !== null)).toBe(true)
     const entryBox = (await entry.boundingBox())!
     expect(entryBox.x).toBeLessThan(viewport.width * .7)
@@ -162,7 +162,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   expect(initialCanvas.y).toBeLessThan(ui === 'pad' ? viewport.height * .45 : viewport.height - 220)
   await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
   // CIのLinuxでは上部の描画寸法に2px差が出る。そこまでを許容し、大きな配置ずれは検出する。
-  if (ui === 'pc') expect(Math.abs((await page.locator('.cp-context-bar').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
+  if (ui === 'pc') expect(Math.abs((await page.locator('.cp-area-tabs').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
   const metrics = { browser: browser.version(), project: info.project.name, viewport, displays: [] as unknown[] }
   for (const number of [1, 2, 3]) {
     await table(page, number)
@@ -239,7 +239,7 @@ test('左側は用紙の選択だけにし、確定は保存の横から明示�
   await expect(historyButton).toBeVisible()
   await expect(page.locator('.cp-canvas').getByRole('button', { name: '計画の履歴', exact: true })).toHaveCount(0)
   if (ui === 'pc') {
-    const createBox = (await page.getByRole('tab', { name: 'ケアプランを作成', exact: true }).boundingBox())!
+    const createBox = (await page.getByRole('tab', { name: 'ケアプラン', exact: true }).boundingBox())!
     const historyBox = (await historyButton.boundingBox())!
     expect(historyBox.x).toBeGreaterThanOrEqual(createBox.x + createBox.width)
     expect(Math.abs(historyBox.y + historyBox.height / 2 - createBox.y - createBox.height / 2)).toBeLessThan(2)

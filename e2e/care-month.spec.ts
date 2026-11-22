@@ -1,4 +1,4 @@
-import { test,expect,headers,createPlan,addNeed,addSchedule,getPlan } from './support/fixtures.ts'
+import { test,expect,headers,createPlan,addNeed,addSchedule,getPlan,openCareDocument } from './support/fixtures.ts'
 
 test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復旧→履歴/PDF→前月コピー',async({page,ui,clientId},info)=>{
  const clientResponse=await page.request.get('/api/clients/'+clientId,{headers})
@@ -18,9 +18,7 @@ test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復�
  await expect(page.getByRole('dialog',{name:'計画を確定しますか？',exact:true})).not.toBeVisible()
  expect((await getPlan(page,clientId)).status).toBe('confirmed')
  await page.reload()
- if(ui==='pad')await page.getByRole('button',{name:'アセスメント',exact:true}).click()
- else await page.getByRole('button',{name:'＋ 書類を作る',exact:true}).click()
- await page.getByRole('menuitem',{name:/サービス利用票 第6表/}).click()
+ await openCareDocument(page,ui,6)
  await expect(page.getByRole('heading',{name:/さんのサービス利用票/})).toBeVisible()
  await page.getByLabel('対象年月',{exact:true}).fill('2026-04')
  await page.getByRole('button',{name:'週間計画から予定を確認',exact:true}).click()
@@ -102,8 +100,8 @@ test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復�
  await diff.getByRole('button',{name:'キャンセル',exact:true}).click()
  await page.screenshot({path:info.outputPath('care-month.png'),fullPage:true})
  await page.getByRole('button',{name:'用紙に戻る',exact:true}).click()
- await page.getByRole('button',{name:'書類に戻る',exact:true}).click()
- await expect(page.getByRole('tablist',{name:'書類'}).or(page.getByRole('button',{name:'アセスメント',exact:true}))).toBeVisible()
+ await page.getByRole('button',{name:'ケアプランに戻る',exact:true}).click()
+ await expect(page.getByRole('tablist',{name:'ケアプランの書類',exact:true})).toBeVisible()
  for(const [id,address] of sourceAddresses){
   const r=await page.request.get('/api/documents/'+id,{headers}),document=(await r.json()).document
   expect(document.fields['person.address'].value).toBe(address)
