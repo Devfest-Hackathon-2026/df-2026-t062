@@ -38,7 +38,7 @@ test('revision increments for manual and AI updates; stale, wrong-kind and skipp
   assert.ok(validDiagramUpdate('housing.floorPlan', { ...value, revision: 2 }, value))
   assert.equal(validDiagramUpdate('housing.floorPlan', value, { ...value, data: { items: [] } }), false)
 })
-test('rooms are stably partitioned behind objects in every renderer and SVG labels are escaped', () => {
+test('rooms render behind objects; floor-plan labels are hidden during editing and escaped in previews', () => {
   const doc = blank()
   doc.house.items = [item('bed'), item('r1', 'room'), { ...item('evil'), label: '<script>alert("x")</script>' }, item('r2', 'room')]
   assert.deepEqual(roomsBehind(doc.house.items).map((i) => i.id), ['r1', 'r2', 'bed', 'evil'])
@@ -46,7 +46,8 @@ test('rooms are stably partitioned behind objects in every renderer and SVG labe
     const svg = diagramSvg(doc, 'house', { editing })
     assert.ok(svg.indexOf('data-object-id="r2"') < svg.indexOf('data-object-id="bed"'))
     assert.ok(!svg.includes('<script>'))
-    assert.ok(svg.includes('&lt;script&gt;'))
+    if (editing) assert.doesNotMatch(svg, /<text/)
+    else assert.ok(svg.includes('&lt;script&gt;'))
   }
   assert.deepEqual(doc.house.items.map((i) => i.id), ['bed', 'r1', 'evil', 'r2'])
 })
@@ -114,6 +115,94 @@ test('screen coordinates handle zoom, letterboxing and outside drops; rotated sh
   assert.equal(drawingPoint({ x: 0, y: 0 }, { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0 }), null)
   assert.ok(contains({ ...item('rotated'), rotation: 90 }, { x: 0, y: 90 }))
   assert.equal(contains({ ...item('rotated'), rotation: 90 }, { x: 100, y: 50 }), false)
+})
+
+test('floor-plan corner resize keeps the opposite corner fixed and clamps each axis to the canvas', async () => {
+  const { resizeItem } = await import('../core/diagram/interaction.ts')
+  const box = item('bed')
+  assert.deepEqual(resizeItem(box, 'nw', { x: -100, y: 15 }), { x: 0, y: 55, width: 150, height: 55 })
+  assert.deepEqual(resizeItem(box, 'ne', { x: 20, y: -10 }), { x: 30, y: 30, width: 140, height: 80 })
+  assert.deepEqual(resizeItem(box, 'se', { x: -200, y: 15 }), { x: 30, y: 40, width: 20, height: 85 })
+  assert.deepEqual(resizeItem(box, 'sw', { x: 10, y: 1000 }), { x: 40, y: 40, width: 110, height: 520 })
+  const rotated = resizeItem({ ...box, x: 150, rotation: 90 }, 'nw', { x: 12, y: -20 })
+  for (const [key, value] of Object.entries({ x: 162, y: 20, width: 140, height: 82 })) {
+    assert.ok(Math.abs(rotated[key as keyof typeof rotated] - value) < 1e-8, key)
+  }
+  const doc = blank()
+  doc.house.items.push(box)
+  assert.equal((diagramSvg(doc, 'house', { editing: true, selected: box.id }).match(/data-resize-corner=/g) ?? []).length, 4)
+  assert.doesNotMatch(diagramSvg(doc, 'house'), /data-resize-corner=/)
+})
+
+test('drawn walls snap to 45-degree increments and stay inside the canvas', async () => {
+  const { contains, moveHouseItem, rotateHouseItem, lineGeometry } = await import('../core/diagram/interaction.ts')
+  const doc = blank()
+  const start = { x: 0, y: 0 }
+  const { geometry, end } = lineGeometry(start, { x: 820, y: 560 })
+  const wall: Item = { id: 'diagonal', kind: 'wall', label: '壁', ...geometry, wallLine: true }
+  assert.equal(wall.rotation, 45)
+  assert.ok(Math.abs(end.x - 560) < 1e-8 && Math.abs(end.y - 560) < 1e-8)
+  for (const [x, y, rotation] of [[80, 20, 0], [70, 60, 45], [20, 80, 90], [-60, 70, 135], [-80, 20, 180], [-70, -60, -135], [-20, -80, -90], [60, -70, -45]]) {
+    assert.equal(lineGeometry({ x: 200, y: 200 }, { x: 200 + x, y: 200 + y }).geometry.rotation, rotation)
+  }
+  const rail: Item = { id: 'drawn-rail', kind: 'rail', label: '手すり', ...lineGeometry({ x: 0, y: 100 }, { x: 820, y: 90 }).geometry, railLine: true }
+  doc.house.items.push(wall, rail, item('legacy-wall', 'wall'), item('legacy-rail', 'rail'))
+  assert.ok(validValue('housing.floorPlan', nextDiagram('house', doc, 0)))
+  assert.ok(contains(wall, { x: 280, y: 280 }))
+  assert.equal(contains(wall, { x: 280, y: 310 }), false)
+  const moved = moveHouseItem(wall, { x: 150, y: 150 })
+  assert.ok(Math.abs(moved.x - 150) < 1e-8 && Math.abs(moved.y) < 1e-8)
+  assert.match(diagramSvg(doc, 'house'), /data-object-id="diagonal"[^>]*><line/)
+  assert.match(diagramSvg(doc, 'house'), /data-object-id="legacy-wall"[^>]*><rect/)
+  assert.match(diagramSvg(doc, 'house'), /data-object-id="drawn-rail"[^>]*><line/)
+  assert.match(diagramSvg(doc, 'house'), /data-object-id="legacy-rail"[^>]*><g/)
+  assert.doesNotMatch(diagramSvg(doc, 'house', { editing: true, selected: rail.id }), /data-resize-corner=/)
+  assert.ok(contains(rail, { x: 410, y: 100 }))
+  assert.equal(moveHouseItem(rail, { x: 20, y: 30 }).x, 0)
+  const rotated = rotateHouseItem(item('bed'))!
+  assert.equal(rotated.rotation, 90)
+  assert.ok(Math.abs(rotated.x - 125) < 1e-8 && Math.abs(rotated.y - 15) < 1e-8)
+})
+
+test('resizing a drawn line moves only the grabbed endpoint and snaps to 45 degrees', async () => {
+  const { lineEnd, resizeLine } = await import('../core/diagram/interaction.ts')
+  const rail: Item = { ...item('rail', 'rail'), x: 100, y: 100, width: 100, railLine: true }
+  const lengthened = resizeLine(rail, 'end', { x: 46, y: 32 })!
+  assert.equal(lengthened.rotation, 0)
+  assert.deepEqual({ x: lengthened.x, y: lengthened.y }, { x: 100, y: 100 })
+  assert.deepEqual(lineEnd(lengthened), { x: 246, y: 100 })
+  const angled = resizeLine(rail, 'start', { x: 30, y: 66 })!
+  const fixed = lineEnd(angled)
+  assert.ok(Math.abs(fixed.x - 200) < 1e-8 && Math.abs(fixed.y - 100) < 1e-8)
+  assert.equal(angled.rotation % 45, 0)
+  assert.equal(resizeLine(rail, 'end', { x: -100, y: 0 }), undefined)
+  const doc = blank()
+  doc.house.items.push(rail)
+  const handles = diagramSvg(doc, 'house', { editing: true, selected: rail.id })
+  assert.match(handles, /data-line-endpoint="start"/)
+  assert.match(handles, /data-line-endpoint="end"/)
+  assert.doesNotMatch(diagramSvg(doc, 'house'), /data-line-endpoint=/)
+})
+
+test('floor-plan steps render as fixed-size triangular markers without resize handles', () => {
+  const doc = blank()
+  doc.house.items.push({ ...item('step', 'step'), label: '段差', stepHeightCm: 15 })
+  const svg = diagramSvg(doc, 'house', { editing: true, selected: 'step' })
+  assert.match(svg, /<polygon points="60,17 78,53 42,53"/)
+  assert.doesNotMatch(svg, /段差|data-resize-corner/)
+})
+
+test('doorways, toilets and bathtubs are valid floor-plan items with distinct symbols', () => {
+  const doc = blank()
+  doc.house.items.push(item('door', 'door'), item('toilet', 'toilet'), item('bath', 'bathtub'))
+  assert.ok(validValue('housing.floorPlan', nextDiagram('house', doc, 0)))
+  const svg = diagramSvg(doc, 'house', { editing: true })
+  assert.match(svg, /data-object-id="door"[^>]*><path/)
+  assert.match(svg, /data-object-id="toilet"[^>]*><g[^>]*>\s*<ellipse/)
+  assert.match(svg, /data-object-id="bath"[^>]*><g[^>]*>\s*<rect/)
+  assert.doesNotMatch(svg, /<text/)
+  doc.body.items.push(item('body-toilet', 'toilet'))
+  assert.equal(validValue('health.bodyMap', { version: 1, kind: 'body', revision: 1, data: doc.body }), false)
 })
 
 test('saved diagram values generate a PDF with the normal export pipeline; empty slots remain printable', async () => {

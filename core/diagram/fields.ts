@@ -1,6 +1,6 @@
 import { bodyPlacement, tapPosition } from './body.ts'
 import { z } from 'zod'
-import { blank, schema, type Doc, type Tab } from './model.ts'
+import { blank, housePaletteKinds, schema, type Doc, type Tab } from './model.ts'
 
 export const diagramChatFields = ['family.genogram', 'health.bodyMap'] as const
 export type DiagramChatField = typeof diagramChatFields[number]
@@ -25,7 +25,7 @@ export const diagramSchema = z.discriminatedUnion('kind', [
     const wrong = placement ? Math.abs(item.x - placement.x) > .01 || Math.abs(item.y - placement.y) > .01 || item.width !== placement.width || item.height !== placement.height || item.range !== placement.range : item.anatomy.region !== 'custom' || item.width !== 32 || item.height !== 52 || !tapPosition(item.anatomy.view, item.x + 16, item.y + 22)
     if (wrong) ctx.addIssue({ code: 'custom', message: '身体の部位または指定位置が不正です' })
   }
-  if (value.kind === 'house' && value.data.items.some((item) => !['room', 'wall', 'bed', 'rail', 'step', 'wheelchair', 'furniture', 'note'].includes(item.kind))) {
+  if (value.kind === 'house' && value.data.items.some((item) => item.kind !== 'note' && !housePaletteKinds.includes(item.kind))) {
     ctx.addIssue({ code: 'custom', message: '家屋に使えない図形があります' })
   }
   if (value.kind === 'body' && value.data.items.some((item) => !['disability', 'loss', 'pressure', 'pain', 'paralysis', 'contracture', 'note'].includes(item.kind))) {
