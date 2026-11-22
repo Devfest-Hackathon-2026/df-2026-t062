@@ -1,4 +1,6 @@
-import { CareRecordCreate, CareRecordQuery } from '../core/care-record.ts'
+import { careRecordDrafter } from './care-record-ai.ts'
+import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate } from '../core/care-record.ts'
 import { createCareRecord, listCareRecords, careRecordRevision } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
@@ -399,6 +401,17 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
     const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
     return json(c, record, record.created ? 201 : 200)
+  }))
+  app.get('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
+  app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CareRecordDraftCreate)
+    const model = deps.chat ? await deps.chat() : fakeModel
+    return json(c, { draft: await createCareRecordDraft(db, staff, c.req.param('id')!, input, careRecordDrafter(model)) }, 201)
+  }))
+  app.post('/api/care-records/:id/ai-drafts/:draft/apply', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const draft = await applyCareRecordDraft(db, staff, id, c.req.param('draft')!)
+    return json(c, { draft, document: await repo.getDocument(db, staff.officeId, id) })
   }))
   app.get('/api/care-records/:id/revisions/:rev', staffRoute('care.work', async (c, staff, db) => {
     const rev = z.coerce.number().int().positive().safeParse(c.req.param('rev'))

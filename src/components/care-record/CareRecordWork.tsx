@@ -1,3 +1,4 @@
+import { CareRecordDraftPanel } from './CareRecordDraftPanel.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { CareRecordSummary, CareRecordRevision } from '../../../core/care-record.ts'
 import { sameValue } from '../../../core/apply-batch.ts'
@@ -103,6 +104,7 @@ export function CareRecordWork({ clientId, clientName, onBack }: { clientId: str
             <label>記録内容<textarea aria-label="記録内容" value={text('progress.content')} onChange={e => state.setValue('progress.content', e.target.value || null)} rows={17} maxLength={100000} /></label>
             <label>記載者<input value={text('office.careManagerName')} onChange={e => state.setValue('office.careManagerName', e.target.value || null)} /></label>
           </fieldset>
+          {!past && id && <CareRecordDraftPanel key={id} documentId={id} beforeAdopt={state.flush} onApplied={async () => { await state.reload(); setReload(n => n + 1) }} />}
         </>}
       </section>
     </div>

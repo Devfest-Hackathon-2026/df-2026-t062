@@ -22,7 +22,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       (office_id,client_id,document_id,created_by,file_name,mime,sha256,bytes,status,result)
       VALUES ($1,$2,$3,$4,'架空.png','image/png',$5,10,'review',$6) RETURNING id`,
     [staff.officeId, clients.sato, document, staff.id, 'a'.repeat(64), JSON.stringify({ candidates: [] })])).rows[0].id
-    assert.deepEqual(await migrate(db), ['0009_document_input_form_version.sql', '0010_support_progress.sql', '0011_care_record_creations.sql'])
+    assert.deepEqual(await migrate(db), ['0009_document_input_form_version.sql', '0010_support_progress.sql', '0011_care_record_creations.sql', '0012_care_record_drafts.sql'])
     const row = (await db.query('SELECT * FROM document_inputs WHERE id=$1', [id])).rows[0]
     assert.equal(row.template_version_id, null)
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')

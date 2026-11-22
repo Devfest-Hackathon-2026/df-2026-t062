@@ -11,3 +11,12 @@ export interface CareRecordSummary {
   revision: number; updatedAt: string
 }
 export interface CareRecordRevision { rev: number; savedAt: string; formVersionId: string; values: Record<string, unknown> }
+
+export interface CareRecordProposal { key: 'progress.content' | 'progress.category'; label: string; before: unknown; after: string }
+export interface CareRecordSources { capturedAt: string; instructions: string; documents: { id: string, documentId: string, kind: string, rev: number, savedAt: string, formVersionId: string, values: Record<string, unknown> }[]; recordings: { id: string, recordedAt: string, utterances: unknown[] }[] }
+export type CareRecordDrafter = (input: { source: CareRecordSources, current: Record<string, unknown>, form: import('./form.ts').FormDef }) => Promise<{ guidance: string, proposals: CareRecordProposal[] }>
+export interface CareRecordDraftView {
+  id: string; status: 'generating' | 'ready' | 'failed'; guidance: string; proposals: CareRecordProposal[]; errorCode: string | null;
+  capturedAt: string; documentSources: { id: string, documentId: string, rev: number, savedAt: string }[]; recordingSources: { id: string, recordedAt: string }[]; appliedAt: string | null
+}
+export const CareRecordDraftCreate = z.object({ requestId: z.uuid(), instructions: z.string().trim().max(4000).default('') }).strict()

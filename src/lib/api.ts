@@ -1,4 +1,4 @@
-import type { CareRecordKind, CareRecordSummary, CareRecordRevision } from '../../core/care-record.ts'
+import type { CareRecordKind, CareRecordSummary, CareRecordRevision, CareRecordDraftView } from '../../core/care-record.ts'
 import type { DiagramDraft } from '../../api/chat.ts'
 import type { DiagramChatField } from '../../core/diagram/fields.ts'
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
@@ -132,6 +132,9 @@ export const api = {
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
   careRecords: (clientId: string, query: { q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
   createCareRecord: (clientId: string, kind: CareRecordKind, requestId: string) => req<{ id: string, created: boolean }>('POST', `/api/clients/${clientId}/care-records`, { kind, requestId }),
+  careRecordDrafts: (id: string) => req<{ drafts: CareRecordDraftView[] }>('GET', `/api/care-records/${id}/ai-drafts`),
+  createCareRecordDraft: (id: string, requestId: string, instructions: string) => req<{ draft: CareRecordDraftView }>('POST', `/api/care-records/${id}/ai-drafts`, { requestId, instructions }),
+  applyCareRecordDraft: (id: string, draftId: string) => req<{ draft: CareRecordDraftView, document: DocumentView }>('POST', `/api/care-records/${id}/ai-drafts/${draftId}/apply`, {}),
   careRecordRevision: (id: string, rev: number) => req<{ revision: CareRecordRevision }>('GET', `/api/care-records/${id}/revisions/${rev}`),
   document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),

@@ -1,3 +1,4 @@
+import { fakeModel } from '../../api/chat.ts'
 // E2E専用: 実API・独立したDBスキーマ・一時ストレージを起動する。本番依存は接続しない。
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
@@ -50,6 +51,12 @@ try {
   }
   api = createApiServer({
     db: async () => db, verifier: () => new DevVerifier(), storage: () => storage,
+    // E2E-only scripted record model. Production uses the configured existing Gemini adapter.
+    chat: async () => async req => {
+      if (!req.system.includes('居宅介護支援経過 第5表')) return fakeModel(req)
+      if (req.contents.some(c => c.parts.some(p => p.functionCall?.name === 'propose_edit'))) return [{ text: '架空のテスト用候補です。日時は確認してください。' }]
+      return [{ functionCall: { name: 'propose_edit', args: { key: 'progress.content', value: 'AIによる架空の下書き。未決定事項は次回確認する。' } } }]
+    },
     carePlanAi: async () => async () => ({
       plan1: { 'plan.overallPolicy': '架空の方針：自宅で安全に暮らす' },
       needs: [{ need: '架空の入浴支援', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴介助', kind: '訪問介護' }] }] }],
