@@ -64,10 +64,10 @@ run "private_service_with_scoped_deployer" {
   command = plan
 
   variables {
-    project_id                 = "mock-project"
-    github_repository_id       = "1447301909"
-    github_repository_owner_id = "234936919"
-    app_origins                = []
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
     recording_cleanup_alerts_enabled    = true
     monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
@@ -270,8 +270,8 @@ run "private_service_with_scoped_deployer" {
       google_logging_metric.recording_cleanup_final_failure.name == "recording_cleanup_final_failure_count" &&
       google_logging_metric.recording_cleanup_failure_rate_breach.name == "recording_cleanup_failure_rate_breach_count" &&
       google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
-      length(google_monitoring_alert_policy.recording_cleanup_overdue[0].notification_channels) == 1 &&
-      length(google_monitoring_alert_policy.recording_cleanup_final_failure[0].notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_overdue.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_final_failure.notification_channels) == 1 &&
       google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
     )
     error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."
@@ -282,9 +282,9 @@ run "private_service_with_scoped_deployer" {
       google_logging_metric.recording_cleanup_overdue.value_extractor == "EXTRACT(jsonPayload.overdue_count)" &&
       google_logging_metric.recording_cleanup_hold_mismatch.value_extractor == "EXTRACT(jsonPayload.hold_alert_count)" &&
       google_logging_metric.recording_cleanup_stuck.value_extractor == "EXTRACT(jsonPayload.stuck_count)" &&
-      google_monitoring_alert_policy.recording_cleanup_overdue[0].enabled &&
-      google_monitoring_alert_policy.recording_cleanup_overdue[0].conditions[0].condition_threshold[0].duration == "900s" &&
-      google_monitoring_alert_policy.recording_cleanup_no_success[0].conditions[0].condition_absent[0].duration == "7200s"
+      google_monitoring_alert_policy.recording_cleanup_overdue.enabled &&
+      google_monitoring_alert_policy.recording_cleanup_overdue.conditions[0].condition_threshold[0].duration == "900s" &&
+      google_monitoring_alert_policy.recording_cleanup_no_success.conditions[0].condition_absent[0].duration == "7200s"
     )
     error_message = "Monitoring must extract aggregate values and preserve the documented alert thresholds."
   }

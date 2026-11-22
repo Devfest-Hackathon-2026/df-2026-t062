@@ -20,6 +20,10 @@ resource "terraform_data" "recording_cleanup_alert_configuration" {
   }
 }
 
+# =========================================================
+# Cloud Logging Metrics
+# =========================================================
+
 resource "google_logging_metric" "recording_cleanup_success" {
   name            = "recording_cleanup_success_count"
   filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.result=\"success\""
@@ -177,8 +181,14 @@ resource "google_logging_metric" "recording_cleanup_scheduler_error" {
   }
 }
 
+# =========================================================
+# Cloud Monitoring Alert Policies
+#
+# アラート自体は常にTerraformで管理する。
+# 初期状態では enabled=false にして停止する。
+# =========================================================
+
 resource "google_monitoring_alert_policy" "recording_cleanup_overdue" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup overdue"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -194,7 +204,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_overdue" {
     display_name = "overdue cleanup report"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_overdue.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_overdue.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "900s"
@@ -208,7 +218,6 @@ resource "google_monitoring_alert_policy" "recording_cleanup_overdue" {
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_final_failure" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup final failure"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -224,7 +233,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_final_failure" {
     display_name = "final deletion failure"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_final_failure.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_final_failure.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -238,7 +247,6 @@ resource "google_monitoring_alert_policy" "recording_cleanup_final_failure" {
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_hold_mismatch" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording hold mismatch"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -254,7 +262,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_hold_mismatch" {
     display_name = "DB and GCS hold mismatch"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_hold_mismatch.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_hold_mismatch.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -268,7 +276,6 @@ resource "google_monitoring_alert_policy" "recording_cleanup_hold_mismatch" {
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_failure_rate" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup failure rate"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -284,7 +291,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_failure_rate" {
     display_name = "failure rate breach"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_failure_rate_breach.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_failure_rate_breach.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "3600s"
@@ -298,7 +305,6 @@ resource "google_monitoring_alert_policy" "recording_cleanup_failure_rate" {
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_stuck" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup state stuck"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -314,7 +320,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_stuck" {
     display_name = "stuck cleanup state"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_stuck.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_stuck.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "900s"
@@ -328,23 +334,26 @@ resource "google_monitoring_alert_policy" "recording_cleanup_stuck" {
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_hold_sync_failure" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording hold synchronization failure"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
+
   documentation {
     content   = "録音のDB保全状態とGCS Object Holdの同期が失敗または長期滞留しています。保全中の音声を削除せず、GCSとDBを確認してください。"
     mime_type = "text/markdown"
   }
+
   notification_channels = var.monitoring_notification_channel_ids
 
   conditions {
     display_name = "hold synchronization failure"
+
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_hold_sync_failure.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_hold_sync_failure.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "900s"
+
       aggregations {
         alignment_period   = "900s"
         per_series_aligner = "ALIGN_SUM"
@@ -354,23 +363,26 @@ resource "google_monitoring_alert_policy" "recording_cleanup_hold_sync_failure" 
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_verification_truncated" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording hold verification truncated"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
+
   documentation {
     content   = "GCS Object Holdの全件照合がJobの上限時間またはページ上限に達しました。監視対象が未確認のまま残っている可能性があります。"
     mime_type = "text/markdown"
   }
+
   notification_channels = var.monitoring_notification_channel_ids
 
   conditions {
     display_name = "hold verification truncated"
+
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_verification_truncated.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_verification_truncated.name}\" resource.type=\"cloud_run_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "900s"
+
       aggregations {
         alignment_period   = "900s"
         per_series_aligner = "ALIGN_SUM"
@@ -380,7 +392,6 @@ resource "google_monitoring_alert_policy" "recording_cleanup_verification_trunca
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_no_success" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup has no recent success"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -396,14 +407,13 @@ resource "google_monitoring_alert_policy" "recording_cleanup_no_success" {
     display_name = "no successful cleanup report"
 
     condition_absent {
-      filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_success.name}\" resource.type=\"global\""
+      filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_success.name}\" resource.type=\"cloud_run_job\""
       duration = "7200s"
     }
   }
 }
 
 resource "google_monitoring_alert_policy" "recording_cleanup_scheduler_error" {
-  count        = var.recording_cleanup_alerts_enabled ? 1 : 0
   display_name = "[${var.monitoring_environment}] Recording cleanup Scheduler error"
   combiner     = "OR"
   enabled      = var.recording_cleanup_alerts_enabled
@@ -419,7 +429,7 @@ resource "google_monitoring_alert_policy" "recording_cleanup_scheduler_error" {
     display_name = "Scheduler execution error"
 
     condition_threshold {
-      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_scheduler_error.name}\" resource.type=\"global\""
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_scheduler_error.name}\" resource.type=\"cloud_scheduler_job\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
@@ -431,6 +441,10 @@ resource "google_monitoring_alert_policy" "recording_cleanup_scheduler_error" {
     }
   }
 }
+
+# =========================================================
+# Cloud Monitoring Dashboard
+# =========================================================
 
 resource "google_monitoring_dashboard" "recording_cleanup" {
   dashboard_json = jsonencode({
@@ -451,7 +465,7 @@ resource "google_monitoring_dashboard" "recording_cleanup" {
                 ] : {
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"global\""
+                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"cloud_run_job\""
                   }
                 }
               }
@@ -469,7 +483,7 @@ resource "google_monitoring_dashboard" "recording_cleanup" {
                 ] : {
                 timeSeriesQuery = {
                   timeSeriesFilter = {
-                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"global\""
+                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"cloud_run_job\""
                   }
                 }
               }
@@ -483,7 +497,7 @@ resource "google_monitoring_dashboard" "recording_cleanup" {
             dataSets = [{
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_duration.name}\" resource.type=\"global\""
+                  filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_duration.name}\" resource.type=\"cloud_run_job\""
                 }
               }
             }]
@@ -492,4 +506,46 @@ resource "google_monitoring_dashboard" "recording_cleanup" {
       ]
     }
   })
+}
+
+# =========================================================
+# Terraform State Migration
+#
+# 以前 count = 1 で作成された既存アラート7件を
+# 削除・再作成せず、countなしのアドレスへ移行する。
+# =========================================================
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_failure_rate[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_failure_rate
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_final_failure[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_final_failure
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_hold_mismatch[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_hold_mismatch
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_no_success[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_no_success
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_overdue[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_overdue
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_scheduler_error[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_scheduler_error
+}
+
+moved {
+  from = google_monitoring_alert_policy.recording_cleanup_stuck[0]
+  to   = google_monitoring_alert_policy.recording_cleanup_stuck
 }
