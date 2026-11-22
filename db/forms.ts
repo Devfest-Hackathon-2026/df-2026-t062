@@ -225,7 +225,11 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
     const print = p.print
     if (!print) continue
     const namesOnPage = new Set(slots.map((s) => s.name))
-    if (!['text', 'table', 'timeline', 'flow'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
+    if (!['text', 'table', 'timeline', 'flow', 'sections'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
+    if (print.type === 'sections') {
+      if (!Array.isArray(print.slots) || !print.slots.length || print.slots.length > 30 || new Set(print.slots).size !== print.slots.length || print.slots.some(n => !slots.some(s => s.name === n && s.type === 'text'))) errors.push(`ページ ${p.no} の文章区分の継続設定が不正`)
+      if (print.list && (!Number.isInteger(print.list.rowsPerPage) || print.list.rowsPerPage < 1 || print.list.rowsPerPage > 100 || !formKeys(input.bindings).includes(print.list.key))) errors.push(`ページ ${p.no} の継続する表が不正`)
+    }
     if (print.type === 'flow') {
       if (!Array.isArray(print.slots)) { errors.push(`ページ ${p.no} の文章の継続領域が不正`); continue }
       const slots = print.slots?.map(n => input.schemas[p.pdfIndex].find(s => s.name === n)) ?? []
