@@ -468,7 +468,7 @@ export async function recordExport(db: Q, staff: Staff, documentId: string, rev:
 export interface ApplyInput {
   officeId: string
   documentId: string
-  kind: 'recording' | 'copy' | 'seed'
+  kind: 'recording' | 'copy' | 'seed' | 'fill'
   label: string
   jobId?: string
   /** Worker の今回の実行。ジョブ完了と用紙への反映を同じ transaction で確定する */

@@ -13,7 +13,7 @@ export function defaultProviders(env: NodeJS.ProcessEnv = process.env): Promise<
     return {
       stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, inspect: f.fakeInspect,
       recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() },
-      documentRead: f.fakeDocumentRead,
+      documentRead: f.fakeDocumentRead, documentFill: f.fakeDocumentFill,
       documentWrite: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() },
     }
   })()

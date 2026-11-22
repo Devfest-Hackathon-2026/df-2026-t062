@@ -37,6 +37,7 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
         async (inspectionId) => (await import('../worker/inspect/job.ts')).runInspection(await workerDeps(), inspectionId),
         async (id) => (await import('../worker/document-input/job.ts')).runDocumentInput(await workerDeps(), id),
         async (recordingId, operationVersion) => (await import('../worker/recording-cleanup-service.ts')).synchronizeRetentionHold(await workerDeps(), recordingId, operationVersion),
+        async (id) => (await import('../worker/document-fill/job.ts')).runDocumentFill(await workerDeps(), id),
       ))
     },
     chat: () => (chat ??= defaultChat(env)),

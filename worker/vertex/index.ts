@@ -24,5 +24,6 @@ export function vertexProviders(env: NodeJS.ProcessEnv): Providers {
       return newLlm()
     },
     inspect: newLlm,
+    documentFill: newLlm,
   }
 }

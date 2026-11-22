@@ -16,6 +16,7 @@ import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
 import * as importsDb from '../db/form-imports.ts'
 import * as inspections from '../db/inspections.ts'
+import * as fills from '../db/document-fills.ts'
 import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
 import * as carePlans from '../db/care-plans.ts'
@@ -743,6 +744,22 @@ export function createApp(deps: ApiDeps) {
     if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
     await queue.enqueueRetentionHold(c.req.param('id')!, retention.retentionHoldOperationVersion)
     return json(c, { retention }, 202)
+  }))
+
+  // 書類を作るときに AI が書く（#195）。元の書類（create_from の種類）の値を読み、この書類の欄を書き直す・空の欄を書く。裏の仕事（worker）
+  app.post('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const r = await fills.startFill(db, staff, c.req.param('id')!)
+    if (r.created) {
+      if (!deps.queue().enqueueDocumentFill) throw new Error('書類を書く仕事を積めません')
+      await deps.queue().enqueueDocumentFill!(r.id, { initial: true })
+    }
+    return json(c, { fillId: r.id }, 202)
+  }))
+  app.get('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const r = await fills.latestFill(db, staff.officeId, id)
+    await accessAudit(c, db, staff, { clientId: r.clientId, documentId: id, resourceType: 'document_fill', resourceId: r.fill?.id ?? id, accessMode: 'view', action: 'document.view' })
+    return json(c, { fill: r.fill })
   }))
 
   // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）

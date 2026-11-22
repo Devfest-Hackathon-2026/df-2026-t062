@@ -6,6 +6,7 @@ import { contextFields, reconcile, runJob, type WorkerContext, type WorkerDeps }
 import { reconcileFormImports, runFormImport } from './form-import/job.ts'
 import { reconcileInspections, runInspection } from './inspect/job.ts'
 import { synchronizeRetentionHold } from './recording-cleanup-service.ts'
+import { reconcileDocumentFills, runDocumentFill } from './document-fill/job.ts'
 
 export interface WorkerQueue {
   enqueueDocumentInput?(id: string): Promise<void>
@@ -13,6 +14,7 @@ export interface WorkerQueue {
   enqueueFormImport(importId: string): Promise<void>
   enqueueInspection(inspectionId: string): Promise<void>
   enqueueRetentionHold?(recordingId: string, operationVersion: string): Promise<void>
+  enqueueDocumentFill?(fillId: string): Promise<void>
 }
 
 export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
@@ -59,11 +61,17 @@ export function createWorkerApp(deps: WorkerDeps, queue: WorkerQueue) {
     await synchronizeRetentionHold(deps, c.req.param('id'), body.operationVersion)
     return c.json({ ok: true })
   })
+  // 書類を作るときに AI が書く（#195）
+  app.post('/tasks/document-fills/:id/run', async (c) => {
+    await runDocumentFill(deps, c.req.param('id'), contextOf(c))
+    return c.json({ ok: true })
+  })
   app.post('/tasks/reconcile', async (c) => c.json({
     documentInputs: queue.enqueueDocumentInput ? await reconcileDocumentInputs(deps, (id) => queue.enqueueDocumentInput!(id)) : 0,
     requeued: await reconcile(deps, (id) => queue.enqueue(id)),
     formImports: await reconcileFormImports(deps, (id) => queue.enqueueFormImport(id)),
     inspections: await reconcileInspections(deps, (id) => queue.enqueueInspection(id)),
+    documentFills: queue.enqueueDocumentFill ? await reconcileDocumentFills(deps, (id) => queue.enqueueDocumentFill!(id)) : 0,
   }))
   app.notFound((c) => c.json({ error: 'not_found' }, 404))
   app.onError((err, c) => {

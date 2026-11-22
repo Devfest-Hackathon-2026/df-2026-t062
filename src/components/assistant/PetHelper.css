@@ -218,3 +218,8 @@ strong.assistant-chat-field { color: var(--pet-ink); }
 .assistant-panel .assistant-chat-steps { display: grid; gap: 2px; justify-self: start; max-width: 92%; padding: 0 4px; }
 .assistant-chat-steps li { display: flex; align-items: baseline; gap: 6px; font-size: 13px; line-height: 1.5; color: #5a4f6e; overflow-wrap: anywhere; }
 .assistant-chat-steps .assistant-icon { flex: none; color: #17633a; font-size: 12px; transform: translateY(1px); }
+
+/* 書類を作るときに AI が書く（#195）の知らせ */
+.assistant-fill { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--pet-line); border-radius: 12px; background: var(--pet-card); }
+.assistant-fill p { margin: 0; line-height: 1.7; }
+.assistant-fill .assistant-primary { align-self: stretch; }

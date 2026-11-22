@@ -60,6 +60,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0031_recording_upload_cleanup_index.sql',
       '0032_recording_upload_cleanup_lease_index.sql',
       '0033_recording_generation_backfill_index.sql',
+      '0034_document_fills.sql',
     ])
     const backfilled = (await db.query(
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',

@@ -42,7 +42,7 @@
 
 ### 再設計で足した表
 
-`form_kinds`（書類の種類と種類ごとの動き）・`form_imports`・`site_admins`・`inspections`・`inspection_findings`・`recording_summaries`・`office_topics` と、`staff.disabled_at`。列と決まりは [再設計/13_DB設計.md](再設計/13_DB設計.md)（移行は `db/migrations/0003_redesign.sql`・`0004_field_values_per_document.sql`）。
+`form_kinds`（書類の種類と種類ごとの動き）・`form_imports`・`site_admins`・`inspections`・`inspection_findings`・`recording_summaries`・`office_topics` と、`staff.disabled_at`、`document_fills`（書類を作るときに AI が書く仕事。#195、`db/migrations/0034_document_fills.sql`。あわせて `batches.kind` に `fill` を足した）。列と決まりは [再設計/13_DB設計.md](再設計/13_DB設計.md)（移行は `db/migrations/0003_redesign.sql`・`0004_field_values_per_document.sql`）。
 
 ## 録音ジョブの失敗と再配信
 
