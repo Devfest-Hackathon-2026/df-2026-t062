@@ -8,20 +8,20 @@ import { checkSet, checkSetSha } from '../../core/checks/index.ts'
 import { loadFormDef } from '../../db/forms.ts'
 import * as ins from '../../db/inspections.ts'
 import { tx } from '../../db/pool.ts'
-import type { WorkerDeps } from '../jobs.ts'
+import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
 import { inspect, type InspectDoc } from './index.ts'
 
-const log = (rec: Record<string, unknown>) => console.log(JSON.stringify({ severity: 'INFO', ...rec }))
+const log = (rec: Record<string, unknown>, context?: WorkerContext) => console.log(JSON.stringify({ severity: 'INFO', ...contextFields(context), ...rec }))
 
 class LeaseLost extends Error { constructor() { super('inspection lease lost') } }
 
-export async function runInspection(deps: WorkerDeps, id: string): Promise<void> {
+export async function runInspection(deps: WorkerDeps, id: string, context?: WorkerContext): Promise<void> {
   const db = await deps.db()
   const token = randomUUID()
   const claimed = await ins.claimInspection(db, id, token)
-  if (!claimed) return log({ msg: 'inspection already taken or done', inspectionId: id })
+  if (!claimed) return log({ msg: 'inspection already taken or done', inspectionId: id }, context)
   const heartbeat = setInterval(() => {
-    void ins.extendInspectionLease(db, id, token).catch((e) => log({ msg: 'inspection lease heartbeat failed', inspectionId: id, error: (e as Error).name }))
+    void ins.extendInspectionLease(db, id, token).catch((e) => log({ msg: 'inspection lease heartbeat failed', inspectionId: id, error: (e as Error).name }, context))
   }, 60_000)
   heartbeat.unref()
   const t0 = Date.now()
@@ -80,12 +80,12 @@ export async function runInspection(deps: WorkerDeps, id: string): Promise<void>
       return true
     })
     if (!ok) throw new LeaseLost()
-    log({ msg: 'inspection done', inspectionId: id, status, seconds: steps.totalSeconds, items: r.findings.length, missing: r.findings.filter((f) => f.level === '1').length, calls: r.usage.calls, yen: r.usage.yen })
+    log({ msg: 'inspection done', inspectionId: id, status, seconds: steps.totalSeconds, items: r.findings.length, missing: r.findings.filter((f) => f.level === '1').length, calls: r.usage.calls, yen: r.usage.yen }, context)
   } catch (e) {
-    if (e instanceof LeaseLost) return log({ msg: 'inspection lease lost', inspectionId: id })
+    if (e instanceof LeaseLost) return log({ msg: 'inspection lease lost', inspectionId: id }, context)
     const kind = (e as Error)?.name ?? 'Error'
     await ins.releaseInspection(db, id, token, claimed.attempts >= ins.MAX_INSPECTION_ATTEMPTS, kind)
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'inspection failed', inspectionId: id, error: kind }))
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'inspection failed', inspectionId: id, error: kind }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e

@@ -147,6 +147,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const [aiDraft, setAiDraft] = useState<AiDraftDetail>()
   const [aiNeeds, setAiNeeds] = useState<Set<string>>(new Set())
   const gate = useRef(false)
+  const preserveNoticeOnDirty = useRef(false)
   const first = useDocument(plan.documents.find((d) => d.formNo === 1)?.documentId)
   const second = useDocument(plan.documents.find((d) => d.formNo === 2)?.documentId)
   const third = useDocument(plan.documents.find((d) => d.formNo === 3)?.documentId)
@@ -156,7 +157,11 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
   const firstDirty = documents.some(documentDirty)
   const dirty = structuralDirty || firstDirty || plan.hasUnsavedChanges
   const readOnly = plan.status !== 'draft'
-  useEffect(() => { onDirty(dirty); if (dirty) setNotice(current => current === '第1〜3表を保存しました' ? '' : current) }, [dirty, onDirty])
+  useEffect(() => {
+    onDirty(dirty)
+    if (dirty && !preserveNoticeOnDirty.current) setNotice('')
+    preserveNoticeOnDirty.current = false
+  }, [dirty, onDirty])
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
     window.addEventListener('beforeunload', warn)
@@ -343,6 +348,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
       })} onApply={() => void run(async () => {
         if (!aiDraft || !await first.flush()) throw new Error('第1表の入力を確認してください。')
         const r = await api.applyCarePlanAi(plan.id, aiDraft.id, plan.lockVersion)
+        preserveNoticeOnDirty.current = true
         setPlan(r.plan); setNeeds(r.plan.needs); setSlots(r.plan.slots); await first.reload()
         setAiNeeds(new Set(r.applied.needs))
         setAiDraft({ ...aiDraft, status: r.plan.aiDraft?.id === aiDraft.id ? r.plan.aiDraft.status : 'partially_applied' })
