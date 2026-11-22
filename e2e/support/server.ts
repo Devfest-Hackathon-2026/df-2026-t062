@@ -44,7 +44,7 @@ try {
   await admin.query(`CREATE SCHEMA ${schema}`)
   await migrate(db)
   await seed(db, { email: 'e2e@example.com', officeName: 'E2E架空事業所' })
-  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_5']) {
+  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5']) {
     const { pdf, message } = await ensurePdf(kind)
     if (!pdf) throw new Error(message)
     await putFormAssets(storage, readMeta(kind), pdf)
@@ -53,9 +53,10 @@ try {
     db: async () => db, verifier: () => new DevVerifier(), storage: () => storage,
     // E2E-only scripted record model. Production uses the configured existing Gemini adapter.
     chat: async () => async req => {
-      if (!req.system.includes('居宅介護支援経過 第5表')) return fakeModel(req)
+      const meeting = req.system.includes('サービス担当者会議の要点 第4表')
+      if (!meeting && !req.system.includes('居宅介護支援経過 第5表')) return fakeModel(req)
       if (req.contents.some(c => c.parts.some(p => p.functionCall?.name === 'propose_edit'))) return [{ text: '架空のテスト用候補です。日時は確認してください。' }]
-      return [{ functionCall: { name: 'propose_edit', args: { key: 'progress.content', value: 'AIによる架空の下書き。未決定事項は次回確認する。' } } }]
+      return [{ functionCall: { name: 'propose_edit', args: { key: meeting ? 'meeting.remaining' : 'progress.content', value: 'AIによる架空の下書き。未決定事項は次回確認する。' } } }]
     },
     carePlanAi: async () => async () => ({
       plan1: { 'plan.overallPolicy': '架空の方針：自宅で安全に暮らす' },

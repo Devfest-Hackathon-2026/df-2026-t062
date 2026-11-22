@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { sameValue } from '../core/apply-batch.ts'
 import { chatError } from '../core/chat-error.ts'
-import type { CareRecordDrafter, CareRecordDraftView, CareRecordSources } from '../core/care-record.ts'
+import { careRecordProposalKeys, type CareRecordKind, type CareRecordDrafter, type CareRecordDraftView, type CareRecordSources } from '../core/care-record.ts'
 import type { Db } from './pool.ts'
 import { tx } from './pool.ts'
 import { audit, Conflict, getDocument, NotFound, patchFields, type Staff } from './repo.ts'
 import { loadFormDef } from './forms.ts'
-const resultSchema = z.object({ guidance: z.string().max(10000), proposals: z.array(z.object({ key: z.enum(['progress.content','progress.category']), label: z.string(), before: z.unknown(), after: z.string().max(100000) })).max(2) })
+const resultSchema = z.object({ guidance: z.string().max(10000), proposals: z.array(z.object({ key: z.enum(['progress.content','progress.category','meeting.items','meeting.discussion','meeting.conclusion','meeting.remaining']), label: z.string(), before: z.unknown(), after: z.string().max(100000) })).max(4) })
 const view = (r: Record<string, any>): CareRecordDraftView => ({
   id: r.id, status: r.status === 'generating' && Date.now() - new Date(r.created_at).getTime() > 180000 ? 'failed' : r.status, guidance: r.result?.guidance ?? '', proposals: r.result?.proposals ?? [], errorCode: r.status === 'generating' && Date.now() - new Date(r.created_at).getTime() > 180000 ? 'interrupted' : r.error_code,
   capturedAt: r.source.capturedAt, documentSources: r.source.documents.map(({ id, documentId, rev, savedAt }: CareRecordSources['documents'][number]) => ({ id, documentId, rev, savedAt })),
@@ -14,7 +14,7 @@ const view = (r: Record<string, any>): CareRecordDraftView => ({
 })
 async function record(db: Db, officeId: string, id: string) {
   const doc = await getDocument(db, officeId, id)
-  if (doc.kind !== 'care_plan_5') throw new NotFound()
+  if (doc.kind !== 'care_plan_5' && doc.kind !== 'care_plan_4') throw new NotFound()
   return doc
 }
 export async function careRecordDrafts(db: Db, officeId: string, id: string) {
@@ -45,7 +45,7 @@ export async function createCareRecordDraft(db: Db, staff: Staff, id: string, in
   let result: z.infer<typeof resultSchema> = { guidance: '', proposals: [] }, status = 'ready', error: string | null = null
   try {
     result = resultSchema.parse(await drafter({ source: prepared.row.source, current: prepared.row.base, form }))
-    if (new Set(result.proposals.map(p => p.key)).size !== result.proposals.length || result.proposals.some(p => !sameValue(p.before, prepared.row.base[p.key] ?? null))) throw new Error('Invalid proposal base')
+    if (result.proposals.some(p => !(careRecordProposalKeys[doc.kind as CareRecordKind] as readonly string[]).includes(p.key)) || new Set(result.proposals.map(p => p.key)).size !== result.proposals.length || result.proposals.some(p => !sameValue(p.before, prepared.row.base[p.key] ?? null))) throw new Error('Invalid proposal base')
   } catch (e) { status = 'failed'; result = { guidance: '', proposals: [] }; error = (e as { code?: string })?.code === 'not_configured' ? 'not_configured' : chatError(e).code }
   const row = (await db.query('UPDATE care_record_drafts SET status=$1,result=$2,error_code=$3 WHERE id=$4 AND office_id=$5 RETURNING *', [status, JSON.stringify(result), error, prepared.row.id, staff.officeId])).rows[0]
   return view(row)
@@ -53,14 +53,14 @@ export async function createCareRecordDraft(db: Db, staff: Staff, id: string, in
 export async function applyCareRecordDraft(db: Db, staff: Staff, id: string, draftId: string) {
   return tx(db, async c => {
     // Use the same lock order as create: document, then draft.
-    const d = (await c.query("SELECT * FROM documents WHERE id=$1 AND office_id=$2 AND kind='care_plan_5' FOR UPDATE", [id, staff.officeId])).rows[0]
+    const d = (await c.query("SELECT * FROM documents WHERE id=$1 AND office_id=$2 AND kind IN ('care_plan_4','care_plan_5') FOR UPDATE", [id, staff.officeId])).rows[0]
     if (!d) throw new NotFound()
     const row = (await c.query('SELECT * FROM care_record_drafts WHERE id=$1 AND document_id=$2 AND office_id=$3 FOR UPDATE', [draftId, id, staff.officeId])).rows[0]
     if (!row) throw new NotFound()
     if (row.applied_at) return view(row)
     if (row.status !== 'ready' || row.template_version_id !== d.template_version_id) throw new Conflict('record_draft')
     const result = resultSchema.parse(row.result)
-    if (!result.proposals.length) throw new Conflict('record_draft')
+    if (!result.proposals.length || result.proposals.some(p => !(careRecordProposalKeys[d.kind as CareRecordKind] as readonly string[]).includes(p.key))) throw new Conflict('record_draft')
     // Existing field-level conflict and schema validation; entire adoption rolls back on any changed base.
     await patchFields(db, staff, id, result.proposals.map(p => ({ key: p.key, value: p.after, base: p.before })), fn => fn(c))
     const adopted = (await c.query('UPDATE care_record_drafts SET applied_at=now(),applied_by=$1 WHERE id=$2 RETURNING *', [staff.id, draftId])).rows[0]

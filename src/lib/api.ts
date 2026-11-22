@@ -130,7 +130,7 @@ export const api = {
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
-  careRecords: (clientId: string, query: { q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
+  careRecords: (clientId: string, query: { kind?: CareRecordKind, q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
   createCareRecord: (clientId: string, kind: CareRecordKind, requestId: string) => req<{ id: string, created: boolean }>('POST', `/api/clients/${clientId}/care-records`, { kind, requestId }),
   careRecordDrafts: (id: string) => req<{ drafts: CareRecordDraftView[] }>('GET', `/api/care-records/${id}/ai-drafts`),
   createCareRecordDraft: (id: string, requestId: string, instructions: string) => req<{ draft: CareRecordDraftView }>('POST', `/api/care-records/${id}/ai-drafts`, { requestId, instructions }),

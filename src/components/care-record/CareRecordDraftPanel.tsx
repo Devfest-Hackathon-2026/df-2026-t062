@@ -44,7 +44,7 @@ export function CareRecordDraftPanel({ documentId, beforeAdopt, onApplied }: { d
     setDrafts(rows => rows.map(d => d.id === r.draft.id ? r.draft : d))
     await onApplied()
   })
-  return <section className="care-record-draft" aria-label="支援経過のAI下書き">
+  return <section className="care-record-draft" aria-label="記録のAI下書き">
     <h2>AI下書き</h2>
     <PetMessage>保存済みの書類や録音から、記録の下書きを作れます。日時は確認して入力してください。</PetMessage>
     <label>下書きへの補足<textarea aria-label="下書きへの補足" value={instructions} rows={2} maxLength={4000} onChange={e => setInstructions(e.target.value)} disabled={busy || generating} /></label>

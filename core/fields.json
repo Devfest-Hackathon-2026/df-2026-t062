@@ -644,6 +644,21 @@
     {"key": "progress.date", "label": "記録年月日", "type": "date", "source": ["talk"], "note": "実際の対応日。不明な日を推測しない"},
     {"key": "progress.time", "label": "記録時刻", "type": "text", "format": "time", "source": ["talk"], "note": "24時間のHH:mm。実際の対応時刻。不明は空欄"},
     {"key": "progress.category", "label": "項目・連絡方法", "type": "text", "source": ["talk"], "note": "訪問先、電話の発着信など、確認できた方法と項目"},
-    {"key": "progress.content", "label": "支援経過の内容", "type": "longtext", "source": ["talk"], "note": "発言、支援内容、判断の根拠、持ち越し課題。未実施の行為や未確認の発言者を創作しない"}
+    {"key": "progress.content", "label": "支援経過の内容", "type": "longtext", "source": ["talk"], "note": "発言、支援内容、判断の根拠、持ち越し課題。未実施の行為や未確認の発言者を創作しない"},
+    {"group": "サービス担当者会議 第4表"},
+    {"key": "meeting.date", "label": "開催日", "type": "date", "source": ["talk"]},
+    {"key": "meeting.place", "label": "開催場所", "type": "text", "source": ["talk"]},
+    {"key": "meeting.start", "label": "開催開始時刻", "type": "text", "source": ["talk"], "format": "time"},
+    {"key": "meeting.end", "label": "開催終了時刻", "type": "text", "source": ["talk"], "format": "time"},
+    {"key": "meeting.number", "label": "開催回数", "type": "number", "source": ["talk"]},
+    {"key": "meeting.personAttended", "label": "本人の出席", "type": "enum", "source": ["talk"], "choices": ["出席", "欠席", "不明"]},
+    {"key": "meeting.familyAttended", "label": "家族の出席", "type": "enum", "source": ["talk"], "choices": ["出席", "欠席", "不明"]},
+    {"key": "meeting.relationship", "label": "出席家族の続柄", "type": "text", "source": ["talk"]},
+    {"key": "meeting.items", "label": "検討した項目", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.discussion", "label": "検討内容（話し合った内容）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.conclusion", "label": "結論（合意・決定済みの内容のみ）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.remaining", "label": "残された課題（未決定事項）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.nextDate", "label": "次回の開催時期", "type": "text", "source": ["talk"]},
+    {"key": "meeting.attendees", "label": "会議出席者", "type": "list", "rowKey": "id", "source": ["talk"], "note": "出席が確認できた人物だけを追加する。所属・職種・氏名を推測しない", "fields": [{"key": "id", "label": "行ID", "type": "text"}, {"key": "affiliation", "label": "所属", "type": "text"}, {"key": "profession", "label": "職種", "type": "text"}, {"key": "name", "label": "氏名", "type": "text"}]}
   ]
 }

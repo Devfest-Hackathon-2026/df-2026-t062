@@ -1,3 +1,4 @@
+import type { CareRecordKind } from '../../../core/care-record.ts'
 import { CareRecordWork } from '../../components/care-record/CareRecordWork.tsx'
 // iPad ②③ 用紙（キャンバス PadWork・PadRec）と、録音から用紙へ書く流れ A〜E（PadFlow1〜5）。
 // iPad でできることは 2 つだけ: 録音するかしないか、用紙を書き換えるか。
@@ -18,7 +19,7 @@ export function PadWork({ clientId }: { clientId: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
   const [carePlanOpen, setCarePlanOpen] = useState(false)
-  const [recordOpen, setRecordOpen] = useState(false)
+  const [recordOpen, setRecordOpen] = useState<CareRecordKind>()
   const reloadDoc = useRef<() => void>(() => {})
   const { client, jobs, reload: reloadClient, poll } = useClient(clientId, () => reloadDoc.current())
   const kinds = useFormKinds()
@@ -55,7 +56,7 @@ export function PadWork({ clientId }: { clientId: string }) {
 
   // 種類の書類を開く。まだなければ作る（db/repo.ts の createDocument）。many は押すたびに新しい書類を作る
   const openDoc = async (key: string, opts: { create?: boolean } = {}) => {
-    if (key === 'care_plan_5') { if (recorder.phase === 'rec' || recorder.phase === 'upload') return; if (await state.flush()) { setDocOpen(false); setRecordOpen(true) }; return }
+    if ((key === 'care_plan_4' || key === 'care_plan_5')) { if (recorder.phase === 'rec' || recorder.phase === 'upload') return; if (await state.flush()) { setDocOpen(false); setRecordOpen(key) }; return }
     setDocOpen(false)
     setTocOpen(false)
     if (opts.create || !client?.documents.some((d) => d.kind === key)) {
@@ -83,7 +84,7 @@ export function PadWork({ clientId }: { clientId: string }) {
   const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
   const batchLabel = doc?.batches[0]?.label ?? 'AI 書き込み'
 
-  if (recordOpen) return <CareRecordWork key={clientId} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setRecordOpen(false); void reloadClient() }} />
+  if (recordOpen) return <CareRecordWork key={clientId + recordOpen} kind={recordOpen} clientId={clientId} clientName={client?.name ?? ''} onBack={() => { setRecordOpen(undefined); void reloadClient() }} />
 
   if (carePlanOpen) return <CarePlanWork clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
 

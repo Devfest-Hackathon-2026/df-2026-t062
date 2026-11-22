@@ -82,6 +82,7 @@ test('GET /api/form-kinds: 種類と、その事業所で使える様式があ�
     ['care_plan_1', '居宅サービス計画書 第1表', false, 'many', 'assessment', true],
     ['care_plan_2', '居宅サービス計画書 第2表', false, 'many', null, true],
     ['care_plan_3', '週間サービス計画表 第3表', false, 'many', null, true],
+    ['care_plan_4', 'サービス担当者会議の要点 第4表', false, 'many', 'assessment', true],
     ['care_plan_5', '居宅介護支援経過 第5表', false, 'many', 'assessment', true],
   ])
   const { REQUIRED_ASSESS } = await import('../core/fields.ts')
