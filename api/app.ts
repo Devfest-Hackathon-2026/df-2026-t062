@@ -36,6 +36,7 @@ import type { Queue } from './queue.ts'
 import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
+import { fakeTopicDrafter, type TopicDrafter } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
 import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
@@ -51,6 +52,8 @@ export interface ApiDeps {
   carePlanAi?: () => Promise<carePlans.CarePlanDrafter>
   /** 責任者の言葉を欄に当てはめる（様式の下書きを直す）。なければ試しの当てはめ（fake） */
   fieldMatcher?: () => Promise<FieldMatcher>
+  /** 事業所が足した書類の拾う内容の案を作る（#153）。省けば試しの案 */
+  topicDrafter?: () => Promise<TopicDrafter>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -157,6 +160,18 @@ const StaffPatchInput = z.object({ role: z.enum(STAFF_ROLES).optional(), disable
 
 // 様式の取り込み: 何の書類の用紙か
 const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
+// 事業所の書類を足す（#153）。手順 1「書類について」の答え
+const OfficeKindInput = z.object({
+  name: z.string().trim().min(1).max(40),
+  perClient: z.enum(['one', 'many']),
+  copyFromPrimary: z.boolean(),
+  records: z.boolean(),
+  append: z.boolean(),
+})
+const OfficeTopicsInput = z.object({
+  topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+})
+const TopicDraftRequest = z.object({ versionId: z.string().uuid() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -820,6 +835,36 @@ export function createApp(deps: ApiDeps) {
     }))
   }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
+
+  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容の案を作る・直す、やめる。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
+  app.post('/api/office/form-kinds', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeKindInput)
+    return json(c, { kind: await kinds.createOfficeKind(db, staff.officeId, input) }, 201)
+  }))
+  app.put('/api/office/form-kinds/:key/topics', staffRoute('form.manage', async (c, staff, db) => {
+    const { topics } = await body(c, OfficeTopicsInput)
+    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, c.req.param('key')!, topics) })
+  }))
+  // 拾う内容の案: 確かめた書式（下書きか公開した版）の欄に入る内容から AI が作り、そのまま保存する（責任者はこのあと直す）
+  app.post('/api/office/form-kinds/:key/topics/draft', staffRoute('form.manage', async (c, staff, db) => {
+    const key = c.req.param('key')!
+    const kind = await kinds.ownKind(db, staff.officeId, key)
+    const { versionId } = await body(c, TopicDraftRequest)
+    const v = await forms.versionForManager(db, { officeId: staff.officeId }, versionId)
+    if (v.kind !== key) throw new repo.BadRequest('別の書類の書式です')
+    const dict = fieldDict(v.localFields)
+    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
+    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
+      const m = slotMeaning(b, dict, v.localFields)
+      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
+    }))]
+    const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName: kind.name, slots })
+    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, key, drafted) })
+  }))
+  app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
+    await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)
+    return json(c, { ok: true })
+  }))
 
   // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
   app.get('/api/office/forms', staffRoute('form.manage', async (c, staff, db) => json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })))

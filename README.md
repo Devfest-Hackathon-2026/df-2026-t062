@@ -260,6 +260,13 @@ npm run dev                                # ターミナル 2: 画面（http://
 
 - 画面を開くとログイン画面になります。ローカルでは、メールアドレス `kato@example.com` だけで入れます（`.env` の `AUTH_MODE=dev` のときだけ）。
 - iPad の画面を PC で見るときは、URL に `?ui=pad` を付けます（`?ui=pc` で戻る）。録音のボタンは iPad の画面にあります。
+- 書類の設定（事業所の責任者の画面。PC だけ）を見るには、見本の加藤さんを責任者にします。見本データの加藤さんは最初「ケアマネ」なので、書類の設定を開くと「事業所の責任者だけが使えます」と出ます。次のコマンドで責任者にします（PostgreSQL の起動後に 1 回。画面を読み直すと反映されます）。
+
+  ```sh
+  docker exec t062-postgres psql -U postgres -d careman_live -c "update staff set role='admin' where email='kato@example.com';"
+  ```
+
+  加藤さんは責任者になっても、利用者の一覧と作業の画面は今までどおり使えます（一覧の画面に「利用者一覧」「書類の設定」のメニューが出ます）。ケアマネだけの見え方に戻すには、`role='caremanager'` にします。
 - ローカルでは、録音の置き場は `.data/storage`、ジョブは api と同じプロセスで動きます。AI は `.env.example` のままなら `AI_PROVIDER=fake`（演習シナリオの正解を返す。費用なし）です。
 
 ### 見本のデータ

@@ -227,7 +227,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{client ? `${client.name} さん` : ' '}</h1>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
-          {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+          {(kinds ?? []).filter((k) => !isPlanKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
             <button key={k.key} className={`dtab${!carePlanOpen && k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={!carePlanOpen && k.key === open.key} disabled={planBusy} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
           <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
@@ -243,7 +243,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             </div>
           )}
         </div>
-        {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`care-plan-entry${carePlanOpen ? ' care-plan-entry-on' : ''}`} aria-pressed={carePlanOpen} type="button" disabled={planBusy} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
+        {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`care-plan-entry${carePlanOpen ? ' care-plan-entry-on' : ''}`} aria-pressed={carePlanOpen} type="button" disabled={planBusy || !state.doc} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
         {carePlanOpen ? <div className="pc-work-output" ref={setPlanOutputTarget} /> : <DocumentOutput
           status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
           progress={required} disabled={!docId} onExport={() => void exportPdf()} />}

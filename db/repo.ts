@@ -10,7 +10,7 @@ import { fieldDict } from '../core/dictionary.ts'
 import { validValue } from '../core/schema.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
 import { loadFormDef, publishedVersionId } from './forms.ts'
-import { kindOf, primaryKind } from './kinds.ts'
+import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
 
@@ -546,8 +546,10 @@ export async function createDocument(db: Db, staff: Staff, clientId: string, kin
 
 /** 計画版の作成など、ほかの書き込みと同じトランザクションで書類を作るとき（createDocument の中身） */
 export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
-  const kind = await kindOf(c, kindKey)
+  // ほかの事業所の種類は「無い」。やめた種類は新しく作れない（#153）
+  const kind = await visibleKind(c, staff.officeId, kindKey)
   if (!kind) throw new BadRequest('書類の種類がありません')
+  if (kind.retired) throw new Conflict('この書類はやめたので、新しく作れません')
   // 同じ利用者の書類づくりを 1 つずつにする（何通目か・1 通だけかを決めるため）
   const client = (await c.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2 AND archived_at IS NULL FOR UPDATE', [clientId, staff.officeId])).rows[0]
   if (!client) throw new NotFound()

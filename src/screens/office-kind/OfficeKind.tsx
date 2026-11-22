@@ -4,8 +4,10 @@ import { api } from '../../lib/api.ts'
 import { linkProps, navigate } from '../../lib/router.tsx'
 import { BackLink, Icon, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { day, dismiss, failText, phaseOf, useOfficeForms } from '../../components/form-status/formStatus.ts'
+import { AddSteps } from '../../components/office-add/AddSteps.tsx'
+import { adding } from '../../components/office-add/addFlow.ts'
 
-type Confirm = { type: 'revert' } | { type: 'reuse', versionId: string } | null
+type Confirm = { type: 'revert' } | { type: 'reuse', versionId: string } | { type: 'stop' } | null
 
 export function OfficeKind({ staffName, kind }: { staffName: string, kind: string }) {
   const { kinds, error, setKinds, reload } = useOfficeForms()
@@ -34,6 +36,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
     navigate(`/office/forms/${encodeURIComponent(kind)}/review/${r.formVersion.id}?fix=1`)
   })
   const doConfirm = () => run(async () => {
+    if (confirm?.type === 'stop') { await api.retireOfficeKind(kind); navigate('/office'); return }
     if (confirm?.type === 'revert') setKinds((await api.revertForm(kind)).kinds)
     else if (confirm?.type === 'reuse') { await api.reuseForm(confirm.versionId); await reload() }
     setConfirm(null)
@@ -51,6 +54,42 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
   const base = `/office/forms/${encodeURIComponent(k.key)}`
   const fail = phase === 'failed' ? failText(k.import!.errorKind)
     : phase === 'empty' ? { title: '書く欄を見つけられませんでした', text: 'この書式は使えません。Word や Excel から書き出した PDF を、上げ直してください。' } : null
+
+  // 事業所の書類を足している途中（#153）: 手順 3「確かめる」の前の様子（読み取り中・読めなかった・読み取れた）。試作の addReviewScreen の文のまま
+  if (adding(k)) {
+    return (
+      <OfficeShell staffName={staffName} active={null} wide>
+        <AddSteps step={phase === 'review' || phase === 'reading' || fail ? 3 : 2} name={k.name} records={k.records} />
+        <main className="oa-body">
+          {phase === 'reading' ? (
+            <div className="oa-wait" role="status">
+              {Icon.arc}<h2>書式を読み取っています</h2>
+              <p>数分かかります。この画面を離れても、読み取りは続きます。</p>
+              <p>終わると、「書類の設定」の一覧の「{k.name}」に知らせが出ます。そこから続きを始められます。</p>
+              <a className="btn" {...linkProps('/office')}>書類の設定に戻る</a>
+            </div>
+          ) : fail ? (
+            <div className="oa-card" role="alert">
+              <h2>{fail.title}</h2><p style={{ margin: 0 }}>{fail.text}</p>
+              <a className="btn btn-p" style={{ alignSelf: 'flex-start' }} {...linkProps(`${base}/upload`)}>上げ直す</a>
+            </div>
+          ) : phase === 'review' ? (
+            <div className="oa-wait">
+              {Icon.check}<h2>書式を読み取りました</h2>
+              <p>{k.draft!.review.length ? 'AI が迷った欄があります。合っているか、確かめてください。' : '読み取った欄が合っているか、確かめてください。'}</p>
+              <a className="btn btn-p" {...linkProps(`${base}/review/${k.draft!.versionId}`)}>確かめる</a>
+            </div>
+          ) : (
+            <div className="oa-wait">
+              <h2>まだ書式を上げていません</h2>
+              <p>先に手順 2 で書式を上げてください。</p>
+              <a className="btn btn-p" {...linkProps(`${base}/upload`)}>書式を上げる</a>
+            </div>
+          )}
+        </main>
+      </OfficeShell>
+    )
+  }
   return (
     <OfficeShell staffName={staffName} active="forms">
       <BackLink to="/office" label="書類の設定" />
@@ -71,17 +110,24 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
         {phase === 'same' && <div className="of-state ok">{Icon.check}<span>最初の書式と同じでした<small>替えなくても、このまま使えます。</small></span><button type="button" className="btn btn-s" onClick={() => { dismiss(k.import!.id); setKinds([...kinds]) }}>閉じる</button></div>}
         <div className="of-actions">
           {office && phase !== 'reading' && <button type="button" className="btn" disabled={busy} onClick={() => void fix()}>直す</button>}
-          {office && phase !== 'reading' && <button type="button" className="btn-l btn" onClick={() => setConfirm({ type: 'revert' })}>最初の書式に戻す</button>}
+          {office && !k.own && phase !== 'reading' && <button type="button" className="btn-l btn" onClick={() => setConfirm({ type: 'revert' })}>最初の書式に戻す</button>}
           {!office && k.shelved && phase !== 'reading' && <button type="button" className="btn" onClick={() => setConfirm({ type: 'reuse', versionId: k.shelved!.versionId })}>事業所の書式に戻す</button>}
           {phase !== 'reading' && <a className={office || k.shelved ? 'btn-l btn' : 'btn'} {...linkProps(`${base}/upload`)}>{Icon.upload}{office ? '事業所の書式を上げ直す' : '事業所の書式を上げる'}</a>}
         </div>
         {actionError && <div role="alert" className="of-err">できませんでした（{actionError}）</div>}
       </section>
+      {k.own && <div className="oa-stop"><button type="button" onClick={() => setConfirm({ type: 'stop' })}>この書類をやめる</button></div>}
       {confirm && (
         <>
           <div className="of-modal-back" onClick={() => setConfirm(null)} />
           <section className="of-modal" role="dialog" aria-modal="true" aria-labelledby="of-md-h">
-            {confirm.type === 'revert' ? (
+            {confirm.type === 'stop' ? (
+              <>
+                <h2 id="of-md-h">「{k.name}」をやめますか？</h2>
+                <p>ケアマネは、新しく「{k.name}」を作れなくなります。</p>
+                <div className="gray">今ある{k.name}は残り、見たり PDF にしたりできます。</div>
+              </>
+            ) : confirm.type === 'revert' ? (
               <>
                 <h2 id="of-md-h">最初から入っている書式に戻しますか？</h2>
                 <p>これから作る{k.name}は、最初から入っている書式になります。</p>
@@ -96,7 +142,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
             )}
             <div className="of-modal-btns">
               <button type="button" className="btn" onClick={() => setConfirm(null)}>戻る</button>
-              <button type="button" className="btn btn-p" disabled={busy} onClick={() => void doConfirm()}>戻す</button>
+              <button type="button" className={confirm.type === 'stop' ? 'btn btn-d' : 'btn btn-p'} disabled={busy} onClick={() => void doConfirm()}>{confirm.type === 'stop' ? 'やめる' : '戻す'}</button>
             </div>
           </section>
         </>
