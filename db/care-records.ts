@@ -1,7 +1,7 @@
 import { careRecordConfig, type CareRecordKind, type CareRecordSummary, type CareRecordRevision } from '../core/care-record.ts'
 import type { Db, Tx } from './pool.ts'
 import { tx } from './pool.ts'
-import { createDocumentInTx, Conflict, NotFound, type Staff } from './repo.ts'
+import { createDocumentInTx, Conflict, NotFound, audit, type Staff } from './repo.ts'
 const PAGE_SIZE = 50
 async function client(db: Db | Tx, officeId: string, clientId: string, lock = false) {
   if (!(await db.query(`SELECT id FROM clients WHERE id=$1 AND office_id=$2 AND archived_at IS NULL${lock ? ' FOR UPDATE' : ''}`, [clientId, officeId])).rows.length) throw new NotFound()
@@ -39,8 +39,37 @@ export async function listCareRecords(db: Db, officeId: string, clientId: string
   return { records, hasMore: r.rows.length > PAGE_SIZE }
 }
 export async function careRecordRevision(db: Db, officeId: string, id: string, rev: number): Promise<CareRecordRevision> {
-  const r = (await db.query(`SELECT v.rev,v.saved_at,v.template_version_id,v."values" FROM revisions v JOIN documents d ON d.id=v.document_id
-    WHERE d.id=$1 AND d.office_id=$2 AND d.kind IN ('care_plan_4','care_plan_5','care_plan_6') AND v.rev=$3`, [id, officeId, rev])).rows[0]
+  const r = (await db.query(`SELECT v.id,v.rev,v.saved_at,v.template_version_id,v."values" FROM revisions v JOIN documents d ON d.id=v.document_id
+    WHERE d.id=$1 AND d.office_id=$2 AND d.kind IN ('care_plan_4','care_plan_5','care_plan_6','care_plan_7') AND v.rev=$3`, [id, officeId, rev])).rows[0]
   if (!r) throw new NotFound()
-  return { rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString(), formVersionId: r.template_version_id, values: r.values }
+  return { rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString(), formVersionId: r.template_version_id, values: r.values, confirmation: await recordConfirmation(db, r.id) }
+}
+
+async function recordConfirmation(db: Db | Tx, revisionId: string | number) {
+  const r = (await db.query(`SELECT c.confirmed_at,c.confirmed_by,c.plan_confirmation_id,p.id AS plan_id,p.version
+    FROM care_record_confirmations c LEFT JOIN care_plan_confirmations pc ON pc.id=c.plan_confirmation_id
+    LEFT JOIN care_plans p ON p.id=pc.plan_id WHERE c.revision_id=$1`, [revisionId])).rows[0]
+  return r ? {confirmedAt:new Date(r.confirmed_at).toISOString(),confirmedBy:r.confirmed_by as string,planId:r.plan_id??null,planVersion:r.version==null?null:Number(r.version),planConfirmationId:r.plan_confirmation_id??null} : null
+}
+export async function confirmCareRecord(db:Db,staff:Staff,id:string,input:{baseRevision:number;relatedPlanId:string|null}) {
+  return tx(db,async c=>{
+    const d=(await c.query("SELECT id,client_id,kind,template_version_id FROM documents WHERE id=$1 AND office_id=$2 AND kind IN ('care_plan_4','care_plan_5') FOR UPDATE",[id,staff.officeId])).rows[0]
+    if(!d)throw new NotFound()
+    const r=(await c.query('SELECT id,rev,"values",template_version_id FROM revisions WHERE document_id=$1 ORDER BY rev DESC LIMIT 1',[id])).rows[0]
+    if(!r || Number(r.rev)!==input.baseRevision || r.template_version_id!==d.template_version_id)throw new Conflict('record_revision')
+    const old=await recordConfirmation(c,r.id)
+    if(old){if(old.planId!==input.relatedPlanId)throw new Conflict('record_confirmation');return old}
+    const same=(await c.query(`SELECT $2::jsonb=coalesce(jsonb_object_agg(key,value),'{}'::jsonb) AS same FROM field_values WHERE document_id=$1`,[id,JSON.stringify(r.values)])).rows[0].same
+    if(!same)throw new Conflict('record_unsaved')
+    let planConfirmationId:string|null=null
+    if(input.relatedPlanId){
+      if(d.kind!=='care_plan_4')throw new Conflict('record_plan_kind')
+      const pc=(await c.query('SELECT pc.id FROM care_plan_confirmations pc JOIN care_plans p ON p.id=pc.plan_id WHERE p.id=$1 AND p.office_id=$2 AND p.client_id=$3',[input.relatedPlanId,staff.officeId,d.client_id])).rows[0]
+      if(!pc)throw new NotFound()
+      planConfirmationId=pc.id
+    }
+    await c.query('INSERT INTO care_record_confirmations(revision_id,document_id,office_id,client_id,plan_confirmation_id,confirmed_by) VALUES($1,$2,$3,$4,$5,$6)',[r.id,id,staff.officeId,d.client_id,planConfirmationId,staff.id])
+    await audit(c,staff,staff.officeId,'care_record.confirm',{clientId:d.client_id,documentId:id},{revision:input.baseRevision,planConfirmationId})
+    return (await recordConfirmation(c,r.id))!
+  })
 }

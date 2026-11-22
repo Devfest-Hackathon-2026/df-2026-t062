@@ -1003,7 +1003,7 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 }
 
 /** キー順に依存しない JSON。ハッシュと保存済み判定で同じ正規化を使う。 */
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value !== null && typeof value === 'object') {
     const row = value as Record<string, unknown>
@@ -1413,7 +1413,7 @@ export async function planFormNoOfDocument(db: Q, officeId: string, documentId: 
 
 /** 第2/3表の射影を汎用の欄の直しで変えようとしていないか */
 export async function assertGenericDocumentEdits(db: Q, officeId: string, documentId: string, keys: string[]) {
-  if ((await db.query("SELECT id FROM documents WHERE id=$1 AND office_id=$2 AND kind='care_plan_6'", [documentId, officeId])).rows.length) throw new UsePlanApi()
+  if ((await db.query("SELECT id FROM documents WHERE id=$1 AND office_id=$2 AND kind IN ('care_plan_6','care_plan_7')", [documentId, officeId])).rows.length) throw new UsePlanApi()
   await assertPlanDocumentDraft(db, officeId, documentId)
   const formNo = await planFormNoOfDocument(db, officeId, documentId)
   if (formNo && keys.some((k) => PROJECTION_KEYS[formNo].has(k))) throw new UsePlanApi()
@@ -1421,7 +1421,7 @@ export async function assertGenericDocumentEdits(db: Q, officeId: string, docume
 
 /** 第2/3表を汎用の個別保存で変えようとしていないか */
 export async function assertGenericDocumentSave(db: Q, officeId: string, documentId: string) {
-  if ((await db.query("SELECT id FROM documents WHERE id=$1 AND office_id=$2 AND kind='care_plan_6'", [documentId, officeId])).rows.length) throw new UsePlanApi()
+  if ((await db.query("SELECT id FROM documents WHERE id=$1 AND office_id=$2 AND kind IN ('care_plan_6','care_plan_7')", [documentId, officeId])).rows.length) throw new UsePlanApi()
   await assertPlanDocumentDraft(db, officeId, documentId)
   if (await planFormNoOfDocument(db, officeId, documentId)) throw new UsePlanApi()
 }
