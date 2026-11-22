@@ -30,6 +30,12 @@ export interface CleanupSummaryLog {
   failed_past_retry_count?: number
   unsynced_hold_count?: number
   escalated_hold_count?: number
+  missing_expiry_count?: number
+  missing_generation_count?: number
+  legacy_hold_sync_count?: number
+  failed_deletion_count?: number
+  stuck_deletion_count?: number
+  stale_upload_count?: number
   failure_rate_percent?: number
   error_code?: string
   retryable?: boolean
@@ -70,6 +76,12 @@ export function writeCleanupLog(payload: CleanupSummaryLog) {
     ...(payload.failed_past_retry_count === undefined ? {} : { failed_past_retry_count: payload.failed_past_retry_count }),
     ...(payload.unsynced_hold_count === undefined ? {} : { unsynced_hold_count: payload.unsynced_hold_count }),
     ...(payload.escalated_hold_count === undefined ? {} : { escalated_hold_count: payload.escalated_hold_count }),
+    ...(payload.missing_expiry_count === undefined ? {} : { missing_expiry_count: payload.missing_expiry_count }),
+    ...(payload.missing_generation_count === undefined ? {} : { missing_generation_count: payload.missing_generation_count }),
+    ...(payload.legacy_hold_sync_count === undefined ? {} : { legacy_hold_sync_count: payload.legacy_hold_sync_count }),
+    ...(payload.failed_deletion_count === undefined ? {} : { failed_deletion_count: payload.failed_deletion_count }),
+    ...(payload.stuck_deletion_count === undefined ? {} : { stuck_deletion_count: payload.stuck_deletion_count }),
+    ...(payload.stale_upload_count === undefined ? {} : { stale_upload_count: payload.stale_upload_count }),
     ...(payload.failure_rate_percent === undefined ? {} : { failure_rate_percent: payload.failure_rate_percent }),
     ...(payload.error_code === undefined ? {} : { error_code: safeErrorCode(payload.error_code) }),
     ...(payload.retryable === undefined ? {} : { retryable: payload.retryable }),

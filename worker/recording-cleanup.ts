@@ -9,9 +9,24 @@ const deps = { db: getDb, storage: () => storage, providers: async () => { throw
 
 if (process.argv.includes('--verify-lifecycle-readiness')) {
   const result = await lifecycleReadiness(await getDb())
-  writeCleanupLog({ event: CLEANUP_EVENTS.job, operation: 'readiness', result: result.unsyncedHolds > 0 || result.escalatedHolds > 0 ? 'failed' : 'success' })
+  const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
+    || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
+    || result.stuckDeletions > 0 || result.staleUploads > 0
+  writeCleanupLog({
+    event: CLEANUP_EVENTS.job,
+    operation: 'readiness',
+    result: readinessFailed ? 'failed' : 'success',
+    unsynced_hold_count: result.unsyncedHolds,
+    escalated_hold_count: result.escalatedHolds,
+    missing_expiry_count: result.missingExpiry,
+    missing_generation_count: result.missingGeneration,
+    legacy_hold_sync_count: result.legacyHoldSync,
+    failed_deletion_count: result.failedDeletions,
+    stuck_deletion_count: result.stuckDeletions,
+    stale_upload_count: result.staleUploads,
+  })
   await closePool(await getDb())
-  if (result.unsyncedHolds > 0 || result.escalatedHolds > 0) process.exitCode = 1
+  if (readinessFailed) process.exitCode = 1
 } else {
   const startedAt = Date.now()
   writeCleanupLog({ event: CLEANUP_EVENTS.job, operation: 'cleanup', result: 'started' })

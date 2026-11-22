@@ -694,10 +694,27 @@ export async function lifecycleReadiness(db: Db) {
   const row = (await db.query(
     `SELECT
        count(*) FILTER (WHERE retention_hold_sync_status <> 'synced' AND (retention_hold OR retention_hold_target))::int AS unsynced_holds,
-       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds
+       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_expires_at IS NULL)::int AS missing_expiry,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND status = 'uploaded' AND source_generation IS NULL)::int AS missing_generation,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_sync_status = 'legacy')::int AS legacy_hold_sync,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'failed')::int AS failed_deletions,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'deleting'
+         AND source_delete_claimed_at <= now() - interval '15 minutes')::int AS stuck_deletions,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND status IN ('uploading', 'abandoning')
+         AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days')::int AS stale_uploads
      FROM recordings`,
   )).rows[0]
-  return { unsyncedHolds: Number(row.unsynced_holds), escalatedHolds: Number(row.escalated_holds) }
+  return {
+    unsyncedHolds: Number(row.unsynced_holds),
+    escalatedHolds: Number(row.escalated_holds),
+    missingExpiry: Number(row.missing_expiry),
+    missingGeneration: Number(row.missing_generation),
+    legacyHoldSync: Number(row.legacy_hold_sync),
+    failedDeletions: Number(row.failed_deletions),
+    stuckDeletions: Number(row.stuck_deletions),
+    staleUploads: Number(row.stale_uploads),
+  }
 }
 
 export async function getRecordingRetentionObservability(db: Db): Promise<RecordingRetentionObservability> {
