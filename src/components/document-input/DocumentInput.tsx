@@ -14,6 +14,7 @@ interface Props {
   clientName: string
   beforeAdopt: () => Promise<boolean>
   onApplied: () => void
+  source: ReturnType<typeof useDocumentInputs>
 }
 const stateLabel = { uploading: '送信待ち', queued: '読み取り待ち', processing: '読み取り中', review: '確認できます', failed: '読み取れませんでした' }
 const errors: Record<string, string> = {
@@ -26,50 +27,91 @@ const errors: Record<string, string> = {
   image_too_large: '画像の解像度を小さくして、選び直してください。',
 }
 
-export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApplied }: Props) {
-  const [inputs, setInputs] = useState<DocumentInputView[]>([])
+export function useDocumentInputs(documentId: string | undefined) {
+  const [loaded, setLoaded] = useState<{ documentId: string, inputs: DocumentInputView[] }>()
+  const [failure, setFailure] = useState<{ documentId: string, message: string }>()
+  const inputs = loaded?.documentId === documentId ? loaded?.inputs : undefined
+  const error = failure?.documentId === documentId ? failure?.message : undefined
+  const activeDocument = useRef(documentId)
+  const request = useRef(0)
+  activeDocument.current = documentId
+
+  const refresh = useCallback(async () => {
+    if (!documentId || activeDocument.current !== documentId) return
+    const sequence = ++request.current
+    try {
+      const result = await api.documentInputs(documentId)
+      if (sequence === request.current && activeDocument.current === documentId) {
+        setLoaded({ documentId, inputs: result.inputs })
+        setFailure(undefined)
+      }
+    } catch {
+      if (sequence === request.current && activeDocument.current === documentId) {
+        setFailure({ documentId, message: '取り込み状況を取得できませんでした。' })
+      }
+    }
+  }, [documentId])
+
+  useEffect(() => {
+    void refresh()
+    return () => { request.current++ }
+  }, [refresh])
+
+  const processing = !!inputs?.some(({ status }) => status === 'queued' || status === 'processing')
+  useEffect(() => {
+    if (!processing) return
+    let cancelled = false
+    const poll = async () => {
+      await refresh()
+      if (!cancelled) timer = setTimeout(poll, 3000)
+    }
+    let timer = setTimeout(poll, 3000)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [processing, refresh])
+
+  return { inputs, error, refresh }
+}
+
+export function DocumentInput({ documentId, dict, clientName, beforeAdopt, onApplied, source }: Props) {
+  const { inputs, error: loadError, refresh } = source
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [percent, setPercent] = useState(0)
   const uploading = useRef(false)
   const mounted = useRef(true)
-  const refresh = useCallback(async () => {
-    const r = await api.documentInputs(documentId)
-    if (mounted.current) setInputs(r.inputs)
-  }, [documentId])
   useEffect(() => {
     mounted.current = true
-    void refresh().catch(() => { if (mounted.current) setError('取り込み一覧を取得できませんでした。') })
     return () => { mounted.current = false }
-  }, [refresh])
-  useEffect(() => {
-    if (!inputs.some((input) => input.status === 'queued' || input.status === 'processing')) return
-    const timer = setTimeout(() => {
-      void refresh().catch(() => setError('進み具合を取得できませんでした。書類を開き直してください。'))
-    }, 3000)
-    return () => clearTimeout(timer)
-  }, [inputs, refresh])
+  }, [])
   const start = async (file: File) => {
     if (uploading.current) return
     uploading.current = true
     setBusy(true); setError(''); setPercent(0)
     try {
       await attachDocumentInput(documentId, file, (n) => { if (mounted.current) setPercent(n) })
-      if (mounted.current) await refresh()
+      await refresh()
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : '画像を添付できませんでした。') }
     finally { uploading.current = false; if (mounted.current) setBusy(false) }
   }
+  const reading = inputs?.some(({ status }) => status === 'queued' || status === 'processing')
+  const latest = inputs?.[0]
+  const pendingCount = latest?.result?.candidates.filter(({ key }) => !latest.adopted.includes(key)).length ?? 0
   return <div className="assistant-import document-input">
-    <PetMessage>画像を添付してください。<br />書類に入れる内容を一緒に確認しましょう。</PetMessage>
+    <div aria-live="polite"><PetMessage>{busy ? '書類を送っています。'
+      : reading ? '書類を読み取っています。用紙の作業を続けられます。'
+      : latest?.status === 'failed' ? '書類を読み取れませんでした。下の詳細を確認してください。'
+      : pendingCount ? `読み取った内容に、確認できる項目が${pendingCount}件あります。`
+      : latest?.status === 'review' && !latest.result?.candidates.length ? 'この書類から反映できる内容が見つかりませんでした。'
+      : '画像を添付してください。書類に入れる内容を一緒に確認しましょう。'}</PetMessage></div>
     <label className="assistant-file-picker document-input-attach" aria-disabled={busy}>
       <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={busy}
         onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void start(file) }} aria-label="入力したい情報の画像を添付" />
       <span><PetIcon name="folder" />{busy ? `添付中 ${percent}%` : '画像・書類を添付'}</span>
       <small>JPEG・PNG・PDF／10 MBまで</small>
     </label>
-    {error && <p role="alert" className="assistant-error">{error}</p>}
+    {(error || loadError) && <p role="alert" className="assistant-error">{error || loadError}</p>}
     <div aria-live="polite">
-      {inputs.map((input) => <InputReview key={input.id} dict={dict} input={input} clientName={clientName}
+      {inputs?.map((input) => <InputReview key={input.id} dict={dict} input={input} clientName={clientName}
         retry={async () => { await api.retryDocumentInput(input.id); await refresh() }} beforeAdopt={beforeAdopt} onApplied={async () => { await refresh(); onApplied() }} />)}
     </div>
   </div>

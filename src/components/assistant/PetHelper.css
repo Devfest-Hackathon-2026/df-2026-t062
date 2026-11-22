@@ -218,3 +218,23 @@ strong.assistant-chat-field { color: var(--pet-ink); }
 .assistant-panel .assistant-chat-steps { display: grid; gap: 2px; justify-self: start; max-width: 92%; padding: 0 4px; }
 .assistant-chat-steps li { display: flex; align-items: baseline; gap: 6px; font-size: 13px; line-height: 1.5; color: #5a4f6e; overflow-wrap: anywhere; }
 .assistant-chat-steps .assistant-icon { flex: none; color: #17633a; font-size: 12px; transform: translateY(1px); }
+
+.assistant-guidance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.assistant-guidance-actions button {
+  padding: 6px 12px;
+  border: 1px solid #d2d5de;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.assistant-menu .assistant-card-suggested {
+  border-color: var(--pet-purple);
+}

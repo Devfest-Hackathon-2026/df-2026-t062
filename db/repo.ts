@@ -635,6 +635,7 @@ export async function dispatchRecordingJob(db: Db, jobId: string, enqueue: () =>
 
 export interface JobView {
   id: string
+  documentId: string
   status: string
   step: string | null
   etaSeconds: number | null
@@ -648,7 +649,7 @@ export interface JobView {
 /** 処理中・直近 15 分のジョブと、最後のジョブ（後日も失敗が分かるようにする） */
 export async function activeJobs(db: Q, officeId: string, clientId: string): Promise<JobView[]> {
   const r = await db.query(
-    `SELECT j.id, j.status, j.step, j.eta_seconds, j.created_at, j.updated_at, j.error_kind,
+    `SELECT j.id, j.document_id, j.status, j.step, j.eta_seconds, j.created_at, j.updated_at, j.error_kind,
             j.steps #> '{write,incompleteFields}' AS incomplete_fields,
             jsonb_array_length(b.changes) AS n, jsonb_array_length(b.kept) AS k
      FROM jobs j LEFT JOIN batches b ON b.id = j.batch_id
@@ -660,6 +661,7 @@ export async function activeJobs(db: Q, officeId: string, clientId: string): Pro
   )
   return r.rows.map((j) => ({
     id: j.id,
+    documentId: j.document_id,
     status: j.status,
     step: j.step,
     etaSeconds: j.eta_seconds,
