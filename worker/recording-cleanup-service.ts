@@ -158,6 +158,13 @@ export async function backfillRecordingSourceMetadata(deps: WorkerDeps, limit = 
   return updated
 }
 
+export async function synchronizeRecordingLifecycleMetadata(deps: WorkerDeps, limit = 100) {
+  const metrics = emptyMetrics()
+  const metadata = await backfillRecordingSourceMetadata(deps, limit)
+  const holds = await synchronizeRetentionHolds(deps, limit, metrics)
+  return { metadata, holds, failures: metrics.failureCount }
+}
+
 export async function cancelStaleUploadSessions(deps: WorkerDeps, limit = 100) {
   const db = await deps.db()
   const candidates = await claimStaleUploadSessions(db, limit)

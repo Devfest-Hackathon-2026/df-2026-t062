@@ -1,13 +1,48 @@
 import { closePool, getDb } from '../db/pool.ts'
 import { defaultStorage } from '../api/storage.ts'
 import { lifecycleReadiness } from '../db/recording-retention.ts'
-import { runRecordingCleanup } from './recording-cleanup-service.ts'
+import { runRecordingCleanup, synchronizeRecordingLifecycleMetadata } from './recording-cleanup-service.ts'
 import { CLEANUP_EVENTS, writeCleanupLog } from './recording-cleanup-observability.ts'
 
 const storage = defaultStorage()
 const deps = { db: getDb, storage: () => storage, providers: async () => { throw new Error('cleanup does not use providers') } }
 
-if (process.argv.includes('--verify-lifecycle-readiness')) {
+if (process.argv.includes('--synchronize-lifecycle-metadata')) {
+  const startedAt = Date.now()
+  let metadataCount = 0
+  let holdCount = 0
+  let failureCount = 0
+  for (let batch = 0; batch < 10; batch++) {
+    const result = await synchronizeRecordingLifecycleMetadata(deps)
+    metadataCount += result.metadata
+    holdCount += result.holds
+    failureCount += result.failures
+    if (result.metadata === 0 && result.holds === 0) break
+  }
+  const result = await lifecycleReadiness(await getDb())
+  const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
+    || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
+    || result.stuckDeletions > 0 || result.staleUploads > 0 || failureCount > 0
+  writeCleanupLog({
+    event: CLEANUP_EVENTS.job,
+    operation: 'metadata_sync',
+    result: readinessFailed ? 'failed' : 'success',
+    duration_ms: Date.now() - startedAt,
+    metadata_count: metadataCount,
+    hold_count: holdCount,
+    failure_count: failureCount,
+    unsynced_hold_count: result.unsyncedHolds,
+    escalated_hold_count: result.escalatedHolds,
+    missing_expiry_count: result.missingExpiry,
+    missing_generation_count: result.missingGeneration,
+    legacy_hold_sync_count: result.legacyHoldSync,
+    failed_deletion_count: result.failedDeletions,
+    stuck_deletion_count: result.stuckDeletions,
+    stale_upload_count: result.staleUploads,
+  })
+  await closePool(await getDb())
+  if (readinessFailed) process.exitCode = 1
+} else if (process.argv.includes('--verify-lifecycle-readiness')) {
   const result = await lifecycleReadiness(await getDb())
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
     || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
