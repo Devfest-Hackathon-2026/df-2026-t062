@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>サービス利用票別表｜用紙のUI見本</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1f293b;
+        --muted: #596678;
+        --line: #dfe5eb;
+        --blue: #2455a6;
+        --bg: #f3f5f8;
+        --warn: #8a4f0b;
+        font-family: "Noto Sans CJK JP", "Noto Sans JP", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      h1,
+      h2,
+      h3,
+      p,
+      dl {
+        margin: 0;
+      }
+      button,
+      select {
+        font: inherit;
+        color: inherit;
+        border: 1px solid #c9d3e3;
+        border-radius: 7px;
+        background: white;
+        padding: 7px 12px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        border-color: #829dc4;
+      }
+      button:focus-visible,
+      select:focus-visible {
+        outline: 3px solid #3d6bbb;
+        outline-offset: 2px;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+      button.primary {
+        background: var(--blue);
+        color: white;
+        border-color: var(--blue);
+        font-weight: 700;
+      }
+      .appbar {
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+      }
+      .appbar-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        max-width: 1510px;
+        padding: 14px 32px;
+        margin: auto;
+      }
+      .crumb {
+        font-weight: 750;
+      }
+      .crumb span {
+        color: var(--muted);
+        margin-right: 7px;
+        font-weight: 500;
+      }
+      .demo {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .page {
+        max-width: 1510px;
+        margin: auto;
+        padding: 22px 30px 34px;
+      }
+      .heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .heading h1 {
+        font-size: 27px;
+        letter-spacing: -0.025em;
+      }
+      .heading p {
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .case {
+        display: grid;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        min-width: 180px;
+      }
+      .case select {
+        color: var(--ink);
+        padding-right: 28px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 16px;
+        align-items: start;
+      }
+      .context,
+      .workspace {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .context {
+        padding: 16px;
+      }
+      .context h2 {
+        font-size: 15px;
+        margin-bottom: 10px;
+      }
+      .source {
+        background: #eff4fb;
+        border: 1px solid #dce7f8;
+        border-radius: 8px;
+        padding: 11px;
+        margin-bottom: 14px;
+      }
+      .source strong {
+        display: block;
+      }
+      .source small {
+        color: #516885;
+        display: block;
+        margin-top: 3px;
+      }
+      .context dl div {
+        margin-bottom: 11px;
+      }
+      .context dl div:last-child {
+        margin-bottom: 0;
+      }
+      .context dt {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .context dd {
+        margin: 2px 0 0;
+        font-weight: 600;
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 15px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tool-label {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+      }
+      .tool-label strong {
+        font-size: 15px;
+      }
+      .status {
+        font-size: 12px;
+        border-radius: 20px;
+        padding: 3px 8px;
+        background: #ebf3ff;
+        color: #2f568e;
+        font-weight: 650;
+      }
+      .status.warn {
+        background: #fff1d8;
+        color: var(--warn);
+      }
+      .tool-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        white-space: nowrap;
+      }
+      .tool-actions button {
+        padding: 5px 11px;
+      }
+      .tool-actions output {
+        min-width: 41px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .notice {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 15px;
+        color: #435771;
+        border-bottom: 1px solid #deebff;
+        background: #f2f7ff;
+        font-size: 13px;
+      }
+      .notice.warn {
+        border-color: #f0e2cb;
+        background: #fff7e9;
+        color: var(--warn);
+      }
+      .notice button {
+        font-size: 12px;
+        padding: 4px 9px;
+        white-space: nowrap;
+      }
+      .paper-scroll {
+        background: #e7ebf0;
+        overflow: auto;
+        padding: 16px 18px 20px;
+      }
+      .paper {
+        min-width: 780px;
+        width: var(--paper-width, 100%);
+        max-width: none;
+        margin: auto;
+        background: white;
+        color: #111;
+        aspect-ratio: 297/210;
+        padding: 3.2% 2.4%;
+        box-shadow: 0 2px 10px #273d5522;
+        container-type: inline-size;
+        font-size: 12px;
+      }
+      .paper h2 {
+        text-align: center;
+        font-size: clamp(20px, 2.5cqw, 36px);
+        letter-spacing: 0.19em;
+        font-weight: 750;
+        margin: 0 0 1.4cqw;
+      }
+      .paper-header {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 1.24cqw;
+        margin: 0 0 1.3cqw;
+      }
+      .paper-header .person {
+        border-bottom: 1px solid #4b4b4b;
+        min-width: 18%;
+        display: inline-block;
+        text-align: center;
+        margin: 0 5px;
+      }
+      .paper table {
+        border-collapse: collapse;
+        table-layout: fixed;
+        width: 100%;
+        font-size: 1.02cqw;
+      }
+      .paper th,
+      .paper td {
+        border: 1px solid #4d4d4d;
+        text-align: center;
+        vertical-align: middle;
+        padding: 0.26cqw 0.2cqw;
+        line-height: 1.3;
+      }
+      .paper th {
+        font-weight: 600;
+        background: #f2f2f2;
+      }
+      .paper tbody td {
+        height: 2.62cqw;
+      }
+      .paper td.text {
+        text-align: left;
+        padding-left: 0.4cqw;
+      }
+      .paper td.number {
+        text-align: right;
+        white-space: nowrap;
+        padding: 0.25cqw 0.35cqw;
+        font-variant-numeric: tabular-nums;
+      }
+      .paper td.value {
+        background: #eff5ff;
+        color: #18427e;
+        font-weight: 700;
+      }
+      .paper td.empty {
+        background: #fff1da;
+        color: #81500b;
+      }
+      .paper td.cell-button {
+        padding: 0;
+      }
+      .cell-button button {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        padding: 0.25cqw 0.35cqw;
+        border: 0;
+        border-radius: 0;
+        color: inherit;
+        text-align: right;
+      }
+      .cell-button button:hover {
+        background: #e3ecfc;
+      }
+      .empty.cell-button button:hover {
+        background: #ffebbe;
+      }
+      .paper .total th,
+      .paper .total td {
+        height: 3cqw;
+        border-top: 1.5px solid #242424;
+      }
+      .paper .lower {
+        margin-top: 2cqw;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.8cqw;
+        font-size: 1.16cqw;
+      }
+      .paper .line {
+        border-bottom: 1px solid #444;
+        padding: 0.58cqw 0.2cqw;
+      }
+      .paper .form-note {
+        margin-top: 2cqw;
+        color: #555;
+        font-size: 0.96cqw;
+      }
+      dialog {
+        width: min(520px, calc(100% - 28px));
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: var(--ink);
+        box-shadow: 0 14px 70px #16243335;
+      }
+      dialog::backdrop {
+        background: #13274652;
+      }
+      .dialog-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      .dialog-head h2 {
+        font-size: 18px;
+      }
+      .dialog-body {
+        padding: 18px 20px 20px;
+      }
+      .dialog-body h3 {
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+      .dialog-body p {
+        color: var(--muted);
+      }
+      .dialog-body .focus-box {
+        margin: 12px 0;
+        padding: 10px 12px;
+        background: #f1f5fc;
+        border-radius: 8px;
+      }
+      .dialog-body .focus-box.warn {
+        background: #fff3dd;
+        color: var(--warn);
+      }
+      .dialog-body .action {
+        display: flex;
+        justify-content: end;
+        margin-top: 16px;
+      }
+      @media (max-width: 900px) {
+        .appbar-inner,
+        .page {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .context {
+          display: none;
+        }
+      }
+      @media (max-width: 535px) {
+        .heading {
+          align-items: start;
+          flex-direction: column;
+        }
+        .heading h1 {
+          font-size: 23px;
+        }
+        .tool-label .status {
+          display: none;
+        }
+        .paper-scroll {
+          padding: 10px;
+        }
+        .toolbar,
+        .notice {
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+        .tool-label strong {
+          font-size: 13px;
+        }
+        .tool-actions button {
+          padding: 4px 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="appbar">
+      <div class="appbar-inner">
+        <div class="crumb"><span>ケアプラン　/</span> 第7表</div>
+        <span class="demo">UI見本・架空データ</span>
+      </div>
+    </header>
+    <main class="page">
+      <header class="heading">
+        <div>
+          <h1>サービス利用票別表</h1>
+          <p>2026年11月分　／　見本 花子さん</p>
+        </div>
+        <label class="case"
+          >表示例<select id="scenario">
+            <option value="ready">入力済み</option>
+            <option value="review">確認が必要</option>
+          </select></label
+        >
+      </header>
+      <div class="layout">
+        <aside class="context" aria-labelledby="source-title">
+          <h2 id="source-title">参照する第6表</h2>
+          <div class="source">
+            <strong>2026年11月</strong><small>計画 第1版 · 保存版 3</small>
+          </div>
+          <dl>
+            <div>
+              <dt>集計する区分</dt>
+              <dd>実績</dd>
+            </div>
+            <div>
+              <dt>提供事業所</dt>
+              <dd>見本訪問介護</dd>
+            </div>
+            <div>
+              <dt>利用者負担割合</dt>
+              <dd>1割</dd>
+            </div>
+          </dl>
+        </aside>
+        <section class="workspace" aria-labelledby="paper-title">
+          <header class="toolbar">
+            <div class="tool-label">
+              <strong>第7表の用紙</strong
+              ><span id="status" class="status">入力済み・未確認</span>
+            </div>
+            <div
+              class="tool-actions"
+              role="group"
+              aria-label="用紙の拡大・縮小"
+            >
+              <button id="zoom-out" type="button" aria-label="用紙を縮小">
+                −</button
+              ><output id="zoom" aria-live="polite">100%</output
+              ><button id="zoom-in" type="button" aria-label="用紙を拡大">
+                ＋
+              </button>
+            </div>
+          </header>
+          <div class="notice" id="notice">
+            <span id="summary" role="status"
+              >第6表の実施7件を反映しました。青い欄が入力された箇所です。</span
+            ><button type="button" id="review-button">内容を確認</button>
+          </div>
+          <div class="paper-scroll" aria-label="第7表の用紙">
+            <article class="paper" id="paper">
+              <h2 id="paper-title">サービス利用票別表</h2>
+              <div class="paper-header">
+                <span>令和8年11月分</span
+                ><span>利用者名 <span class="person">見本 花子</span> 様</span
+                ><span>作成年月日　令和8年11月30日</span>
+              </div>
+              <table aria-label="サービス利用票別表">
+                <colgroup>
+                  <col style="width: 10%" />
+                  <col style="width: 10%" />
+                  <col style="width: 6%" />
+                  <col style="width: 6%" />
+                  <col style="width: 4%" />
+                  <col style="width: 7%" />
+                  <col style="width: 7%" />
+                  <col style="width: 7%" />
+                  <col style="width: 7%" />
+                  <col style="width: 6%" />
+                  <col style="width: 7%" />
+                  <col style="width: 4%" />
+                  <col style="width: 7%" />
+                  <col style="width: 7%" />
+                  <col style="width: 5%" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowspan="2" scope="col">事業所名</th>
+                    <th rowspan="2" scope="col">サービス内容</th>
+                    <th rowspan="2" scope="col">サービス<br />コード</th>
+                    <th rowspan="2" scope="col">単位数</th>
+                    <th rowspan="2" scope="col">回数</th>
+                    <th colspan="4" scope="colgroup">
+                      区分支給限度基準額の確認
+                    </th>
+                    <th colspan="6" scope="colgroup">費用・給付・利用者負担</th>
+                  </tr>
+                  <tr>
+                    <th scope="col">サービス<br />単位数</th>
+                    <th scope="col">限度額管理<br />対象単位数</th>
+                    <th scope="col">限度額<br />超過単位数</th>
+                    <th scope="col">限度額内<br />単位数</th>
+                    <th scope="col">単位数<br />単価</th>
+                    <th scope="col">費用総額<br />（円）</th>
+                    <th scope="col">給付率<br />（％）</th>
+                    <th scope="col">保険給付額<br />（円）</th>
+                    <th scope="col">利用者負担額<br />（円）</th>
+                    <th scope="col">全額負担<br />（円）</th>
+                  </tr>
+                </thead>
+                <tbody id="form-rows"></tbody>
+                <tfoot>
+                  <tr class="total" id="total-row"></tr>
+                </tfoot>
+              </table>
+              <div class="lower">
+                <div class="line">区分支給限度基準額　　16,765 単位</div>
+                <div class="line">
+                  居宅介護支援事業所　　見本居宅介護支援事業所
+                </div>
+              </div>
+              <p class="form-note">様式見本</p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+    <dialog id="review" aria-labelledby="review-title">
+      <header class="dialog-head">
+        <h2 id="review-title">入力内容の確認</h2>
+        <button id="close" type="button">閉じる</button>
+      </header>
+      <div class="dialog-body" id="review-detail"></div>
+    </dialog>
+    <script>
+      const el = (id) => document.getElementById(id);
+      const dialog = el("review");
+      const state = { scenario: "ready", confirmed: false, zoom: 100 };
+      const initial = {
+        count: "7",
+        units: "1,708",
+        excess: "0",
+        price: "11.12",
+        gross: "18,992",
+        rate: "90",
+        benefit: "17,092",
+        copay: "1,900",
+        outside: "0",
+      };
+      const blankRows = Array.from(
+        { length: 9 },
+        () => "<tr>" + "<td></td>".repeat(15) + "</tr>",
+      ).join("");
+      function value(key, label) {
+        const missing =
+          state.scenario === "review" && !["price", "rate"].includes(key);
+        const content = missing ? "—" : initial[key];
+        const mark = missing ? "empty" : "value";
+        return label
+          ? '<td class="number cell-button ' +
+              mark +
+              '"><button type="button" aria-label="' +
+              label +
+              'の入力内容を確認" data-review="' +
+              label +
+              '">' +
+              content +
+              "</button></td>"
+          : '<td class="number ' + mark + '">' + content + "</td>";
+      }
+      function render() {
+        const pending = state.scenario === "review";
+        el("status").textContent = pending
+          ? "1件 要確認"
+          : state.confirmed
+            ? "確認済み"
+            : "入力済み・未確認";
+        el("status").classList.toggle("warn", pending);
+        el("notice").classList.toggle("warn", pending);
+        el("summary").textContent = pending
+          ? "11月26日の実績が未入力です。回数と金額の欄は保留です。"
+          : state.confirmed
+            ? "入力内容を確認済みにしました。"
+            : "第6表の実施7件を反映しました。青い欄が入力された箇所です。";
+        el("review-button").textContent = pending
+          ? "要確認の箇所を見る"
+          : "内容を確認";
+        el("form-rows").innerHTML =
+          '<tr><td class="text value">見本訪問介護</td><td class="text value">身体介護1</td><td class="value">111111</td><td class="number value">244</td>' +
+          value("count", "回数") +
+          value("units") +
+          value("units") +
+          value("excess") +
+          value("units") +
+          value("price") +
+          value("gross", "費用総額") +
+          value("rate") +
+          value("benefit") +
+          value("copay", "利用者負担額") +
+          value("outside") +
+          "</tr>" +
+          blankRows;
+        el("total-row").innerHTML =
+          '<th scope="row" colspan="5">合計</th>' +
+          value("units") +
+          value("units") +
+          value("excess") +
+          value("units") +
+          "<td></td>" +
+          value("gross") +
+          "<td></td>" +
+          value("benefit") +
+          value("copay") +
+          value("outside");
+      }
+      function openReview(label) {
+        const pending = state.scenario === "review";
+        el("review-title").textContent = label
+          ? label + "の入力内容"
+          : "入力内容の確認";
+        el("review-detail").innerHTML = pending
+          ? '<h3>第6表で確認する項目</h3><div class="focus-box warn">11月26日　身体介護1の実績が未入力</div><p>第6表の保存版3で実施・未実施を確認してください。確認が済むまで回数と金額は保留です。</p>'
+          : '<h3>第6表から入力された内容</h3><div class="focus-box">2026年11月 · 保存版 3<br>実施7件、未実施1件</div><p>反映した回数と金額を用紙で確認してください。</p><div class="action"><button id="confirm" type="button" class="primary">確認済みにする</button></div>';
+        if (!pending)
+          el("confirm").addEventListener("click", () => {
+            state.confirmed = true;
+            dialog.close();
+            render();
+          });
+        dialog.showModal();
+      }
+      el("scenario").addEventListener("change", (event) => {
+        state.scenario = event.target.value;
+        state.confirmed = false;
+        render();
+      });
+      el("review-button").addEventListener("click", () => openReview());
+      el("paper").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-review]");
+        if (button) openReview(button.dataset.review);
+      });
+      el("close").addEventListener("click", () => dialog.close());
+      function zoom(delta) {
+        state.zoom = Math.min(180, Math.max(80, state.zoom + delta));
+        el("paper").style.setProperty("--paper-width", state.zoom + "%");
+        el("zoom").textContent = state.zoom + "%";
+        el("zoom-out").disabled = state.zoom === 80;
+        el("zoom-in").disabled = state.zoom === 180;
+      }
+      el("zoom-out").addEventListener("click", () => zoom(-20));
+      el("zoom-in").addEventListener("click", () => zoom(20));
+      render();
+    </script>
+  </body>
+</html>
