@@ -1,9 +1,11 @@
+import * as fees from '../db/care-fees.ts'
+import { FeeCalculateInput,FeeConfirmInput } from '../core/care-fee-api.ts'
 import * as months from '../db/care-months.ts'
 import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
 import { careRecordDrafter } from './care-record-ai.ts'
 import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
-import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate } from '../core/care-record.ts'
-import { createCareRecord, listCareRecords, careRecordRevision } from '../db/care-records.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate, CareRecordConfirm } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision, confirmCareRecord } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -395,6 +397,14 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
 
+  app.get('/api/care-fee-masters', staffRoute('care.work',async(c,_staff,db)=>json(c,{masters:await fees.careFeeMasters(db)})))
+  app.get('/api/clients/:id/care-plan-fees',staffRoute('care.work',async(c,staff,db)=>json(c,{fees:await fees.listCareFees(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-months/:id/fees',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.calculateCareFee(db,staff,c.req.param('id')!,await body(c,FeeCalculateInput))})))
+  app.get('/api/care-plan-fees/:id',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-fees/:id/confirm',staffRoute('care.work',async(c,staff,db)=>{const input=await body(c,FeeConfirmInput);return json(c,{calculation:await fees.confirmCareFee(db,staff,c.req.param('id')!,input.calculationId,input.baseRevision)})}))
+  app.get('/api/care-plan-fees/:id/history',staffRoute('care.work',async(c,staff,db)=>json(c,{history:await fees.careFeeHistory(db,staff.officeId,c.req.param('id')!)})))
+  app.get('/api/care-plan-fees/:id/calculations/:calculation',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!,c.req.param('calculation')!)})))
+
   app.get('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => json(c, { months: await months.listCareMonths(db,staff.officeId,c.req.param('id')!) })))
   app.post('/api/clients/:id/care-plan-months/preview', staffRoute('care.work', async (c, staff, db) => {
     const input=await body(c,MonthPreviewInput)
@@ -422,6 +432,7 @@ export function createApp(deps: ApiDeps) {
     const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
     return json(c, record, record.created ? 201 : 200)
   }))
+  app.post('/api/care-records/:id/confirm', staffRoute('care.work', async (c, staff, db) => json(c, { confirmation: await confirmCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordConfirm)) })))
   app.get('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
   app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
     const input = await body(c, CareRecordDraftCreate)

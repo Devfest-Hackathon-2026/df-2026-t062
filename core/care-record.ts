@@ -11,7 +11,9 @@ export interface CareRecordSummary {
   id: string; seq: number; date: string | null; time: string | null; category: string | null; preview: string;
   revision: number; updatedAt: string
 }
-export interface CareRecordRevision { rev: number; savedAt: string; formVersionId: string; values: Record<string, unknown> }
+export interface CareRecordConfirmation { confirmedAt: string; confirmedBy: string; planId: string | null; planVersion: number | null; planConfirmationId: string | null }
+export const CareRecordConfirm = z.object({ baseRevision: z.number().int().positive(), relatedPlanId: z.uuid().nullable().default(null) }).strict()
+export interface CareRecordRevision { confirmation: CareRecordConfirmation | null; rev: number; savedAt: string; formVersionId: string; values: Record<string, unknown> }
 
 export interface CareRecordProposal { key: 'progress.content' | 'progress.category' | 'meeting.items' | 'meeting.discussion' | 'meeting.conclusion' | 'meeting.remaining'; label: string; before: unknown; after: string }
 export interface CareRecordSources { capturedAt: string; instructions: string; documents: { id: string, documentId: string, kind: string, rev: number, savedAt: string, formVersionId: string, values: Record<string, unknown> }[]; recordings: { id: string, recordedAt: string, utterances: unknown[] }[] }

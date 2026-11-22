@@ -1156,5 +1156,71 @@
         "label"
       ]
     }
+  },
+  "保険者番号": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insurerNumber"
+      ]
+    }
+  },
+  "保険者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insurerName"
+      ]
+    }
+  },
+  "被保険者番号": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insuredNumber"
+      ]
+    }
+  },
+  "届出日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "届出日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "届出日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "d",
+    "year": "short"
   }
 }
