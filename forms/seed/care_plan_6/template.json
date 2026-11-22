@@ -1955,6 +1955,114 @@
         "fontSize": 6,
         "alignment": "center",
         "lineHeight": 1.1
+      },
+      {
+        "name": "保険者番号",
+        "type": "text",
+        "position": {
+          "x": 20,
+          "y": 27
+        },
+        "width": 50,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "保険者名",
+        "type": "text",
+        "position": {
+          "x": 94,
+          "y": 27
+        },
+        "width": 46,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "被保険者番号",
+        "type": "text",
+        "position": {
+          "x": 20,
+          "y": 46
+        },
+        "width": 50,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 8,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_y",
+        "type": "text",
+        "position": {
+          "x": 250,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_m",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "届出日_d",
+        "type": "text",
+        "position": {
+          "x": 281,
+          "y": 50
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 6,
+          "fit": "both"
+        }
       }
     ],
     [
