@@ -1,0 +1,185 @@
+{
+  "key": "E2",
+  "scenario": "E",
+  "repeat": 2,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:18:21.485Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 2697,
+    "promptSha256": "0c920a13a3aff300891313b1aa0ef8c4fbd77648ffd68bb628dcb9805835c75e",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 10573,
+    "responseId": "XdIBa6uHJe2cvdAP04D_wAo",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 642,
+      "candidatesTokenCount": 157,
+      "totalTokenCount": 1940,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 642
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 157
+        }
+      ],
+      "thoughtsTokenCount": 1141
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\"plan1\":{\"plan.intentionAnalysis\":\"本人は調理が困難であるが、現在の調理支援を継続して自宅で食事をしたいという意向を持っている。\",\"plan.overallPolicy\":\"訪問介護の調理支援を継続し、自宅で食事ができるように支援する。\"},\"needs\":[{\"need\":\"調理が困難なため、自宅で食事が確保できるように支援が必要である。\",\"longGoal\":{\"goal\":\"自宅で継続して食事ができる。\",\"periodText\":\"\"},\"shortGoals\":[{\"goal\":\"訪問介護の調理支援を利用し、食事が提供される。\",\"periodText\":\"\",\"services\":[{\"content\":\"調理支援\",\"insured\":true,\"kind\":\"訪問介護\",\"provider\":\"\",\"frequency\":\"週2回\",\"periodText\":\"\"}]}]}],\"slots\":[],\"conflicts\":[]}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 10611,
+    "draft": {
+      "id": "f51d6071-6961-4eba-b6f4-6b9fec08844a",
+      "planId": "be940911-ab88-4102-9f7d-c12ee11b3217",
+      "status": "proposed",
+      "sourceDocumentId": "17da2eff-ea51-45a7-9bc0-81df58335c77",
+      "sourceRevisionId": 9,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:18:32.086Z",
+      "proposal": {
+        "needs": [
+          {
+            "need": "調理が困難なため、自宅で食事が確保できるように支援が必要である。",
+            "longGoal": {
+              "goal": "自宅で継続して食事ができる。",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "訪問介護の調理支援を利用し、食事が提供される。",
+                "services": [
+                  {
+                    "kind": "訪問介護",
+                    "content": "調理支援",
+                    "insured": true,
+                    "provider": "",
+                    "frequency": "週2回",
+                    "periodText": ""
+                  }
+                ],
+                "periodText": ""
+              }
+            ]
+          }
+        ],
+        "plan1": {
+          "plan.overallPolicy": "訪問介護の調理支援を継続し、自宅で食事ができるように支援する。",
+          "plan.intentionAnalysis": "本人は調理が困難であるが、現在の調理支援を継続して自宅で食事をしたいという意向を持っている。"
+        },
+        "slots": [],
+        "conflicts": []
+      },
+      "conflicts": [],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 18,
+    "applied": {
+      "fields": [
+        "plan.intentionAnalysis"
+      ],
+      "needs": [
+        "ea9f00b9-b44c-4cd8-9c21-a0d9069884e4"
+      ],
+      "slots": [],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "human_value"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証E",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）",
+      "plan.intentionAnalysis": "本人は調理が困難であるが、現在の調理支援を継続して自宅で食事をしたいという意向を持っている。"
+    },
+    "needs": [
+      {
+        "id": "ea9f00b9-b44c-4cd8-9c21-a0d9069884e4",
+        "need": "調理が困難なため、自宅で食事が確保できるように支援が必要である。",
+        "longGoal": {
+          "id": "1ccde2cc-a8e3-4017-9aa1-5abb55ec3467",
+          "goal": "自宅で継続して食事ができる。",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "8491f122-09ea-4af0-8e96-8b604be28312",
+            "goal": "訪問介護の調理支援を利用し、食事が提供される。",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": [
+              {
+                "id": "7b95dc76-64ca-460c-a347-a3ac37d2737a",
+                "content": "調理支援",
+                "insured": true,
+                "kind": "訪問介護",
+                "provider": "",
+                "frequency": "週2回",
+                "periodText": "",
+                "periodFrom": "2026-11-01",
+                "periodTo": "2027-10-31"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "slots": []
+  },
+  "expected": {
+    "focus": [
+      "調理の困難",
+      "在宅での食事と既存調理支援の継続",
+      "曜日時刻の未確認"
+    ],
+    "services": [
+      "調理支援／訪問介護／週2回"
+    ],
+    "slots": [],
+    "conflictsRequired": false
+  }
+}
