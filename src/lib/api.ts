@@ -151,6 +151,7 @@ export const api = {
   careRecordDrafts: (id: string) => req<{ drafts: CareRecordDraftView[] }>('GET', `/api/care-records/${id}/ai-drafts`),
   createCareRecordDraft: (id: string, requestId: string, instructions: string) => req<{ draft: CareRecordDraftView }>('POST', `/api/care-records/${id}/ai-drafts`, { requestId, instructions }),
   applyCareRecordDraft: (id: string, draftId: string) => req<{ draft: CareRecordDraftView, document: DocumentView }>('POST', `/api/care-records/${id}/ai-drafts/${draftId}/apply`, {}),
+  confirmCareRecord: (id:string,baseRevision:number,relatedPlanId:string|null) => req<{confirmation: import('../../core/care-record.ts').CareRecordConfirmation}>('POST', `/api/care-records/${id}/confirm`, {baseRevision,relatedPlanId}),
   careRecordRevision: (id: string, rev: number) => req<{ revision: CareRecordRevision }>('GET', `/api/care-records/${id}/revisions/${rev}`),
   document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),

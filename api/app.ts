@@ -4,8 +4,8 @@ import * as months from '../db/care-months.ts'
 import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
 import { careRecordDrafter } from './care-record-ai.ts'
 import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
-import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate } from '../core/care-record.ts'
-import { createCareRecord, listCareRecords, careRecordRevision } from '../db/care-records.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate, CareRecordConfirm } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision, confirmCareRecord } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -432,6 +432,7 @@ export function createApp(deps: ApiDeps) {
     const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
     return json(c, record, record.created ? 201 : 200)
   }))
+  app.post('/api/care-records/:id/confirm', staffRoute('care.work', async (c, staff, db) => json(c, { confirmation: await confirmCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordConfirm)) })))
   app.get('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
   app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
     const input = await body(c, CareRecordDraftCreate)
