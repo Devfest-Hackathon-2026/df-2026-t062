@@ -179,3 +179,9 @@ test('1 日のスケジュールの生活リズムは、頭の記号を印にす
   const v = apply({}, editSlot(A, {}, 'p11_7時_生活リズム', '□○ 起床'))
   assert.deepEqual(v['dailySchedule'], [{ time: '7', rhythmMark: ['□起床', '○排尿'], rhythm: '起床' }])
 })
+
+test('範囲の条件（between）: 始め以上・終わり未満。同じ桁の文字（時刻 HH:mm など）で比べる。#147', async () => {
+  const { test: holds } = await import('../core/binding.ts')
+  const t = { between: ['09:00', '10:00'] as [string, string] }
+  assert.deepEqual(['08:59', '09:00', '09:30', '10:00', '', null, 9].map((v) => holds(v, t)), [false, true, true, false, false, false, false])
+})

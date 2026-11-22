@@ -316,3 +316,12 @@ test('事業所だけの欄: 中身が同じ定義の重なり（見直しの回
   assert.deepEqual(mergeLocalFields([s], [def, { ...def }]), { fields: [def], problems: [] })
   assert.deepEqual(mergeLocalFields([s], [def, { ...def, type: 'longtext' }]).problems, ['local.place の定義が 2 つある（先の定義を使う）'])
 })
+
+test('時間割の書き方の指示は、時刻の文字（9:00 など）が 3 つ以上あるページにだけ入れる（ほかの様式の指示を変えない。#147）', async () => {
+  const { firstPrompt } = await import('../worker/form-import/prompt.ts')
+  const w = (t: string, y: number) => ({ t, x0: 10, y0: y, x1: 20, y1: y + 3 })
+  const base = { width: 297, height: 210, hlines: [], vlines: [] }
+  const make = (words: ReturnType<typeof w>[]) => firstPrompt({ page: { ...base, words }, cells: [], boxes: [], catalog: [] })
+  assert.ok(make([w('0:00', 10), w('2:00', 20), w('24:00', 30)]).includes('時間割'))
+  assert.ok(!make([w('氏名', 10), w('9:00', 20), w('TEL', 30)]).includes('時間割'))
+})
