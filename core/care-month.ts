@@ -15,7 +15,7 @@ export const VisitActualSchema = z.discriminatedUnion('status', [
  z.object({status:z.literal('provided'),date:CivilDate,start:Time,end:Time,endDate:CivilDate,note:z.string().max(10000)}).strict(),
  z.object({status:z.literal('not_provided'),date:z.null(),start:z.null(),end:z.null(),endDate:z.null(),note:z.string().max(10000)}).strict(),
 ]).refine(p=>p.status==='not_provided' || p.endDate === (p.end > p.start ? p.date : nextDate(p.date)))
-export const MonthEntrySchema = z.object({ id:z.string().min(1).max(1000), sourceKey:z.string().nullable(), serviceId:z.string().min(1), slotId:z.string().nullable(), content:z.string().max(10000), serviceKind:z.string().nullable(), provider:z.string().nullable(), insured:z.boolean(), plan:VisitPlanSchema, actual:VisitActualSchema.nullable() }).strict()
+export const MonthEntrySchema = z.object({ id:z.string().min(1).max(1000), sourceKey:z.string().nullable(), serviceId:z.string().min(1), slotId:z.string().nullable(), content:z.string().max(10000), serviceKind:z.string().nullable(), provider:z.string().nullable(), insured:z.boolean(), copiedFrom:z.object({monthId:z.uuid(),revision:z.number().int().positive(),entryId:z.string().min(1).max(1000),capturedAt:z.iso.datetime()}).strict().optional(), plan:VisitPlanSchema, actual:VisitActualSchema.nullable() }).strict()
 export type MonthEntry = z.infer<typeof MonthEntrySchema>
 export interface MonthExpansion { entries: MonthEntry[]; unexpanded: { serviceId:string; slotId:string; note:string|null }[] }
 function nextDate(date: string) { return new Date(Date.parse(date+'T00:00:00Z')+86400000).toISOString().slice(0,10) }
@@ -75,4 +75,11 @@ export function copyMonth(source:MonthEntry[],target:string,current:MonthEntry[]
 }
 export function monthCounts(entries:MonthEntry[]) {
  return {planned:entries.filter(e=>e.plan.status==='scheduled').length,actual:entries.filter(e=>e.actual?.status==='provided').length,notProvided:entries.filter(e=>e.actual?.status==='not_provided').length,unentered:entries.filter(e=>e.actual===null).length}
+}
+/** IDs whose active plans overlap another occurrence of the same stable service. */
+export function monthOverlaps(entries:MonthEntry[]):Set<string> {
+ const rows=entries.filter(e=>e.plan.status==='scheduled').map(e=>({id:e.id,serviceId:e.serviceId,start:Date.parse(e.plan.date+'T'+e.plan.start+':00Z'),end:Date.parse(e.plan.endDate+'T'+e.plan.end+':00Z')})).filter(e=>Number.isFinite(e.start)&&Number.isFinite(e.end)).sort((a,b)=>a.serviceId.localeCompare(b.serviceId)||a.start-b.start||b.end-a.end)
+ const conflicts=new Set<string>();let longest:typeof rows[number]|undefined
+ for(const row of rows){if(!longest||longest.serviceId!==row.serviceId||longest.end<=row.start){longest=row;continue}conflicts.add(longest.id);conflicts.add(row.id);if(row.end>longest.end)longest=row}
+ return conflicts
 }

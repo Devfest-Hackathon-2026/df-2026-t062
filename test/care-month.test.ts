@@ -62,3 +62,31 @@ test('不正な確定入力、重複ID、週次の時刻・期間の逆転は予
  const reversed=snapshot(); reversed.plan.effectiveTo='2023-12-31'
  assert.throws(()=>expandMonth('2024-02','c1',reversed))
 })
+
+import { careMonthPrint } from '../core/care-month-print.ts'
+import { expandPrintLayout } from '../core/print-layout.ts'
+import { readSeed } from '../forms/admin/files.ts'
+test('第6表の印字は予定と未入力・未実施を分け、長文・実績時刻・補足・安定IDを明細から落とさない',()=>{
+ const expanded=expandMonth('2024-02','c1',snapshot()),entries=expanded.entries
+ entries[0].plan.status='cancelled';entries[0].actual={status:'not_provided',date:null,start:null,end:null,endDate:null,note:'本人希望で中止'}
+ entries[1].content='長いサービス名'.repeat(200);entries[1].plan.note='長い補足'.repeat(500)
+ const month={id:'m',clientId:'client1',planId:'plan1',planVersion:1,confirmationId:'c1',sourceHash:'hash',month:'2024-02',documentId:'d',lockVersion:1,revision:1,services:[],entries,unexpanded:[]}
+ const projected=careMonthPrint(month),rows=projected['monthly.printRows']
+ assert.equal(rows[0].p1,'×');assert.equal(rows[0].a1,'0');assert.equal(rows[2].totalActual,'')
+ assert.match(projected['monthly.details'],/本人希望で中止/)
+ assert.equal(projected['monthly.weekdays'][0].label,'木')
+ const pages=expandPrintLayout(readSeed('care_plan_6'),projected)
+ const text=pages.filter(p=>p.sourceIndex===1).map(p=>p.input['明細']).join('').replaceAll('\n','')
+ assert.ok(text.includes(entries[1].content));assert.ok(text.includes(entries[1].plan.note));assert.ok(text.includes(entries[1].id));assert.ok(pages.length>2)
+})
+
+import { monthOverlaps } from '../core/care-month.ts'
+test('同じサービスの重複は跨日も検出し、接する予定や取消・別サービスを重複扱いしない',()=>{
+ const a=expandMonth('2024-02','c1',snapshot()).entries[0],b=structuredClone(a),c=structuredClone(a)
+ a.plan={...a.plan,date:'2024-02-01',start:'23:30',end:'01:00',endDate:'2024-02-02'}
+ b.id='b';b.plan={...b.plan,date:'2024-02-02',start:'00:30',end:'01:30',endDate:'2024-02-02'}
+ c.id='c';c.plan={...c.plan,date:'2024-02-02',start:'01:30',end:'02:30',endDate:'2024-02-02'}
+ assert.deepEqual(monthOverlaps([a,b,c]),new Set([a.id,b.id]))
+ b.plan.status='cancelled';assert.equal(monthOverlaps([a,b,c]).size,0)
+ b.plan.status='scheduled';b.serviceId='other';assert.equal(monthOverlaps([a,b,c]).size,0)
+})
