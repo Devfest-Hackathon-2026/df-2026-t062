@@ -39,13 +39,13 @@ export async function openPlan(page: Page, ui: 'pc' | 'pad') {
   if (ui === 'pad') {
     await page.locator('.pad > header').getByRole('button', { name: 'アセスメント', exact: true }).click()
     await page.getByRole('menuitem', { name: /ケアプランを作成/ }).click()
-  } else await page.getByRole('button', { name: 'ケアプランを作成', exact: true }).click()
+  } else await page.getByRole('tab', { name: 'ケアプランを作成', exact: true }).click()
 }
-export async function createPlan(page: Page, ui: 'pc' | 'pad') {
+export async function createPlan(page: Page, ui: 'pc' | 'pad', effectiveFrom = '2026-04-01') {
   await openPlan(page, ui)
   const dialog = page.getByRole('dialog', { name: '新しいケアプラン', exact: true })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel('適用開始日', { exact: true }).fill('2026-04-01')
+  await dialog.getByLabel('適用開始日', { exact: true }).fill(effectiveFrom)
   await dialog.getByLabel('適用終了日（任意）').fill('2027-03-31')
   await dialog.getByRole('button', { name: '第1〜3表を作る' }).click()
   await expect(dialog).not.toBeVisible()

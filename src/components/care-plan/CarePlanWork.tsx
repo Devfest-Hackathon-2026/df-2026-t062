@@ -91,14 +91,11 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
   const controls = <header className="cp-header">
       {!embedded && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { if (mayLeave()) onBack() }}>← 書類に戻る</button>}
       {!embedded && <h1>{clientName} さん <small>ケアプラン</small></h1>}
-      <label>計画の版<select aria-label="計画の版" value={selected?.id ?? ''} disabled={busy || childBusy} onChange={(e) => void choose(e.target.value)}>
-        <option value="" disabled>計画を選ぶ</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.effectiveFrom}〜・第{p.version}版・{statusText(p.status)}</option>)}
-      </select></label>
-      <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { setCopyFrom(undefined); setCreating(true) }}>＋ 計画を作る</button>
+      {!selected && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { setCopyFrom(undefined); setCreating(true) }}>＋ 計画を作る</button>}
     </header>
   return <div className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
 
-    {!selected && controls}
+    {(!embedded || !selected) && controls}
     {error && <div role="alert" className="cp-error">{error}</div>}
     {creating && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
       <form onSubmit={async (e) => {
@@ -117,15 +114,15 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
         <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
       </form>
     </Modal>}
-    {selected ? <PlanEditor key={selected.id} initial={selected} controls={controls} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+    {selected ? <PlanEditor key={selected.id} initial={selected} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }}
       onCopy={(plan) => { setCopyFrom(plan.id); setFrom(plan.effectiveFrom); setTo(plan.effectiveTo ?? ''); setCreating(true) }} />
       : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, onCopy, controls, outputTarget }: {
-  controls: ReactNode, outputTarget?: HTMLElement | null,
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, onCopy, outputTarget }: {
+  outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
   onBusy: (busy: boolean) => void, onUpdated: () => void, onCopy: (plan: CarePlanView) => void,
 }) {
@@ -230,26 +227,13 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, on
     {outputTarget && createPortal(output, outputTarget)}
     <div className="cp-layout">
       <nav className="cp-nav" aria-label="ケアプランの表"><div className="cp-nav-title">ケアプラン用紙</div>{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
-        <div className="cp-controls">{controls}
-          <div className="cp-planbar">
-            <span className={`cp-status cp-${plan.status}`}>{statusText(plan.status)}</span>
-            <strong>第{plan.version}版</strong><span>{plan.effectiveFrom} 〜 {plan.effectiveTo ?? '終了日未設定'}</span>
-            <span role="status">{dirty ? '保存していない変更があります' : plan.documents.every((d) => d.latestRevision > 0) ? '保存済み' : 'まだ保存されていません'}</span>
-            <button className="btn" disabled={busy} onClick={() => { if (!dirty || window.confirm('保存していない入力を破棄して読み直しますか？')) void run(refresh) }}>読み直す</button>
-            <button className="btn" disabled={busy} onClick={() => onCopy(plan)}>この計画をもとに改定版を作る</button>
-            <button className="btn" disabled={busy || !ready || readOnly || structuralDirty || firstDirty} onClick={() => setAiOpen(true)}>AI原案を作る</button>
-            {plan.aiDraft && <button className="btn" disabled={busy || !ready || readOnly || structuralDirty || firstDirty} onClick={() => void run(async () => {
-              const result = await api.carePlanAiDraft(plan.id, plan.aiDraft!.id)
-              setAiDraft(result.draft); setAiOpen(true)
-            })}>前回のAI原案を開く</button>}
-            <button className="btn" disabled={busy || !ready || readOnly || dirty || !plan.documents.every((d) => d.latestRevision > 0)} onClick={() => setConfirming(true)}>計画を確定</button>
-          </div>
-        </div>
+
       </nav>
       <main className="cp-canvas">
         <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
           aiLabel="AI原案から" status={saveStatus}
-          saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save} />
+          saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save}
+          actions={<button type="button" className="btn" disabled={busy || !ready || readOnly || dirty || !saved} onClick={() => setConfirming(true)}>計画を確定</button>} />
         <div className="cp-sheet-scroll">
           {!outputTarget && output}
           {readOnly && <div className="cp-info">この計画は{statusText(plan.status)}のため編集できません。訂正する場合は改定版を作ってください。

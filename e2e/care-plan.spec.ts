@@ -60,8 +60,14 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
     await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
     await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeDisabled()
   }
-  await page.getByRole('button', { name: 'この計画をもとに改定版を作る' }).click()
-  await page.getByRole('dialog', { name: '改定版を作る', exact: true }).getByRole('button', { name: '第1〜3表を作る' }).click()
+  // 改定APIは保持するが、今回の指定で左側の管理操作は表示しない。
+  await expect(page.getByRole('button', { name: 'この計画をもとに改定版を作る' })).toHaveCount(0)
+  const revisionResponse = await page.request.post(`/api/clients/${clientId}/care-plans`, { headers, data: {
+    effectiveFrom: persisted.effectiveFrom, effectiveTo: persisted.effectiveTo, copyFromPlanId: persisted.id,
+  } })
+  expect(revisionResponse.ok()).toBeTruthy()
+  await page.reload()
+  await openPlan(page, ui)
   await expect(policy).toBeEditable()
   const revised = await getPlan(page, clientId)
   expect(revised).toMatchObject({ version: 2, status: 'draft', previousPlanId: persisted.id })
@@ -119,10 +125,10 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   let assessmentTop = 0
   if (ui === 'pc') {
     assessmentTop = (await page.locator('.sheet-toolbar').boundingBox())!.y
-    const entry = page.getByRole('button', { name: 'ケアプランを作成', exact: true })
-    expect(await entry.evaluate((e) => e.closest('[role="tablist"]') === null)).toBe(true)
+    const entry = page.getByRole('tab', { name: 'ケアプランを作成', exact: true })
+    expect(await entry.evaluate((e) => e.closest('[role="tablist"]') !== null)).toBe(true)
     const entryBox = (await entry.boundingBox())!
-    expect(entryBox.x).toBeGreaterThan(viewport.width * .7)
+    expect(entryBox.x).toBeLessThan(viewport.width * .7)
   }
   await createPlan(page, ui)
   const initialCanvas = (await page.locator('.cp-canvas').boundingBox())!
@@ -186,38 +192,21 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
 })
 
 
-test('候補ありAI原案を再開し、サービスと週間予定を対応付けて適用・保存する', async ({ page, clientId, ui }) => {
-  let generations = 0
-  page.on('request', (request) => { if (request.method() === 'POST' && /\/ai-drafts$/.test(request.url())) generations++ })
-  const client = await (await page.request.get(`/api/clients/${clientId}`, { headers })).json()
-  const documentId = client.client.documents.find((d: { kind: string }) => d.kind === 'assessment').id
-  const saved = await page.request.post(`/api/documents/${documentId}/save`, { headers, data: { scope: 'document' } })
-  expect(saved.ok()).toBeTruthy()
+test('左側は用紙の選択だけにし、確定は保存の横から明示的に行う', async ({ page, ui }) => {
   await createPlan(page, ui)
+  const nav = page.getByRole('navigation', { name: 'ケアプランの表' })
+  await expect(nav.getByRole('button')).toHaveCount(3)
+  await expect(nav.locator('select')).toHaveCount(0)
+  for (const name of ['読み直す', 'AI原案を作る', '計画を確定', '＋ 計画を作る']) {
+    await expect(nav.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  const toolbar = page.locator('.sheet-toolbar')
+  await expect(toolbar.getByRole('button', { name: '書類を保存', exact: true })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeDisabled()
   await save(page)
-  await page.getByRole('button', { name: 'AI原案を作る', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '保存済みアセスメントからAI原案を作る', exact: true })
-  await dialog.getByLabel('参照するアセスメント').selectOption({ index: 1 })
-  await dialog.getByRole('button', { name: '原案を作る', exact: true }).click()
-  await expect(dialog).toContainText('第3表の候補：架空の入浴介助')
-  await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
-  await page.getByRole('button', { name: '前回のAI原案を開く', exact: true }).click()
-  await expect(dialog).toContainText('架空の方針：自宅で安全に暮らす')
-  expect(generations).toBe(1)
-  await dialog.getByRole('button', { name: 'この原案を入力する', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page.getByRole('status').filter({ hasText: 'AI原案を3項目入力しました' })).toBeVisible()
-  let plan = await getPlan(page, clientId)
-  expect(plan.slots).toHaveLength(1)
-  expect(plan.slots[0].serviceId).toBe(plan.needs[0].shortGoals[0].services[0].id)
-  expect(plan.status).toBe('draft')
-  await save(page)
-  await page.reload()
-  await openPlan(page, ui)
-  await table(page, 3)
-  plan = await getPlan(page, clientId)
-  expect(plan.slots[0].start).toBe('09:00')
-  expect(plan.hasUnsavedChanges).toBe(false)
+  await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeEnabled()
+  const order = await toolbar.locator('.sheet-actions > button').allTextContents()
+  expect(order.slice(-2)).toEqual(['保存', '計画を確定'])
 })
 
 test('ケアプランとの往復で相談履歴と参照元を保つ', async ({ page, clientId, ui }) => {
