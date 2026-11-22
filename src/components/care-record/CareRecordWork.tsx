@@ -1,3 +1,4 @@
+import { CareRecordConfirmationPanel } from './CareRecordConfirmationPanel.tsx'
 import { MeetingFields } from './MeetingFields.tsx'
 import { careRecordConfig, type CareRecordKind } from '../../../core/care-record.ts'
 import { CareRecordDraftPanel } from './CareRecordDraftPanel.tsx'
@@ -90,7 +91,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
       <aside className="care-record-list" aria-label={config.short + 'の記録一覧'}>
         <label>記録を検索<input type="search" value={filters.q} onChange={e => setFilters(f => ({ ...f, q: e.target.value, offset: 0 }))} /></label>
         <div className="care-record-dates"><label>開始日<input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value, offset: 0 }))} /></label><label>終了日<input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value, offset: 0 }))} /></label></div>
-        {loading ? <p role="status">記録を読み込んでいます…</p> : !records.length ? <p>該当する{config.short}はありません。</p> : <ol>{records.map(r => <li key={r.id}><button type="button" disabled={busy} aria-pressed={r.id === id} onClick={() => select(r.id)}><strong>{r.date ?? '日時未入力'} {r.time ?? ''}</strong><span>{r.category || '項目未入力'}</span><small>{r.preview || '内容未入力'}</small><small>記録 {r.seq} ・ {r.revision ? '保存版 ' + r.revision : '未保存'}</small></button></li>)}</ol>}
+        {loading && !records.length ? <p role="status">記録を読み込んでいます…</p> : !records.length ? <p>該当する{config.short}はありません。</p> : <ol>{records.map(r => <li key={r.id}><button type="button" disabled={busy} aria-pressed={r.id === id} onClick={() => select(r.id)}><strong>{r.date ?? '日時未入力'} {r.time ?? ''}</strong><span>{r.category || '項目未入力'}</span><small>{r.preview || '内容未入力'}</small><small>記録 {r.seq} ・ {r.revision ? '保存版 ' + r.revision : '未保存'}</small></button></li>)}</ol>}
         <nav aria-label="記録一覧のページ"><button className="btn" disabled={!filters.offset || loading} onClick={() => setFilters(f => ({ ...f, offset: Math.max(0, f.offset - 50) }))}>前の50件</button><button className="btn" disabled={!more || loading} onClick={() => setFilters(f => ({ ...f, offset: f.offset + 50 }))}>次の50件</button></nav>
       </aside>
       <section className="care-record-editor" aria-label={config.short + 'の編集'}>
@@ -99,6 +100,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
         {!id ? <p>記録を選ぶか、「{config.short}を追加」で新しい記録を作成してください。</p> : !ready ? <p role="status">記録を読み込んでいます…</p> : <>
           <div className="care-record-toolbar"><span role="status">{past ? '保存版 ' + past.rev + 'を表示中（閲覧のみ）' : dirty ? '保存していない変更があります' : state.doc?.rev ? '保存済み（最終確定とは異なります）' : '未保存'}</span><button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button><button className="btn" disabled={busy || (!past && (dirty || !state.doc?.rev)) || !state.hasPdf} onClick={exportPdf}>{past ? 'この保存版のPDF' : '第' + config.number + '表PDF'}</button></div>
           <label>修正履歴<select aria-label="修正履歴" value={past?.rev ?? ''} disabled={busy} onChange={e => showRevision(e.target.value)}><option value="">現在の記録</option>{revisions.map(r => <option key={r.rev} value={r.rev}>保存版 {r.rev} ・ {new Date(r.savedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</option>)}</select></label>
+          <CareRecordConfirmationPanel key={'confirmation-'+id} documentId={id} clientId={clientId} kind={kind} revision={past?.rev ?? state.doc?.rev ?? 0} dirty={!past && !!dirty} readOnly={!!past} busy={busy} onWorkingChange={value => { busyRef.current=value;setBusy(value) }} />
           <FieldConflicts state={state} />
           <fieldset disabled={!editable}>
             <legend>{config.short}</legend>
