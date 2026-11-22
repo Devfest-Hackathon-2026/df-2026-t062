@@ -1,3 +1,5 @@
+import { CareMonthHeaderFields } from './CareMonthHeaderFields.tsx'
+import { MonthHeaders, type MonthHeaderValues } from '../../../core/care-month-api.ts'
 import { useEffect,useRef,useState,type ReactNode } from 'react'
 import type { CareMonthView,CareMonthSummary } from '../../../core/care-month-api.ts'
 import { monthCounts,monthOverlaps,type MonthEntry } from '../../../core/care-month.ts'
@@ -18,11 +20,12 @@ type Preview={type:'create';data:Awaited<ReturnType<typeof api.previewCareMonth>
 export function CareMonthWork({clientId,clientName,onBack}:{clientId:string;clientName:string;onBack:()=>void}) {
  const [list,setList]=useState<CareMonthSummary[]>([]),[plans,setPlans]=useState<CarePlanSummary[]>([]),[planId,setPlanId]=useState('')
  const [target,setTarget]=useState(()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit'}).format(new Date()))
+ const [headers,setHeaders]=useState<MonthHeaderValues>(()=>MonthHeaders.parse({}))
  const [current,setCurrent]=useState<CareMonthView>(),[entries,setEntries]=useState<MonthEntry[]>([]),[past,setPast]=useState<CareMonthView>()
  const [revisions,setRevisions]=useState<{rev:number;savedAt:string}[]>([]),[preview,setPreview]=useState<Preview>(),[sourceId,setSourceId]=useState(''),[serviceId,setServiceId]=useState('')
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
  const active=useRef(true),acting=useRef(false),createRequest=useRef<string|undefined>(undefined),saveRequest=useRef<{id:string;fingerprint:string}|undefined>(undefined)
- const dirty=!!current&&!sameValue(entries,current.entries),view=past??current,shown=past?.entries??entries
+ const dirty=!!current&&(!sameValue(entries,current.entries)||!sameValue(headers,current.headers??MonthHeaders.parse({}))),view=past??current,shown=past?.entries??entries
  const confirmed=plans.filter(p=>p.status!=='draft'),counts=monthCounts(shown),overlaps=monthOverlaps(shown)
  const refresh=async()=>{const [months,p]=await Promise.all([api.careMonths(clientId),api.carePlans(clientId)]);if(!active.current)return;setList(months.months);setPlans(p.plans);setPlanId(old=>old||p.plans.find(v=>v.status==='confirmed')?.id||p.plans.find(v=>v.status==='superseded')?.id||'')}
  useEffect(()=>{active.current=true;void refresh().catch(e=>{if(active.current)setError(e instanceof Error?e.message:'一覧を読み込めませんでした')});return()=>{active.current=false}},[clientId])
@@ -31,18 +34,18 @@ export function CareMonthWork({clientId,clientName,onBack}:{clientId:string;clie
  const history=async(docId:string)=>{const r=await api.revisions(docId);if(active.current)setRevisions(r.revisions)}
  const saveCurrent=async()=>{
   if(!current||past)return undefined
-  const fingerprint=JSON.stringify({baseVersion:current.lockVersion,entries})
+  const fingerprint=JSON.stringify({baseVersion:current.lockVersion,entries,headers})
   if(saveRequest.current?.fingerprint!==fingerprint)saveRequest.current={id:crypto.randomUUID(),fingerprint}
-  const r=await api.saveCareMonth(current.id,{baseVersion:current.lockVersion,entries,requestId:saveRequest.current.id})
+  const r=await api.saveCareMonth(current.id,{baseVersion:current.lockVersion,entries,...(current.headers||!sameValue(headers,MonthHeaders.parse({}))?{headers}:{}),requestId:saveRequest.current.id})
   if(!active.current)return undefined
-  saveRequest.current=undefined;setCurrent(r.month);setEntries(r.month.entries);setNotice('第6表を保存しました');await Promise.all([refresh(),history(r.month.documentId)]);return r.month
+  saveRequest.current=undefined;setCurrent(r.month);setEntries(r.month.entries);setHeaders(r.month.headers??MonthHeaders.parse({}));setNotice('第6表を保存しました');await Promise.all([refresh(),history(r.month.documentId)]);return r.month
  }
  const preserve=async()=>{
   if(!dirty)return current
   if(!window.confirm('入力を保存して移動しますか？ キャンセルするとこの月に留まります。'))return false
   return await saveCurrent()||false
  }
- const load=async(id:string)=>{const r=await api.careMonth(id);if(!active.current)return;setCurrent(r.month);setTarget(r.month.month);setPlanId(r.month.planId);setEntries(r.month.entries);setPast(undefined);setServiceId(r.month.services[0]?.id??'');await history(r.month.documentId)}
+ const load=async(id:string)=>{const r=await api.careMonth(id);if(!active.current)return;setCurrent(r.month);setTarget(r.month.month);setPlanId(r.month.planId);setEntries(r.month.entries);setHeaders(r.month.headers??MonthHeaders.parse({}));setPast(undefined);setServiceId(r.month.services[0]?.id??'');await history(r.month.documentId)}
  const select=(id:string)=>void run(async()=>{if(await preserve()===false)return;await load(id)})
  const generate=()=>void run(async()=>{if(await preserve()===false)return;const data=await api.previewCareMonth(clientId,planId,target);setPreview({type:'create',data,planId,month:target})})
  const accept=()=>void run(async()=>{
@@ -70,6 +73,7 @@ export function CareMonthWork({clientId,clientName,onBack}:{clientId:string;clie
    {!view?<p>確定した週間計画と対象年月から予定を確認するか、作成済みの月を選んでください。</p>:<>
     <h2>{view.month} ・ 計画版 {view.planVersion}</h2><div className="care-record-toolbar"><span role="status">{past?'保存版 '+past.revision+'（閲覧のみ）':dirty?'保存していない変更があります':current?.revision?'保存済み':'未保存'}</span><button className="savebtn" disabled={busy||!!past} onClick={()=>void run(async()=>{await saveCurrent()})}>第6表を保存</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>void run(async()=>downloadBlob(await api.pdf(view.documentId,view.revision),'サービス利用票_'+view.month+'_'+clientName+'.pdf'))}>第6表PDF</button></div>
     <label>修正履歴<select aria-label="修正履歴" disabled={busy} value={past?.revision??''} onChange={e=>showRevision(e.target.value)}><option value="">現在の月間予定</option>{revisions.map(r=><option key={r.rev} value={r.rev}>保存版 {r.rev}</option>)}</select></label>
+    <CareMonthHeaderFields value={past?.headers??(past?MonthHeaders.parse({}):headers)} disabled={busy||!!past} onChange={setHeaders} />
     <p>予定 {counts.planned}件 ／ 実施 {counts.actual}件 ／ 未実施 {counts.notProvided}件 ／ 実績未入力 {counts.unentered}件</p>
     {overlaps.size>0&&<p role="status">同じサービスの予定に重複があるため、{overlaps.size}件の日時を確認してください。</p>}
     {view.unexpanded.length>0&&<p role="status">週単位以外の予定 {view.unexpanded.length}件は日付を確定できないため未展開です。確認後、予定を追加してください。</p>}

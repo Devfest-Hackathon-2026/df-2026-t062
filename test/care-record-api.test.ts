@@ -137,3 +137,49 @@ test('第4表: 複数会議の分離、出席者・検討と結論・残課題�
   const pdf = await call(`/api/documents/${id}/pdf?rev=1`)
   assert.equal(pdf.status, 200)
 })
+
+test('第4/5表: 保存と明示確定を分離し、未保存変更/競合/越境を拒否して過去の確定を保持する', { skip }, async () => {
+  const id = (await call(`/api/clients/${clientId}/care-records`, 'POST', {kind:'care_plan_5',requestId:randomUUID()})).body.id
+  const confirm = (baseRevision:number,auth=token) => call(`/api/care-records/${id}/confirm`,'POST',{baseRevision,relatedPlanId:null},auth)
+  assert.equal((await confirm(1)).status,409)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:null,value:'架空の確認対象'}]})
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  assert.equal((await confirm(1,'Bearer dev:other-records@example.com')).status,404)
+  assert.equal((await confirm(1,'')).status,401)
+  const first=await confirm(1);assert.equal(first.status,200,JSON.stringify(first.body))
+  assert.ok(first.body.confirmation.confirmedAt)
+  assert.deepEqual((await confirm(1)).body.confirmation,first.body.confirmation)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:'架空の確認対象',value:'架空の修正'}]})
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  const second=(await call(`/api/care-records/${id}/revisions/2`)).body.revision
+  assert.equal(second.confirmation,null)
+  assert.equal((await confirm(1)).status,409)
+  await call(`/api/documents/${id}/fields`,'PATCH',{changes:[{key:'progress.content',base:'架空の修正',value:'未保存の変更'}]})
+  assert.equal((await confirm(2)).status,409)
+  const old=(await call(`/api/care-records/${id}/revisions/1`)).body.revision
+  assert.deepEqual(old.confirmation,first.body.confirmation)
+  await assert.rejects(db.query('DELETE FROM care_record_confirmations WHERE document_id=$1',[id]),{code:'23514'})
+})
+
+test('第4表: 関連計画は同じ利用者の確定スナップショットだけを参照し、計画改定後も保持する', {skip}, async()=>{
+  const createPlan=async(id=clientId)=>{
+    const created=await call(`/api/clients/${id}/care-plans`,'POST',{effectiveFrom:'2026-11-01'});assert.equal(created.status,201)
+    const plan=created.body.plan
+    const saved=await call(`/api/care-plans/${plan.id}/save`,'POST',{baseVersion:plan.lockVersion});assert.equal(saved.status,200)
+    assert.equal((await call(`/api/care-plans/${plan.id}/confirm`,'POST',{baseVersion:saved.body.plan.lockVersion})).status,200)
+    return plan
+  }
+  const plan=await createPlan()
+  const other=(await call('/api/clients','POST',{name:'架空別利用者',sex:'女'})).body.id
+  const foreign=await createPlan(other)
+  const id=(await call(`/api/clients/${clientId}/care-records`,'POST',{kind:'care_plan_4',requestId:randomUUID()})).body.id
+  await call(`/api/documents/${id}/save`,'POST',{scope:'document'})
+  const confirm=(relatedPlanId:string)=>call(`/api/care-records/${id}/confirm`,'POST',{baseRevision:1,relatedPlanId})
+  assert.equal((await confirm(foreign.id)).status,404)
+  assert.equal((await confirm(randomUUID())).status,404)
+  const r=await confirm(plan.id);assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.confirmation.planId,plan.id);assert.equal(r.body.confirmation.planVersion,plan.version)
+  await createPlan()
+  const past=(await call(`/api/care-records/${id}/revisions/1`)).body.revision
+  assert.deepEqual(past.confirmation,r.body.confirmation)
+  assert.equal((await confirm(foreign.id)).status,409)
+})
