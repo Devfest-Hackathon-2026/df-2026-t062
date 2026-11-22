@@ -13,6 +13,7 @@ import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
+import { setRecordingRetentionOnComplete, setRecordingSuccessRetention } from './recording-retention.ts'
 
 type Q = Db | Tx
 
@@ -471,7 +472,7 @@ export interface ApplyInput {
   label: string
   jobId?: string
   /** Worker の今回の実行。ジョブ完了と用紙への反映を同じ transaction で確定する */
-  completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown> }
+  completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown>, auditContext?: AuditContext }
   proposed: Record<string, { value: unknown, cite?: Cite }>
   /** プログラムが決める欄の値（1 回目の録音の日をアセスメント実施日にする、など） */
   system?: Record<string, unknown>
@@ -491,6 +492,7 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       if (old) {
         const plan: BatchPlan = { changes: old.changes, kept: old.kept, skipped: [] }
         await finishJob(c, input, old.id, plan)
+        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion?.auditContext })
         return { batchId: old.id as string, plan }
       }
     }
@@ -503,7 +505,10 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
     const plan = planBatch(current, proposed, new Set(Object.keys(system)), fieldDict(form.localFields))
     if (!plan.changes.length && !plan.kept.length) {
-      if (input.completion) await finishJob(c, input, null, plan)
+      if (input.completion) {
+        await finishJob(c, input, null, plan)
+        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
+      }
       return { batchId: null, plan }
     }
     const batch = (await c.query(
@@ -515,7 +520,10 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     }
     await c.query('UPDATE clients SET updated_at = now() WHERE id = $1', [d.clientId])
     await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
-    if (input.completion) await finishJob(c, input, batch.id, plan)
+    if (input.completion) {
+      await finishJob(c, input, batch.id, plan)
+      await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
+    }
     return { batchId: batch.id as string, plan }
   })
 }
@@ -595,8 +603,8 @@ export async function createRecording(db: Tx, staff: Staff, clientId: string, mi
   if (!doc) throw new NotFound()
   const ext = mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac') ? 'm4a' : mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'bin'
   const inserted = (await db.query(
-    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by, device_recording_id)
-     VALUES ($1,$2,$3,'',$4,$5,$6)
+    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, source_expires_at, created_by, device_recording_id)
+     VALUES ($1,$2,$3,'',$4,now() + interval '7 days',$5,$6)
      ON CONFLICT (office_id, client_id, device_recording_id) DO NOTHING RETURNING id`,
     [staff.officeId, clientId, doc.id, mime, staff.id, deviceRecordingId ?? null],
   )).rows[0]
@@ -626,7 +634,7 @@ export async function completeRecording(
 ): Promise<string | null> {
   return tx(db, async (c) => {
     const rec = (await c.query(
-      'SELECT client_id, document_id, object_path, bytes FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
+      'SELECT client_id, document_id, object_path, bytes, source_delete_status FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
       [recordingId, staff.officeId],
     )).rows[0]
     if (!rec) throw new NotFound()
@@ -636,6 +644,10 @@ export async function completeRecording(
     if (existing) return existing.id as string
 
     await c.query("UPDATE recordings SET status = 'uploaded', bytes = $1, duration_ms = $2, upload_url = NULL WHERE id = $3", [bytes, durationMs, recordingId])
+    await setRecordingRetentionOnComplete(c, recordingId, {
+      officeId: staff.officeId, actorStaffId: staff.id, clientId: rec.client_id, documentId: rec.document_id,
+      auditContext: auditContextOf(staff),
+    })
     const eta = durationMs ? Math.max(60, Math.round(durationMs / 1000 / 6) + 90) : 300
     const job = (await c.query(
       'INSERT INTO jobs (office_id, client_id, document_id, recording_id, eta_seconds) VALUES ($1,$2,$3,$4,$5) RETURNING id',

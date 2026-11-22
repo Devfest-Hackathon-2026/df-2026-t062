@@ -137,7 +137,10 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
     const { plan } = await applyBatch(db, {
       officeId: job.office_id, documentId: job.document_id, kind: 'recording', jobId,
       label: `AI 書き込み ${n}・${md(new Date(rec.recorded_at))} の録音`, proposed: made.proposed, system: made.system,
-      completion: { token, status, steps: { totalSeconds: (Date.now() - t0) / 1000 } },
+      completion: {
+        token, status, steps: { totalSeconds: (Date.now() - t0) / 1000 },
+        auditContext: { requestId: context?.requestId, correlationId: context?.correlationId, traceId: context?.traceId, source: 'worker' },
+      },
     })
     log({ msg: 'job done', jobId, status, seconds: (Date.now() - t0) / 1000, changes: plan.changes.length, kept: plan.kept.length }, context)
   } catch (e) {

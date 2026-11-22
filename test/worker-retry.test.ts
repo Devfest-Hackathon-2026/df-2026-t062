@@ -6,6 +6,7 @@ import { createPool, tx, type Db } from '../db/pool.ts'
 import { migrate } from '../db/migrate.ts'
 import { seed } from '../db/seed.ts'
 import { applyBatch, completeRecording, createClient, createRecording, activeJobs, type Staff } from '../db/repo.ts'
+import { getRecordingRetention, listExpiredSourceRecordings, markExpiredSourceRecordingsEligible, releaseRecordingRetentionHold, setRecordingRetentionHold } from '../db/recording-retention.ts'
 import { FakeSpeakers, FakeStt, FakeSummarizer, fakeFormImport } from '../worker/fake.ts'
 import { reconcile, runJob, type WorkerDeps } from '../worker/jobs.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
@@ -42,7 +43,7 @@ async function job() {
   await storage.write('source', rec.objectPath, bytes)
   const jobId = await completeRecording(db, staff, rec.id, 60_000, bytes.byteLength, (path) => storage.size('source', path))
   assert.ok(jobId)
-  return { jobId, clientId: client.id, documentId: client.documentId }
+  return { jobId, recordingId: rec.id, clientId: client.id, documentId: client.documentId }
 }
 
 const providers = (write: Providers['recording']['writer']['write']): Providers => ({
@@ -56,6 +57,8 @@ const batches = async (id: string) => Number((await db.query('SELECT count(*) AS
 
 test('一時失敗後に再配信で再開し、同じジョブの二重配信は一度しか反映しない', { skip }, async () => {
   const j = await job()
+  const before = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(before)
   let calls = 0
   const p = providers(async () => {
     calls++
@@ -64,8 +67,12 @@ test('一時失敗後に再配信で再開し、同じジョブの二重配信�
   })
   await assert.rejects(runJob(deps(p), j.jobId), /injected transient error/)
   assert.equal((await status(j.jobId)).status, 'queued')
+  assert.deepEqual((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceExpiresAt, before.sourceExpiresAt)
   await Promise.all([runJob(deps(p), j.jobId), runJob(deps(p), j.jobId)])
   assert.equal((await status(j.jobId)).status, 'succeeded')
+  const after = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(after)
+  assert.ok(new Date(after.sourceExpiresAt).getTime() <= new Date(before.sourceExpiresAt).getTime())
   assert.equal((await status(j.jobId)).attempts, 2)
   assert.equal(await batches(j.jobId), 1)
   await runJob(deps(p), j.jobId)
@@ -76,6 +83,7 @@ test('部分失敗を API のジョブ情報で伝え、再配信でも二重反
   const j = await job()
   await runJob(deps(providers(async () => ({ ...result, failed: ['check:3'], incompleteFields: ['assessment.lifeHistory'] }))), j.jobId)
   assert.equal((await status(j.jobId)).status, 'partial')
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
   const view = (await activeJobs(db, staff.officeId, j.clientId))[0]
   assert.deepEqual(view.incompleteFields, ['assessment.lifeHistory'])
   assert.equal(view.batch?.changes, 2) // AI の欄と初回面談日
@@ -83,6 +91,27 @@ test('部分失敗を API のジョブ情報で伝え、再配信でも二重反
   assert.equal((await activeJobs(db, staff.officeId, j.clientId))[0].status, 'partial')
   await runJob(deps(providers(async () => { throw new Error('should not run') })), j.jobId)
   assert.equal(await batches(j.jobId), 1)
+})
+
+test('期限付き保全は候補から外れ、解除後に期限切れ候補へ戻る', { skip }, async () => {
+  const j = await job()
+  await db.query("UPDATE recordings SET recorded_at = now() - interval '8 days', source_expires_at = now() - interval '1 day', source_delete_status = 'pending' WHERE id = $1", [j.recordingId])
+  const holdUntil = new Date(Date.now() + 60_000)
+  await setRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id }, holdUntil, 'legal_request')
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.retentionHold, true)
+  await markExpiredSourceRecordingsEligible(db)
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
+  await releaseRecordingRetentionHold(db, j.recordingId, { officeId: staff.officeId, actorStaffId: staff.id })
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'eligible')
+  const candidates = await listExpiredSourceRecordings(db)
+  assert.ok(candidates.some((candidate) => candidate.recordingId === j.recordingId))
+  const actions = (await db.query(
+    "SELECT action FROM audit_events WHERE detail->>'recordingId' = $1 ORDER BY occurred_at",
+    [j.recordingId],
+  )).rows.map((row) => row.action)
+  assert.ok(actions.includes('recording.retention_set'))
+  assert.ok(actions.includes('recording.retention_hold_set'))
+  assert.ok(actions.includes('recording.retention_hold_released'))
 })
 
 test('反映の transaction が失敗すれば書き込みは残らず、再実行で一度だけ確定する', { skip }, async () => {

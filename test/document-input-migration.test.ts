@@ -38,7 +38,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')
     assert.equal(row.status, 'review')
     assert.deepEqual(row.result, { candidates: [] })
-    assert.deepEqual(await migrate(db), ['0018_audit_events.sql'])
+    assert.deepEqual(await migrate(db), ['0018_audit_events.sql', '0019_recording_retention.sql'])
     assert.deepEqual(await migrate(db), [])
   } finally {
     await db.query(`DROP SCHEMA ${schema} CASCADE`)
