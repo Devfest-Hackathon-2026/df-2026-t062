@@ -12,6 +12,16 @@
 4. Lifecycle有効化前のreadiness結果で、保持期限・中間データ期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
 5. Lifecycleを有効化する場合は、sourceバケットだけに`recordings/`・LIVE・30日のDelete条件が設定され、output・formsには設定されていないことをTerraform planで確認する。
 
+## 本番Smoke Check
+
+Migration後とLifecycle有効化前に、読み取り専用のSmoke Checkを実行する。Preflightと違い、必要なMigration・テーブル・列・同意制約・Retention不整合・Cleanup専用ロールの権限に問題がある場合はSQL自体が失敗する。音声本文・利用者名・GCSオブジェクトパスは取得しない。
+
+```bash
+psql -v ON_ERROR_STOP=1 -f scripts/recording-retention-production-check.sql
+```
+
+最後に`recording-retention-production-check: OK`が表示されない場合は、本番有効化を進めない。失敗原因を修正してからMigration後のSmoke Check、Cleanup Jobのreadiness確認、Terraform planの順にやり直す。
+
 ## 本番運用の有効化
 
 本番のScheduler・通知・Lifecycleは、readiness確認とTerraform planの確認を同じ手順で行う。通知チャネルを指定しない有効化は禁止する。

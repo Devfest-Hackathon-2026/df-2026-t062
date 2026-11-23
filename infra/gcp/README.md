@@ -122,6 +122,7 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
 3. 移行はリリースのワークフローが流します。手元から流す場合は、`app` に所属するユーザー（api・workerのサービスアカウントを借りる、または `GRANT app TO` した自分のIAMユーザー）で `DB_USER=... CLOUD_SQL_INSTANCE=... npm run db:migrate` を実行します。`postgres` で流すとテーブルの持ち主が `postgres` になり、api・workerが使えなくなります。
 
 録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`missing_purge_expectation`、`expired_active_holds`、`intermediate_deleted_state_mismatch`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
+Migration後とLifecycle有効化前には、`psql -v ON_ERROR_STOP=1 -f scripts/recording-retention-production-check.sql`も実行します。Migration・同意制約・Retention状態・Cleanupロール権限のいずれかに異常がある場合は非0終了するため、`recording-retention-production-check: OK`を確認できない状態で本番有効化しません。
 
 本番のScheduler・通知・Lifecycleを有効化する前に、[`scripts/enable-recording-retention-production.sh`](../../scripts/enable-recording-retention-production.sh)を`APPLY=false`で実行してTerraform planを確認します。`MONITORING_NOTIFICATION_CHANNEL_IDS`は必須です。Schedulerと通知の初回成功を確認してから、Lifecycleだけを`ENABLE_SOURCE_LIFECYCLE=true`で別途有効化します。直接`terraform apply`や手動Scheduler再開だけで運用を開始しません。
 適用時は`APPLY=true CONFIRM_RECORDING_RETENTION_PRODUCTION=true`を明示し、誤操作で本番設定が変わらないようにします。Lifecycleを有効化するTerraform planは、Scheduler稼働・通知有効化・通知チャネル設定が揃わない場合も失敗します。
