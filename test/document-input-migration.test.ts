@@ -76,7 +76,14 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0038_document_review.sql',
       '0039_recording_consent.sql',
       '0040_recording_consent_integrity.sql',
+      '0041_recording_cleanup_audit_grant.sql',
     ])
+    const cleanupRoleExists = (await db.query("SELECT 1 FROM pg_roles WHERE rolname = 'recording_cleanup'")).rowCount === 1
+    if (cleanupRoleExists) {
+      assert.equal((await db.query("SELECT has_table_privilege('recording_cleanup', 'audit_events', 'INSERT') AS allowed")).rows[0].allowed, true)
+      assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'USAGE') AS allowed")).rows[0].allowed, true)
+      assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'SELECT') AS allowed")).rows[0].allowed, true)
+    }
     const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
     assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
     assert.equal(field.reviewed_at,null);assert.equal(field.reviewed_by,null)
