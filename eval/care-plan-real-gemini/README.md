@@ -8,10 +8,12 @@
 ## オフラインで記録を検算
 
 ```sh
-node eval/care-plan-real-gemini/summarize.ts
+mkdir -p .data/care-plan-recorded-check
+cp eval/care-plan-real-gemini/results/*.json .data/care-plan-recorded-check/
+node eval/care-plan-real-gemini/summarize.ts .data/care-plan-recorded-check
 ```
 
-12件のJSON・responseIdの重複なし・同一入力ハッシュ・曜日/時刻/serviceRef・適用チェック・トークン数を検算し、`results/summary.json` を再計算する。通信しない。文章の意味・臨床的な正しさは判定しない。
+12件のJSON・responseIdの重複なし・同一入力ハッシュ・曜日/時刻/serviceRef・適用チェック・トークン数を検算し、コピー先の `summary.json` を再計算する。通信しない。文章の意味・臨床的な正しさは判定しない。Gitに保存した当時の記録は上書きしない。
 
 ## 再実行（実API料金が発生）
 
@@ -44,18 +46,19 @@ node eval/care-plan-real-gemini/run.ts --live --resume --out .data/care-plan-qua
 入力7500 bytes上限、12回上限、見積もり$1超停止はこの検証用ガードであり、本番機能ではない。
 クラッシュで記録が欠けた場合もledgerの送信回数を減らさない。
 
-## 追加課金なしの故障注入・UIリプレイ
+## 追加課金なしの故障注入
 
 ```sh
 export EVAL_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman
-node eval/care-plan-real-gemini/check-boundaries.ts eval/care-plan-real-gemini/results
-node eval/care-plan-real-gemini/replay-ui.ts eval/care-plan-real-gemini/results/F1.json
+node eval/care-plan-real-gemini/check-boundaries.ts .data/care-plan-recorded-check
 ```
 
 故障注入は記録済みA1を変更して適用APIを通す。`invalid_json` と `api_error` はdrafterから例外を投げる模擬障害で、実Geminiの失敗回数には含めない。
-`boundaries.json` を更新する。既知の不正保険区分受け入れも記録するので、実行終了コードだけを合格判定にしない。
-UIリプレイは起動ログにURLを表示する。メール `cp-ui@example.com` でローカル開発ログインし、「ケアプランを作成」→「前回のAI原案を開く」。再生成は拒否する。終了はCtrl+C（専用スキーマと一時ストレージを削除）。
-フォームPDFがローカルにない場合は既存の `ensurePdf` が公式様式を取得するが、Geminiは呼ばない。
+コピー先の `boundaries.json` を更新する。サービスの保険区分・スキップ理由まで確認し、実行終了コードだけを合格判定にしない。現行コードへの再適用結果は、2026-11-22の生成品質・当時の適用結果とは別の検証である。
+
+## 旧UIの確認記録
+
+`results/F-ui.jpg` は2026-11-22のUIでの確認記録。現行UIではAI原案を開く入口が削除されているため、旧ボタンを前提にした `replay-ui.ts` は廃止した。画像を現行UIの動作証跡として扱わない。現在の手入力・保存・履歴の操作検証は `e2e/care-plan.spec.ts` を使う。
 
 ## 型チェック
 
