@@ -121,7 +121,9 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
 
 3. 移行はリリースのワークフローが流します。手元から流す場合は、`app` に所属するユーザー（api・workerのサービスアカウントを借りる、または `GRANT app TO` した自分のIAMユーザー）で `DB_USER=... CLOUD_SQL_INSTANCE=... npm run db:migrate` を実行します。`postgres` で流すとテーブルの持ち主が `postgres` になり、api・workerが使えなくなります。
 
-録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
+録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`missing_purge_expectation`、`expired_active_holds`、`intermediate_deleted_state_mismatch`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
+
+本番のScheduler・通知・Lifecycleを有効化する前に、[`scripts/enable-recording-retention-production.sh`](../../scripts/enable-recording-retention-production.sh)を`APPLY=false`で実行してTerraform planを確認します。`MONITORING_NOTIFICATION_CHANNEL_IDS`は必須です。Schedulerと通知の初回成功を確認してから、Lifecycleだけを`ENABLE_SOURCE_LIFECYCLE=true`で別途有効化します。直接`terraform apply`や手動Scheduler再開だけで運用を開始しません。
 
 ## 様式（アセスメント用紙・入院時情報提供書）を入れる
 
