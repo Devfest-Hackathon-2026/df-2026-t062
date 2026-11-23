@@ -36,3 +36,6 @@
 .cp-area-flow .sheet-save-actions>.document-output .document-output-status{display:none}
 .cp-area-flow>.cp-area-panel:last-child{min-height:100dvh}
 .cp-area-flow .cp-plan-paper .care-paper-size{width:100%}
+
+/* 一覧・対象月はダイアログで選び、中央には用紙を並べる。 */
+.cp-area .cp-area-flow .care-record-columns{display:block}

@@ -1969,7 +1969,7 @@
         "fontName": "BIZUDPGothic",
         "lineHeight": 1.1,
         "dynamicFontSize": {
-          "min": 8,
+          "min": 6,
           "max": 8,
           "fit": "both"
         }
@@ -1987,7 +1987,7 @@
         "fontName": "BIZUDPGothic",
         "lineHeight": 1.1,
         "dynamicFontSize": {
-          "min": 8,
+          "min": 6,
           "max": 8,
           "fit": "both"
         }
@@ -2005,7 +2005,7 @@
         "fontName": "BIZUDPGothic",
         "lineHeight": 1.1,
         "dynamicFontSize": {
-          "min": 8,
+          "min": 6,
           "max": 8,
           "fit": "both"
         }
@@ -2024,7 +2024,7 @@
         "lineHeight": 1.1,
         "dynamicFontSize": {
           "min": 6,
-          "max": 6,
+          "max": 8,
           "fit": "both"
         }
       },
@@ -2042,7 +2042,7 @@
         "lineHeight": 1.1,
         "dynamicFontSize": {
           "min": 6,
-          "max": 6,
+          "max": 8,
           "fit": "both"
         }
       },
@@ -2060,9 +2060,531 @@
         "lineHeight": 1.1,
         "dynamicFontSize": {
           "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "フリガナ",
+        "type": "text",
+        "position": {
+          "x": 95,
+          "y": 43
+        },
+        "width": 120,
+        "height": 4,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "性別",
+        "type": "text",
+        "position": {
+          "x": 60,
+          "y": 58
+        },
+        "width": 8,
+        "height": 6,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "変更日",
+        "type": "text",
+        "position": {
+          "x": 85,
+          "y": 67
+        },
+        "width": 42,
+        "height": 5,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "区分支給限度基準額",
+        "type": "text",
+        "position": {
+          "x": 168,
+          "y": 56
+        },
+        "width": 14,
+        "height": 7,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "前月までの短期入所利用日数",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 56
+        },
+        "width": 11,
+        "height": 5,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "短期入所利用日数",
+        "type": "text",
+        "position": {
+          "x": 271,
+          "y": 67
+        },
+        "width": 11,
+        "height": 5,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "福祉用具名称",
+        "type": "text",
+        "position": {
+          "x": 65.2,
+          "y": 91
+        },
+        "width": 11.5,
+        "height": 7.3,
+        "fontSize": 6,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 6,
           "max": 6,
           "fit": "both"
         }
+      },
+      {
+        "name": "TAISコード",
+        "type": "text",
+        "position": {
+          "x": 77.5,
+          "y": 91
+        },
+        "width": 11.5,
+        "height": 7.3,
+        "fontSize": 5,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 5,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "福祉用具届出コード",
+        "type": "text",
+        "position": {
+          "x": 89.8,
+          "y": 91
+        },
+        "width": 11.5,
+        "height": 7.3,
+        "fontSize": 5,
+        "lineHeight": 1.1,
+        "fontName": "BIZUDPGothic",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 5,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "要介護状態区分_1",
+        "type": "circleMark",
+        "position": {
+          "x": 105.0,
+          "y": 54
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "要介護状態区分_2",
+        "type": "circleMark",
+        "position": {
+          "x": 110.5,
+          "y": 54
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "要介護状態区分_3",
+        "type": "circleMark",
+        "position": {
+          "x": 116.0,
+          "y": 54
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "要介護状態区分_4",
+        "type": "circleMark",
+        "position": {
+          "x": 121.5,
+          "y": 54
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "要介護状態区分_5",
+        "type": "circleMark",
+        "position": {
+          "x": 127.0,
+          "y": 54
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "変更後の要介護状態区分_1",
+        "type": "circleMark",
+        "position": {
+          "x": 105.0,
+          "y": 61
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "変更後の要介護状態区分_2",
+        "type": "circleMark",
+        "position": {
+          "x": 110.5,
+          "y": 61
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "変更後の要介護状態区分_3",
+        "type": "circleMark",
+        "position": {
+          "x": 116.0,
+          "y": 61
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "変更後の要介護状態区分_4",
+        "type": "circleMark",
+        "position": {
+          "x": 121.5,
+          "y": 61
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "変更後の要介護状態区分_5",
+        "type": "circleMark",
+        "position": {
+          "x": 127.0,
+          "y": 61
+        },
+        "width": 5,
+        "height": 5,
+        "fontSize": 10,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 10,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "限度額適用開始月_y",
+        "type": "text",
+        "position": {
+          "x": 208,
+          "y": 56
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "限度額適用開始月_m",
+        "type": "text",
+        "position": {
+          "x": 222,
+          "y": 56
+        },
+        "width": 6,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "限度額適用終了月_y",
+        "type": "text",
+        "position": {
+          "x": 208,
+          "y": 66
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "限度額適用終了月_m",
+        "type": "text",
+        "position": {
+          "x": 222,
+          "y": 66
+        },
+        "width": 6,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "生年月日_y",
+        "type": "text",
+        "position": {
+          "x": 20.5,
+          "y": 65
+        },
+        "width": 9,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "生年月日_m",
+        "type": "text",
+        "position": {
+          "x": 33,
+          "y": 65
+        },
+        "width": 6,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "生年月日_d",
+        "type": "text",
+        "position": {
+          "x": 43,
+          "y": 65
+        },
+        "width": 6,
+        "height": 5,
+        "fontSize": 6,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "認定区分_認定済",
+        "type": "circleMark",
+        "position": {
+          "x": 7,
+          "y": 13
+        },
+        "width": 10,
+        "height": 5,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
+      },
+      {
+        "name": "認定区分_申請中",
+        "type": "circleMark",
+        "position": {
+          "x": 21,
+          "y": 13
+        },
+        "width": 10,
+        "height": 5,
+        "fontSize": 8,
+        "fontName": "BIZUDPGothic",
+        "lineHeight": 1.1,
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        },
+        "borderWidth": 0.3
       }
     ],
     [

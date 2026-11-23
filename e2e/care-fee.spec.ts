@@ -34,6 +34,7 @@ test('第7表: 未確定AI原案を人が修正→第3/6表→限定計算→保
  await page.reload()
  const open=(number:6|7)=>openCareDocument(page,ui,number)
  await open(6)
+ await page.getByRole('button',{name:'対象月を選ぶ',exact:true}).click()
  await page.locator('.care-month-work').getByLabel('対象年月',{exact:true}).fill('2026-06')
  await page.getByRole('button',{name:'週間計画から予定を確認',exact:true}).click()
  const generation=page.getByRole('dialog',{name:'月間予定の生成を確認',exact:true})

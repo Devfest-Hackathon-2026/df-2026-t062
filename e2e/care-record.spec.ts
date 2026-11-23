@@ -42,7 +42,7 @@ test('第5表: 追加→保存→再表示→履歴→PDF。保存失敗でも�
   await page.getByRole('button', { name: '資料から下書きを作る', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '未確認の候補です' })).toBeVisible()
   await expect(page.locator('[data-care-table="5"]').getByLabel('記録内容', { exact: true })).toHaveValue('人が修正した架空の本文')
-  const recordList = page.getByRole('complementary', { name: '支援経過の記録一覧', exact: true })
+  const recordList = page.locator('[data-care-table="5"] .care-paper-toolbar')
   const previousHeight = (await recordList.boundingBox())!.height
   let resumeRefresh!: () => void
   const refreshGate = new Promise<void>(resolve => { resumeRefresh = resolve })
@@ -53,8 +53,8 @@ test('第5表: 追加→保存→再表示→履歴→PDF。保存失敗でも�
     await page.getByRole('button', { name: '内容を確認して記録に採用', exact: true }).click()
     await refreshStarted
     await expect(page.locator('[data-care-table="5"]').getByLabel('記録内容', { exact: true })).toHaveValue('AIによる架空の下書き。未決定事項は次回確認する。')
-    // 遅い一覧再取得中も、記録と保存ボタンの位置を保つ。
-    await expect(recordList).toContainText('人が修正した架空の本文')
+    // 遅い一覧再取得中も、用紙と保存ボタンの位置を保つ。
+    await expect(recordList).toBeVisible()
     expect((await recordList.boundingBox())!.height).toBeCloseTo(previousHeight, 0)
     await expect(page.locator('[data-care-table="5"]').getByLabel('修正履歴')).not.toContainText('保存版 3')
     const saved = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/save'))

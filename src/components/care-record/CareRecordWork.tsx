@@ -1,3 +1,6 @@
+import { useContext } from 'react'
+import { CarePaperFlow } from '../care-paper/CarePaperFlow.ts'
+import { PaperDialog } from '../care-paper/PaperDialog.tsx'
 import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { CareRecordConfirmationPanel } from './CareRecordConfirmationPanel.tsx'
 import { recordPaperText } from './recordPaperText.ts'
@@ -14,6 +17,8 @@ import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import './CareRecordWork.css'
 
 export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onBack, onDirtyChange, onBusyChange }: { clientId: string, clientName: string, kind?: CareRecordKind, onBack: () => void, onDirtyChange?: (v: boolean) => void, onBusyChange?: (v: boolean) => void }) {
+  const continuous = useContext(CarePaperFlow)
+  const [choosing, setChoosing] = useState(false)
   const config = careRecordConfig[kind]
   const [id, setId] = useState<string>()
   const [records, setRecords] = useState<CareRecordSummary[]>([])
@@ -70,7 +75,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
     setReload(n => n + 1)
     return true
   }
-  const select = (next: string) => { if (id !== next) void run(async () => { if (await preserve()) { historyRequest.current++; setPast(undefined); setId(next) } }) }
+  const select = (next: string) => { if (id !== next) void run(async () => { if (await preserve()) { historyRequest.current++; setPast(undefined); setId(next); setChoosing(false) } }) }
   const create = () => void run(async () => {
     if (!await preserve()) return
     createRequest.current ??= crypto.randomUUID()
@@ -89,19 +94,22 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
     if (!id || (!past && dirty)) return
     downloadBlob(await api.pdf(id, past?.rev), config.title + '_' + clientName + '.pdf')
   })
-  return <main className="care-record-work">
-    <header className="care-record-header"><button className="btn" type="button" disabled={busy} onClick={() => void run(async () => { if (await preserve()) onBack() })}>ケアプランに戻る</button><h1>{clientName} さんの{config.short}</h1><button type="button" className="savebtn" disabled={busy} onClick={create}>＋ {config.short}を追加</button></header>
-    <div className="care-record-columns">
+  const recordList = (
       <aside className="care-record-list" aria-label={config.short + 'の記録一覧'}>
         <label>記録を検索<input type="search" value={filters.q} onChange={e => setFilters(f => ({ ...f, q: e.target.value, offset: 0 }))} /></label>
         <div className="care-record-dates"><label>開始日<input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value, offset: 0 }))} /></label><label>終了日<input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value, offset: 0 }))} /></label></div>
         {loading && !records.length ? <p role="status">記録を読み込んでいます…</p> : !records.length ? <p>該当する{config.short}はありません。</p> : <ol>{records.map(r => <li key={r.id}><button type="button" disabled={busy} aria-pressed={r.id === id} onClick={() => select(r.id)}><strong>{r.date ?? '日時未入力'} {r.time ?? ''}</strong><span>{r.category || '項目未入力'}</span><small>{r.preview || '内容未入力'}</small><small>記録 {r.seq} ・ {r.revision ? '保存版 ' + r.revision : '未保存'}</small></button></li>)}</ol>}
         <nav aria-label="記録一覧のページ"><button className="btn" disabled={!filters.offset || loading} onClick={() => setFilters(f => ({ ...f, offset: Math.max(0, f.offset - 50) }))}>前の50件</button><button className="btn" disabled={!more || loading} onClick={() => setFilters(f => ({ ...f, offset: f.offset + 50 }))}>次の50件</button></nav>
       </aside>
+  )
+  return <main className="care-record-work">
+    <header className="care-record-header"><button className="btn" type="button" disabled={busy} onClick={() => void run(async () => { if (await preserve()) onBack() })}>ケアプランに戻る</button><h1>{clientName} さんの{config.short}</h1>{continuous && <button type="button" className="btn" disabled={busy} onClick={() => setChoosing(true)}>記録を選ぶ</button>}<button type="button" className="savebtn" disabled={busy} onClick={create}>＋ {config.short}を追加</button></header>
+    <div className="care-record-columns">
+      {(!continuous || choosing) && (continuous ? <PaperDialog title={config.short + 'を選ぶ'} onClose={() => setChoosing(false)}>{recordList}</PaperDialog> : recordList)}
       <section className="care-record-editor" aria-label={config.short + 'の編集'}>
         {(error || state.error) && <p role="alert" className="care-record-error">{error || state.error}</p>}
         {state.notice && <p role="status">{state.notice}</p>}
-        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`}
+        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} onStart={create} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`}
           textField={(slot, binding, page, rowOffset) => recordPaperText(slot, binding, page, rowOffset, values, state.setValue)}
           readOnly={!!past} operationsLabel="記録の操作"
           toolbar={<button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button>} status={past ? `保存版 ${past.rev}（閲覧のみ）` : dirty || !state.doc?.rev ? '未保存' : '保存済み'}>
