@@ -53,6 +53,8 @@ BEGIN
     INTO missing_tables
   FROM unnest(ARRAY[
     'audit_events',
+    'access_audit_events',
+    'security_audit_events',
     'recordings',
     'recording_consent_events',
     'jobs',
@@ -88,9 +90,55 @@ BEGIN
       ('recordings.upload_started_at'),
       ('recordings.upload_completed_at'),
       ('recordings.consent_event_id'),
+      ('audit_events.occurred_at'),
+      ('audit_events.outcome'),
+      ('audit_events.request_id'),
+      ('audit_events.correlation_id'),
+      ('audit_events.trace_id'),
+      ('audit_events.source'),
+      ('audit_events.route'),
+      ('audit_events.schema_version'),
+      ('access_audit_events.occurred_at'),
+      ('access_audit_events.actor_staff_id'),
+      ('access_audit_events.client_id'),
+      ('access_audit_events.resource_type'),
+      ('access_audit_events.resource_id'),
+      ('access_audit_events.access_mode'),
+      ('access_audit_events.action'),
+      ('access_audit_events.outcome'),
+      ('access_audit_events.request_id'),
+      ('access_audit_events.correlation_id'),
+      ('access_audit_events.trace_id'),
+      ('access_audit_events.source'),
+      ('access_audit_events.route'),
+      ('access_audit_events.schema_version'),
+      ('access_audit_events.result_count'),
+      ('access_audit_events.detail'),
+      ('security_audit_events.occurred_at'),
+      ('security_audit_events.actor_staff_id'),
+      ('security_audit_events.target_staff_id'),
+      ('security_audit_events.action'),
+      ('security_audit_events.outcome'),
+      ('security_audit_events.request_id'),
+      ('security_audit_events.correlation_id'),
+      ('security_audit_events.trace_id'),
+      ('security_audit_events.source'),
+      ('security_audit_events.route'),
+      ('security_audit_events.schema_version'),
+      ('security_audit_events.reason_code'),
+      ('security_audit_events.auth_method'),
+      ('security_audit_events.permission'),
+      ('security_audit_events.detail'),
       ('recording_consent_events.id'),
+      ('recording_consent_events.office_id'),
+      ('recording_consent_events.client_id'),
       ('recording_consent_events.event_type'),
-      ('recording_consent_events.occurred_at')
+      ('recording_consent_events.scope'),
+      ('recording_consent_events.policy_version'),
+      ('recording_consent_events.method'),
+      ('recording_consent_events.actor_staff_id'),
+      ('recording_consent_events.occurred_at'),
+      ('recording_consent_events.created_at')
   ) AS required(required_name)
   WHERE NOT EXISTS (
     SELECT 1
@@ -193,6 +241,60 @@ BEGIN
 
   IF invalid_privilege THEN
     RAISE EXCEPTION 'recording_cleanup role does not have the required least-privilege grants';
+  END IF;
+
+  SELECT (
+    has_schema_privilege('recording_cleanup', 'public', 'CREATE')
+    OR has_table_privilege('recording_cleanup', 'public.recordings', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.recordings', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.audit_events', 'SELECT')
+    OR has_table_privilege('recording_cleanup', 'public.audit_events', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.audit_events', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'SELECT')
+    OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.security_audit_events', 'SELECT')
+    OR has_table_privilege('recording_cleanup', 'public.security_audit_events', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.security_audit_events', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.security_audit_events', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.jobs', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.jobs', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.jobs', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.transcripts', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.transcripts', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.recording_summaries', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.recording_summaries', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'DELETE')
+    OR has_table_privilege('recording_cleanup', 'public.recording_consent_events', 'SELECT')
+    OR has_table_privilege('recording_cleanup', 'public.recording_consent_events', 'INSERT')
+    OR has_table_privilege('recording_cleanup', 'public.recording_consent_events', 'UPDATE')
+    OR has_table_privilege('recording_cleanup', 'public.recording_consent_events', 'DELETE')
+  )
+    INTO invalid_privilege;
+
+  IF invalid_privilege THEN
+    RAISE EXCEPTION 'recording_cleanup role has an unexpected privilege';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'recording_cleanup'
+      AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolcanlogin OR rolbypassrls)
+  ) THEN
+    RAISE EXCEPTION 'recording_cleanup role has unsafe role attributes';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_auth_members membership
+    JOIN pg_roles parent ON parent.oid = membership.roleid
+    WHERE parent.rolname = 'recording_cleanup'
+      AND membership.admin_option
+  ) THEN
+    RAISE EXCEPTION 'recording_cleanup membership grants admin option';
   END IF;
 END
 $$;
