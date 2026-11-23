@@ -21,10 +21,11 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
   }
   const result = await lifecycleReadiness(await getDb())
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
-    || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
+    || result.missingPurgeExpectation > 0 || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
     || result.stuckDeletions > 0 || result.staleUploads > 0 || failureCount > 0
+    || result.expiredActiveHolds > 0
     || result.intermediateMissingExpiry > 0 || result.intermediateFailedDeletions > 0
-    || result.intermediateStuckDeletions > 0 || result.intermediateFailedPastRetry > 0
+    || result.intermediateStuckDeletions > 0 || result.intermediateDeletedStateMismatch > 0 || result.intermediateFailedPastRetry > 0
   writeCleanupLog({
     event: CLEANUP_EVENTS.job,
     operation: 'metadata_sync',
@@ -36,14 +37,17 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     unsynced_hold_count: result.unsyncedHolds,
     escalated_hold_count: result.escalatedHolds,
     missing_expiry_count: result.missingExpiry,
+    missing_purge_expectation_count: result.missingPurgeExpectation,
     missing_generation_count: result.missingGeneration,
     legacy_hold_sync_count: result.legacyHoldSync,
     failed_deletion_count: result.failedDeletions,
     stuck_deletion_count: result.stuckDeletions,
     stale_upload_count: result.staleUploads,
+    expired_active_hold_count: result.expiredActiveHolds,
     intermediate_missing_expiry_count: result.intermediateMissingExpiry,
     intermediate_failure_count: result.intermediateFailedDeletions,
     intermediate_stuck_count: result.intermediateStuckDeletions,
+    intermediate_deleted_state_mismatch_count: result.intermediateDeletedStateMismatch,
     intermediate_failed_past_retry_count: result.intermediateFailedPastRetry,
   })
   await closePool(await getDb())
@@ -51,10 +55,11 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
 } else if (process.argv.includes('--verify-lifecycle-readiness')) {
   const result = await lifecycleReadiness(await getDb())
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
-    || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
+    || result.missingPurgeExpectation > 0 || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
     || result.stuckDeletions > 0 || result.staleUploads > 0
+    || result.expiredActiveHolds > 0
     || result.intermediateMissingExpiry > 0 || result.intermediateFailedDeletions > 0
-    || result.intermediateStuckDeletions > 0 || result.intermediateFailedPastRetry > 0
+    || result.intermediateStuckDeletions > 0 || result.intermediateDeletedStateMismatch > 0 || result.intermediateFailedPastRetry > 0
   writeCleanupLog({
     event: CLEANUP_EVENTS.job,
     operation: 'readiness',
@@ -62,14 +67,17 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     unsynced_hold_count: result.unsyncedHolds,
     escalated_hold_count: result.escalatedHolds,
     missing_expiry_count: result.missingExpiry,
+    missing_purge_expectation_count: result.missingPurgeExpectation,
     missing_generation_count: result.missingGeneration,
     legacy_hold_sync_count: result.legacyHoldSync,
     failed_deletion_count: result.failedDeletions,
     stuck_deletion_count: result.stuckDeletions,
     stale_upload_count: result.staleUploads,
+    expired_active_hold_count: result.expiredActiveHolds,
     intermediate_missing_expiry_count: result.intermediateMissingExpiry,
     intermediate_failure_count: result.intermediateFailedDeletions,
     intermediate_stuck_count: result.intermediateStuckDeletions,
+    intermediate_deleted_state_mismatch_count: result.intermediateDeletedStateMismatch,
     intermediate_failed_past_retry_count: result.intermediateFailedPastRetry,
   })
   await closePool(await getDb())

@@ -829,6 +829,7 @@ export async function lifecycleReadiness(db: Db) {
        count(*) FILTER (WHERE retention_hold_sync_status <> 'synced' AND (retention_hold OR retention_hold_target))::int AS unsynced_holds,
        count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND source_expires_at IS NULL)::int AS missing_expiry,
+       count(*) FILTER (WHERE source_deleted_at IS NOT NULL AND source_purge_expected_at IS NULL)::int AS missing_purge_expectation,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND status = 'uploaded' AND source_generation IS NULL)::int AS missing_generation,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_sync_status = 'legacy')::int AS legacy_hold_sync,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'failed')::int AS failed_deletions,
@@ -836,10 +837,12 @@ export async function lifecycleReadiness(db: Db) {
          AND source_delete_claimed_at <= now() - interval '15 minutes')::int AS stuck_deletions,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND status IN ('uploading', 'abandoning')
          AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days')::int AS stale_uploads,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_target AND retention_hold_until <= now())::int AS expired_active_holds,
        count(*) FILTER (WHERE intermediate_expires_at IS NULL)::int AS intermediate_missing_expiry,
        count(*) FILTER (WHERE intermediate_delete_status = 'failed')::int AS intermediate_failed_deletions,
        count(*) FILTER (WHERE intermediate_delete_status = 'deleting'
          AND intermediate_delete_claimed_at <= now() - interval '15 minutes')::int AS intermediate_stuck_deletions,
+       count(*) FILTER (WHERE intermediate_delete_status = 'deleted' AND intermediate_deleted_at IS NULL)::int AS intermediate_deleted_state_mismatch,
        count(*) FILTER (WHERE intermediate_delete_status = 'failed'
          AND intermediate_delete_next_retry_at IS NOT NULL AND intermediate_delete_next_retry_at <= now())::int AS intermediate_failed_past_retry
      FROM recordings`,
@@ -848,14 +851,17 @@ export async function lifecycleReadiness(db: Db) {
     unsyncedHolds: Number(row.unsynced_holds),
     escalatedHolds: Number(row.escalated_holds),
     missingExpiry: Number(row.missing_expiry),
+    missingPurgeExpectation: Number(row.missing_purge_expectation),
     missingGeneration: Number(row.missing_generation),
     legacyHoldSync: Number(row.legacy_hold_sync),
     failedDeletions: Number(row.failed_deletions),
     stuckDeletions: Number(row.stuck_deletions),
     staleUploads: Number(row.stale_uploads),
+    expiredActiveHolds: Number(row.expired_active_holds),
     intermediateMissingExpiry: Number(row.intermediate_missing_expiry),
     intermediateFailedDeletions: Number(row.intermediate_failed_deletions),
     intermediateStuckDeletions: Number(row.intermediate_stuck_deletions),
+    intermediateDeletedStateMismatch: Number(row.intermediate_deleted_state_mismatch),
     intermediateFailedPastRetry: Number(row.intermediate_failed_past_retry),
   }
 }

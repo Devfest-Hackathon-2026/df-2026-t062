@@ -274,6 +274,10 @@ run "private_service_with_scoped_deployer" {
       google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
       length(google_monitoring_alert_policy.recording_cleanup_overdue.notification_channels) == 1 &&
       length(google_monitoring_alert_policy.recording_cleanup_final_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_mismatch.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_sync_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_no_success.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_scheduler_error.notification_channels) == 1 &&
       google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
     )
     error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."

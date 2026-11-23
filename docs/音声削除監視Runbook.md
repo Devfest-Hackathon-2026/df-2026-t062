@@ -12,6 +12,25 @@
 4. Lifecycle有効化前のreadiness結果で、保持期限・中間データ期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
 5. Lifecycleを有効化する場合は、sourceバケットだけに`recordings/`・LIVE・30日のDelete条件が設定され、output・formsには設定されていないことをTerraform planで確認する。
 
+## 本番運用の有効化
+
+本番のScheduler・通知・Lifecycleは、readiness確認とTerraform planの確認を同じ手順で行う。通知チャネルを指定しない有効化は禁止する。
+
+```bash
+GCP_PROJECT_ID="<project-id>" \
+GCP_REGION="asia-northeast1" \
+CLOUD_RUN_RECORDING_CLEANUP_JOB="t062-recording-cleanup" \
+MONITORING_NOTIFICATION_CHANNEL_IDS="projects/<project-id>/notificationChannels/<id>" \
+ENABLE_RECORDING_CLEANUP_SCHEDULER=true \
+ENABLE_SOURCE_LIFECYCLE=false \
+APPLY=false \
+bash scripts/enable-recording-retention-production.sh
+```
+
+Planの内容を確認した後だけ`APPLY=true`で再実行する。Lifecycleの有効化はScheduler・通知の初回成功を確認した後に、`ENABLE_SOURCE_LIFECYCLE=true`を指定して別途行う。通知は、最終失敗・保全不一致・Scheduler失敗・期限超過・Job無成功のアラートが同じ通知チャネルへ届くことを確認する。
+
+既存の`enable-recording-lifecycle.sh`は互換用の入口であり、単独でTerraform applyは行わず、この手順へ委譲する。新規運用では`enable-recording-retention-production.sh`を使用する。
+
 ## Alert別の対応
 
 ### 保持期限超過
@@ -48,6 +67,7 @@
 ### Lifecycle readiness失敗
 
 - `missing_expiry_count` または `missing_generation_count` があれば、対象録音のDB値とGCSメタデータを確認する。
+- `missing_purge_expectation`、`expired_active_holds`、`intermediate_deleted_state_mismatch` があれば、LifecycleやSchedulerを有効化せず、DBとGCSの状態を確認する。
 - `legacy_hold_sync_count`、`unsynced_hold_count`、`escalated_hold_count` があれば、Object Holdの同期完了までLifecycleを有効化しない。
 - `failed_deletion_count`、`stuck_deletion_count`、`stale_upload_count` があれば、Cleanup Jobの失敗原因を解消してから再確認する。
 - `intermediate_missing_expiry_count`、`intermediate_failure_count`、`intermediate_stuck_count`、`intermediate_failed_past_retry_count`があれば、中間データの期限・削除状態・DB権限を確認してから再確認する。
