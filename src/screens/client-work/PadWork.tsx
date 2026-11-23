@@ -78,7 +78,7 @@ export function PadWork({ clientId }: { clientId: string }) {
   }
 
   const menuItem = (on: boolean) => `toc${on ? ' toc-on' : ''}`
-  const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
+  const copied = doc?.batches.find((b) => b.kind === 'copy' && b.label.endsWith('から写した'))?.changes ?? 0
   const batchLabel = doc?.batches[0]?.label ?? 'AI 書き込み'
 
 
@@ -115,7 +115,7 @@ export function PadWork({ clientId }: { clientId: string }) {
               <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
             ))}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
-            <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る（{client?.name}さんの今の情報から AI が書き込みます）</div>
+            <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る</div>
             {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && k.available && k.perClient === 'many' && !(['care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7'].includes(k.key) && client?.documents.some((d) => d.kind === k.key))).map((k) => (
               <button key={k.key} className="toc" role="menuitem" type="button" onClick={() => void openDoc(k.key, { create: true })}>＋ {k.name}</button>
             ))}
@@ -184,7 +184,7 @@ export function PadWork({ clientId }: { clientId: string }) {
         <div role="alert" className="strip" style={{ background: '#FFF4E5' }}>録音を端末に保存できていません。録音を止めるまで、この画面を開いたままにしてください。</div>
       )}
       <div ref={scroller} onScroll={onScroll} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '16px 16px 150px', position: 'relative' }}>
-        {open.fromName && doc && (
+        {open.fromName && doc && copied > 0 && (
           <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 12, padding: '12px 14px', fontSize: 15, lineHeight: 1.5, marginBottom: 12 }}>
             <span aria-hidden="true" style={{ flex: '0 0 auto', width: 24, height: 24, borderRadius: 7, background: '#1F2430', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AI</span>
             <div><strong>{open.fromName}から {copied} 欄を写しました（橙）。</strong>写したあとは、どちらかで直しても、もう片方は変わりません。</div>

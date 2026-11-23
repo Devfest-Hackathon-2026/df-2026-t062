@@ -41,6 +41,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const kinds = useFormKinds()
   const open = pickDocument(kinds, client?.documents, tab)
   const docId = open.docId
+  const activeDocId = useRef(docId)
+  activeDocId.current = docId
   const state = useDocument(docId)
   reloadDoc.current = () => { void state.reload(); void reloadClient() }
   const [zoom, setZoom] = useState(100)
@@ -71,7 +73,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     const from = kinds?.find((k) => k.key === key)?.createFrom
     return !!from && !isPlanKind(key) && !!client?.documents.some((d) => d.kind === from)
   }
-  // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
+  // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument）
   const openKind = useCallback(async (key: string) => {
     if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
     setCarePlanOpen(false); setPlanDirty(false)
@@ -98,7 +100,14 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const fillable = !!docId && canFillFrom(open.key)
   const filling = useDocumentFill(fillable ? docId : undefined, () => reloadDoc.current())
   const fillSource = open.fromName ?? ''
-  const runFill = () => { setFillAsk(''); setFillShown(true); void filling.start() }
+  const runFill = async () => {
+    const ready = await state.flush()
+    if (activeDocId.current !== docId) return
+    setFillAsk('')
+    if (!ready) return
+    setFillShown(true)
+    void filling.start()
+  }
   const petFill: PetFill | undefined = !fillable || !filling.loaded ? undefined
     : filling.working ? { phase: 'working', step: fillStepLabel(Math.min(2, fillStepIndex(filling.fill!.step)), fillSource), onShow: () => setFillShown(true) }
       : filling.justDone ? { phase: 'done', sourceName: fillSource, changes: filling.fill?.changes ?? 0 }
@@ -202,7 +211,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const batchLabel = latestBatch?.label ?? 'AI 書き込み'
   const empty = !!doc && !doc.batches.length && Object.keys(doc.fields).every((k) => k === 'person.name' || k === 'person.sex')
   const hasUpdates = state.updates.size > 0
-  const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
+  const copied = doc?.batches.find((b) => b.kind === 'copy' && b.label.endsWith('から写した'))?.changes ?? 0
   const job = docId ? jobs.find((entry) => entry.documentId === docId) : undefined
   const incomplete = job?.status === 'partial' || job?.status === 'failed' ? job : null
   const currentSave = saveFeedback?.documentId === docId ? saveFeedback : undefined
@@ -286,7 +295,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>{client?.name}さんの今の情報から、AI が書き込みます</div>
+              <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>書類の種類を選んでください</div>
               {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && k.available && k.perClient === 'many').map((k) => (
                 <button key={k.key} className="mi" role="menuitem" type="button" onClick={() => void createKind(k.key)}><span>{k.name}</span></button>
               ))}
@@ -330,7 +339,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
               {incomplete.status === 'partial' ? 'AI が一部の項目を処理できませんでした。用紙の内容を確認してください。' : 'AI 処理を完了できませんでした。録音は保存されています。担当者に確認してください。'}
             </div>}
             {state.error && <div role="alert" style={{ margin: `0 auto 12px`, maxWidth: maxW, color: '#A3261C', fontSize: 13 }}>うまく送れませんでした（{state.error}）。少し待ってから、もう一度直してください。</div>}
-            {open.fromName && doc && (
+            {open.fromName && doc && copied > 0 && (
               <div style={{ margin: '0 auto 14px', maxWidth: maxW }}>
                 <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#FFF4E5', border: '1px solid #F0C78A', borderRadius: 10, padding: '10px 14px', fontSize: 13, lineHeight: 1.5 }}>
                   <span aria-hidden="true" style={{ flex: '0 0 auto', width: 22, height: 22, borderRadius: 6, background: '#1F2430', color: '#FFFFFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>AI</span>
