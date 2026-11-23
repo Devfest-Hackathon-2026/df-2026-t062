@@ -194,8 +194,9 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
  * 図の枠と答えても図の key でなければ、複数行の文字の欄にする（図は決まった key にしか描けない）
  */
 function diagramUi(s: DraftSlot): DraftSlot {
-  const isDiagramKey = !!s.ref && !!diagramKinds[s.ref]
-  if (isDiagramKey && (s.ui === 'text' || s.ui === 'area')) return { ...s, ui: 'diagram' }
+  const key = Object.keys(diagramKinds).find(k => s.ref === k || s.ref?.startsWith(k + '.') || s.ref?.startsWith(k + '['))
+  const isDiagramKey = !!key
+  if (isDiagramKey && (s.ui === 'text' || s.ui === 'area' || s.ui === 'diagram')) return { ...s, ref: key!, ui: 'diagram' }
   if (!isDiagramKey && s.ui === 'diagram') return { ...s, ui: 'area' }
   return s
 }
@@ -228,7 +229,7 @@ function bindingOf(
   if (s.part === 'era') {
     // 「表すもの」が省かれていたら、そばの印字（明・大・昭…）から読む
     const v = s.mark && 'value' in s.mark ? s.mark.value : s.label
-    const era = ERAS.find(([k]) => v.startsWith(k))?.[1]
+    const era = ERAS.find(([k, code]) => v.startsWith(k) || v === code)?.[1]
     if (era) return { op: 'era@1', ui: 'circle', ref, era }
     note(`元号が分からない（${v}）`)
   }

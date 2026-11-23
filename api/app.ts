@@ -962,7 +962,7 @@ export function createApp(deps: ApiDeps) {
     const dict = fieldDict(v.localFields)
     return {
       formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
-      problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+      problems: checkDraftVersion({ schemas: v.schemas as never, pages: v.pages, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
       slots: Object.fromEntries(Object.entries(v.bindings).map(([n, b]) => [n, slotMeaning(b, dict, v.localFields)])),
       review: v.status === 'draft' ? await forms.reviewOf(db, v.id) : [],
     }

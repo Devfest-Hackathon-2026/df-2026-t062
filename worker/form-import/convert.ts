@@ -8,6 +8,7 @@
 import type { Ask } from '../vertex/gemini.ts'
 import { applyReview, defaultMarks, fixLocalPrefix, flattenLocalRows, mergeLocalFields, type DraftSlot, type LocalField } from './draft.ts'
 import { findBoxes, findCells, placeInBoxes, placeInCells, unusedBoxes, type Cell } from './geometry.ts'
+import { correctPrintedGeometry, normalizeEraChoices } from './integrity.ts'
 import { overlayPng } from './overlay.ts'
 import type { OpenedPdf } from './pdf.ts'
 import { catalogTypes, FIRST_SCHEMA, firstPrompt, REVIEW_SCHEMA, reviewPrompt } from './prompt.ts'
@@ -56,7 +57,7 @@ export async function convertPage(pdf: OpenedPdf, pageNo: number, deps: ConvertD
   const inside = (d: DraftSlot) => d.x >= -1 && d.y >= -1 && d.x + d.w <= page.width + 1 && d.y + d.h <= page.height + 1
   let outside = 0
   const fit = (xs: DraftSlot[]) => {
-    const placed = placeInBoxes(placeInCells(xs, cells), boxes)
+    const placed = correctPrintedGeometry(placeInBoxes(placeInCells(xs, cells), boxes), page)
     const ok = placed.filter(inside)
     outside += placed.length - ok.length
     return ok
@@ -73,7 +74,7 @@ export async function convertPage(pdf: OpenedPdf, pageNo: number, deps: ConvertD
     const prompt = [...first, { png: await overlayPng(pdf, pageNo, slots) }, { text: reviewPrompt(slots, unusedBoxes(slots, boxes)) }]
     const body = await deps.ask(prompt, REVIEW_SCHEMA, { step: '様式の見直し', group: pageNo }) as { slots?: DraftSlot[], fixes?: { id: number, slot: DraftSlot }[], removes?: number[], localFields?: LocalField[] }
     localDefs = [...localDefs, ...(body.localFields ?? [])]
-    const fixes = (body.fixes ?? []).map((f) => ({ id: f.id, slot: placeInBoxes(placeInCells([f.slot], cells), boxes)[0] }))
+    const fixes = (body.fixes ?? []).flatMap(f => fit([f.slot]).map(slot => ({ id: f.id, slot })))
     const applied = applyReview(slots, { slots: fit(body.slots ?? []), fixes, removes: body.removes ?? [] })
     slots = applied.slots
     rounds.push(applied.changes)
@@ -81,7 +82,8 @@ export async function convertPage(pdf: OpenedPdf, pageNo: number, deps: ConvertD
   }
 
   const fixed = fixLocalPrefix(slots, localDefs, deps.catalog.map((l) => l.split('｜')[0]))
-  const flat = flattenLocalRows(fixed.slots, fixed.defs)
+  const normalized = normalizeEraChoices(fixed.slots, fixed.defs, pageNo)
+  const flat = flattenLocalRows(normalized.slots, normalized.fields)
   const types = catalogTypes(deps.catalog)
   for (const d of flat.defs) if (!types.has(d.key)) types.set(d.key, d.type)
   slots = defaultMarks(flat.slots, types)
