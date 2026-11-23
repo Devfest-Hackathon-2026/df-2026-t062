@@ -1,7 +1,7 @@
 // AI の書き込み（録音のあとなど）を、今の用紙にどう入れるかを決める。DB には触らない（DB は api/worker の applyBatch）。
 // 書き換えの決まり（AI基盤の設計 6 章）:
 //   - 空の欄 → 書く（add）
-//   - AI が書いた欄 → 新しい値なら書き換える（update）。保存のあとでも書き換える
+//   - AI が書いた欄 → 新しい値なら書き換える（update）。保存のあとでも書き換える（人間が確認した値を除く）
 //   - ケアマネが書いた・直した欄 → 書き換えない（kept）
 //   - 同じ値なら書き込みに入れない。AI は欄を空にしない
 //   - ケアマネの判断・事業所の設定・その場で聞く欄は、AI は書かない。その様式だけの欄は書く（説明書きがなくても。#152）
@@ -11,6 +11,7 @@ import type { Who } from './slots.ts'
 export interface CurrentField {
   value: unknown
   by: Who
+  reviewed?: boolean
 }
 
 /**
@@ -29,7 +30,7 @@ export interface BatchChange {
 
 export interface BatchPlan {
   changes: BatchChange[]
-  kept: { key: string, reason: 'cm' }[]
+  kept: { key: string, reason: 'cm' | 'reviewed' }[]
   skipped: { key: string, reason: 'not-ai-field' | 'same' | 'empty' }[]
 }
 
@@ -66,6 +67,7 @@ export function planBatch(
     if (!aiMayWrite(key, dict) && !systemKeys.has(key)) { plan.skipped.push({ key, reason: 'not-ai-field' }); continue }
     if (isEmpty(p.value)) { plan.skipped.push({ key, reason: 'empty' }); continue }
     const cur = current[key]
+    if (cur?.reviewed) { plan.kept.push({ key, reason: 'reviewed' }); continue }
     if (cur && !isEmpty(cur.value) && cur.by === 'cm') { plan.kept.push({ key, reason: 'cm' }); continue }
     if (cur && sameValue(cur.value, p.value)) { plan.skipped.push({ key, reason: 'same' }); continue }
     const before = cur && !isEmpty(cur.value) ? cur.value : null

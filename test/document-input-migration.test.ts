@@ -48,6 +48,9 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')
     assert.equal(row.status, 'review')
     assert.deepEqual(row.result, { candidates: [] })
+    // #16: 以前の保存済みAI入力を、移行で確認済み・正式版にしない。
+    await db.query("INSERT INTO field_values(office_id,client_id,document_id,key,value,by) VALUES($1,$2,$3,'person.lifeHistory','\"架空の移行前原案\"','ai')",[office,client,document])
+    await db.query("INSERT INTO document_saved(document_id,key,value,by) VALUES($1,'person.lifeHistory','\"架空の移行前原案\"','ai')",[document])
     assert.deepEqual(await migrate(db), [
       '0018_audit_events.sql',
       '0019_recording_retention.sql',
@@ -68,7 +71,13 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0034_document_fills.sql',
       '0035_care_plan_shared_services.sql',
       '0035_office_topics_training.sql',
+      '0036_document_review.sql',
     ])
+    const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
+    assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
+    assert.equal(field.reviewed_at,null);assert.equal(field.reviewed_by,null)
+    assert.match(field.value_version,/^[0-9a-f-]{36}$/)
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM document_confirmations')).rows[0].n,0)
     const backfilled = (await db.query(
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
       [recording],

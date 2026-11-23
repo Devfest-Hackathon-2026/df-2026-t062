@@ -1,3 +1,5 @@
+import { DocumentReview } from '../../components/document/DocumentReview.tsx'
+import { fieldDict } from '../../../core/dictionary.ts'
 import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // iPad ②③ 用紙（キャンバス PadWork・PadRec）と、録音から用紙へ書く流れ A〜E（PadFlow1〜5）。
 // iPad でできることは 2 つだけ: 録音するかしないか、用紙を書き換えるか。
@@ -129,6 +131,7 @@ export function PadWork({ clientId }: { clientId: string }) {
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <DocumentReview key={docId} doc={state.doc} dict={fieldDict(state.form?.localFields)} flush={state.flush} reload={state.reload} />
           {saved && <span role="status" style={{ fontSize: 15, fontWeight: 500, color: '#1F49B0' }}>保存しました</span>}
           <button type="button" onClick={async () => { const ok = await state.saveDocument(); setSaved(ok); if (ok) setSavedPages(new Set(pages.map((p) => p.no))) }} disabled={phase === 'writing'} style={{ fontFamily: "'Noto Sans JP',sans-serif", fontSize: 16, fontWeight: 700, borderRadius: 12, padding: '0 18px', minHeight: 48, cursor: 'pointer', border: '1px solid #1C2229', background: '#1C2229', color: '#FFFFFF', whiteSpace: 'nowrap' }}>書類を保存</button>
         </div>
