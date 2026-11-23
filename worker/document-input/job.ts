@@ -82,10 +82,12 @@ export async function runDocumentInput(deps: WorkerDeps, id: string, context?: W
     }) : { values: {}, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
     const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
     const allowed = new Set(writableForm.keys)
-    const candidates = []
+    const adopted = new Set<string>(row.adopted)
+    const previous = row.result as DocumentInputResult | null
+    const candidates = previous?.candidates.filter((candidate) => adopted.has(candidate.key)) ?? []
     const missingEvidence: string[] = []
     for (const [key, proposal] of Object.entries(proposed)) {
-      if (!allowed.has(key) || proposal.value == null) continue
+      if (adopted.has(key) || !allowed.has(key) || proposal.value == null) continue
       const references = proposal.cite && !Array.isArray(proposal.cite) ? proposal.cite.ids : []
       const referenced = references.map((reference) => summaries.find((summary) => summary.id === reference))
       const cite = [...new Set(referenced.flatMap((summary) => summary ? bundle?.sourceIds?.[summary.topic] ?? [] : []))]

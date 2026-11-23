@@ -87,7 +87,14 @@ export function PadWork({ clientId }: { clientId: string }) {
   return (
     <div className="pad" style={{ width: '100%', height: '100dvh', boxSizing: 'border-box', overflow: 'hidden', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#E9EBEF', fontSize: 16, lineHeight: 1.6, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', position: 'relative', zIndex: 10 }}>
-        <a className="tb" {...linkProps('/')} style={{ border: 0, padding: '10px 6px', color: '#2453C4', fontWeight: 500 }}>
+        <a className="tb" {...linkProps('/')} onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+          if (state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
+            e.preventDefault()
+            return
+          }
+          linkProps('/').onClick(e)
+        }} style={{ border: 0, padding: '10px 6px', color: '#2453C4', fontWeight: 500 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者
         </a>
         <div style={{ fontSize: 19, fontWeight: 700, whiteSpace: 'nowrap' }}>{client ? `${client.name} さん` : ''}</div>
@@ -165,7 +172,7 @@ export function PadWork({ clientId }: { clientId: string }) {
       )}
       {recorder.phase === 'error' && (
         <div role="alert" className="strip" style={{ background: '#FDE8E7', color: '#A3261C' }}>
-          <div style={{ flex: '1 1 auto' }}>{recorder.error}。録音は iPad に残っています。通信状態を確認して再試行してください。</div>
+          <div style={{ flex: '1 1 auto' }}>{recorder.error}</div>
           <button type="button" onClick={recorder.retry} disabled={recorder.busy} className="tb">再試行</button>
           <button type="button" onClick={recorder.reset} style={{ font: 'inherit', fontSize: 15, fontWeight: 700, border: 0, background: 'transparent', color: '#A3261C', minHeight: 44 }}>閉じる</button>
         </div>

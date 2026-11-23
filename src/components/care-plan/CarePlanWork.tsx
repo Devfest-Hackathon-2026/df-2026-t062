@@ -442,7 +442,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
       {error && <p role="alert" className="cp-error">{error}</p>}
     </Modal>}
     {aiOpen && <Modal title="保存済みアセスメントからAI原案を作る" onClose={() => { if (!busy) setAiOpen(false) }}>
-      <AiDraftPanel clientId={plan.clientId} draft={aiDraft} busy={busy} onGenerate={(documentId, revisionId) => void run(async () => {
+      <AiDraftPanel clientId={plan.clientId} planFrom={plan.effectiveFrom} planTo={plan.effectiveTo} draft={aiDraft} busy={busy} onGenerate={(documentId, revisionId) => void run(async () => {
         const r = await api.carePlanAi(plan.id, documentId, revisionId); setAiDraft(r.draft)
         setPlan((old) => ({ ...old, aiDraft: r.draft }))
       })} onApply={() => void run(async () => {
@@ -462,8 +462,8 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
   </>
 }
 
-function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
-  clientId: string, draft?: AiDraftDetail, busy: boolean,
+function AiDraftPanel({ clientId, planFrom, planTo, draft, busy, onGenerate, onApply }: {
+  clientId: string, planFrom: string, planTo: string | null, draft?: AiDraftDetail, busy: boolean,
   onGenerate: (documentId: string, revisionId: number) => void, onApply: () => void,
 }) {
   const [sources, setSources] = useState<{ documentId: string, id: number, rev: number, savedAt: string }[]>([])
@@ -482,6 +482,8 @@ function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
   const records = (v: unknown) => (Array.isArray(v) ? v : []).filter((r) => r && typeof r === 'object' && !Array.isArray(r)).map(asRecord)
   const text = (v: unknown) => typeof v === 'string' ? v : ''
   const proposal = asRecord(draft?.proposal)
+  const hasCandidate = Object.values(asRecord(proposal.plan1)).some((value) => text(value).trim())
+    || records(proposal.needs).some((need) => text(need.need).trim() && text(asRecord(need.longGoal).goal).trim())
   return <>
     <p>AI原案はまだ確定した計画ではありません。参照元は保存済みの版に固定され、その後のアセスメント変更は自動反映しません。</p>
     {error && <p role="alert" className="cp-error">{error}</p>}
@@ -494,7 +496,18 @@ function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
     {draft && draft.status !== 'failed' && <>
       <h3>AI原案（未確定）</h3><p>参照：保存版 {draft.sourceRevisionRev}・生成日時 {new Date(draft.referencedAt).toLocaleString('ja-JP')}</p>
       {Object.entries(asRecord(proposal.plan1)).map(([key, value]) => <div className="cp-service" key={key}><strong>{key === 'plan.overallPolicy' ? '総合的な援助の方針' : key === 'plan.intentionAnalysis' ? '意向を踏まえた課題分析' : '第1表の候補'}</strong><p>{typeof value === 'string' ? value : '候補を確認してください'}</p></div>)}
-      {records(proposal.needs).map((n, i) => <div className="cp-service" key={i}><strong>{text(n.need)}</strong><p>長期目標：{text(asRecord(n.longGoal).goal)}</p>{records(n.shortGoals).map((g, j) => <p key={j}>{text(g.goal)}：{records(g.services).map((s) => text(s.content)).join('、')}</p>)}</div>)}
+      {records(proposal.needs).map((n, i) => <div className="cp-service" key={i}>
+        <strong>{text(n.need)}</strong><p>長期目標：{text(asRecord(n.longGoal).goal)}</p>
+        {records(n.shortGoals).map((g, j) => <div key={j}>
+          <p>短期目標：{text(g.goal)}</p>
+          {records(g.services).map((s, k) => <div key={k}>
+            <strong>{text(s.content)}</strong>
+            <p>保険給付：{s.insured === true ? '対象' : s.insured === false ? '対象外' : '区分が未確認のため、このサービスは入力されません'}</p>
+            <p>種別：{text(s.kind) || '未入力'} ／ 事業所：{text(s.provider) || '未入力'} ／ 頻度：{text(s.frequency) || '未入力'}</p>
+            <p>期間：{text(s.periodFrom) || planFrom}〜{text(s.periodTo) || planTo || '終了日なし'}{text(s.periodText) && `（${text(s.periodText)}）`}</p>
+          </div>)}
+        </div>)}
+      </div>)}
       {records(proposal.slots).map((slot, i) => {
         const ref = asRecord(slot.serviceRef)
         const service = records(records(records(proposal.needs)[Number(ref.need)]?.shortGoals)[Number(ref.shortGoal)]?.services)[Number(ref.service)]
@@ -503,7 +516,8 @@ function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
       })}
       {records(draft.conflicts).map((conflict, i) => <p key={i} className="cp-error">確認が必要な点：{text(conflict.reason)}</p>)}
       <p>人が直した欄・既存のニーズは上書きしません。入力後も編集できます。保存・確定は別の操作です。</p>
-      <button className="btn btn-p" disabled={busy || !['proposed'].includes(draft.status)} onClick={onApply}>この原案を入力する</button>
+      {!hasCandidate && <p>入力できる候補がありません。</p>}
+      <button className="btn btn-p" disabled={busy || draft.status !== 'proposed' || !hasCandidate} onClick={onApply}>この原案を入力する</button>
     </>}
   </>
 }

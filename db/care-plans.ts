@@ -1372,10 +1372,14 @@ export async function applyCarePlanAiDraft(
           const sv = asRecord(services[k])
           const content = typeof sv?.content === 'string' ? sv.content.trim() : ''
           if (!sv || !content) continue
+          if (typeof sv.insured !== 'boolean') {
+            skipped.push({ target: `needs[${i}].shortGoals[${j}].services[${k}].insured`, reason: 'invalid_value' })
+            continue
+          }
           const serviceId = randomUUID()
           await insertService(c, plan.id, serviceId, needId, goalId, k + 1, {
             content,
-            insured: sv.insured === true,
+            insured: sv.insured,
             kind: typeof sv.kind === 'string' ? sv.kind : null,
             provider: typeof sv.provider === 'string' ? sv.provider : null,
             frequency: typeof sv.frequency === 'string' ? sv.frequency : null,

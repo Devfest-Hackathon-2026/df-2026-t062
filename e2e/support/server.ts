@@ -60,7 +60,7 @@ try {
     },
     carePlanAi: async () => async () => ({
       plan1: { 'plan.overallPolicy': '架空の方針：自宅で安全に暮らす' },
-      needs: [{ need: '架空の入浴支援', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴介助', kind: '訪問介護' }] }] }],
+      needs: [{ need: '架空の入浴支援', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴介助', insured: true, kind: '訪問介護' }] }] }],
       slots: [{ serviceRef: { need: 0, shortGoal: 0, service: 0 }, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '10:00' }], conflicts: [],
     }),
     queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true,
