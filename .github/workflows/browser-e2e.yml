@@ -10,7 +10,7 @@ permissions:
 jobs:
   care-plan:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:17
@@ -35,7 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install PDF renderer and Japanese fonts
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-noto-cjk
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends poppler-utils fonts-noto-cjk
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:

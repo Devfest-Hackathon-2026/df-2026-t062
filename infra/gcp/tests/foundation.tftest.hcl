@@ -356,11 +356,14 @@ run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
   command = plan
 
   variables {
-    project_id                         = "mock-project"
-    github_repository_id               = "1447301909"
-    github_repository_owner_id         = "234936919"
-    app_origins                        = []
-    source_recording_lifecycle_enabled = true
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = false
+    recording_cleanup_alerts_enabled    = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
   assert {
@@ -381,6 +384,23 @@ run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
     )
     error_message = "The source Lifecycle safety net must not be applied to output or forms, and must not replace work cleanup."
   }
+}
+
+run "source_lifecycle_safety_net_rejects_paused_scheduler" {
+  command = plan
+
+  variables {
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = true
+    recording_cleanup_alerts_enabled    = false
+    monitoring_notification_channel_ids = []
+  }
+
+  expect_failures = [terraform_data.recording_cleanup_alert_configuration]
 }
 
 run "source_bucket_cors_and_budget" {

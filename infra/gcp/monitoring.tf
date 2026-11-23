@@ -17,6 +17,16 @@ resource "terraform_data" "recording_cleanup_alert_configuration" {
       condition     = !var.recording_cleanup_alerts_enabled || length(var.monitoring_notification_channel_ids) > 0
       error_message = "Enable recording cleanup alerts only when monitoring_notification_channel_ids is configured."
     }
+
+    precondition {
+      condition     = !var.source_recording_lifecycle_enabled || !var.recording_cleanup_scheduler_paused
+      error_message = "The source recording Lifecycle safety net requires the recording cleanup Scheduler to be active."
+    }
+
+    precondition {
+      condition     = !var.source_recording_lifecycle_enabled || var.recording_cleanup_alerts_enabled
+      error_message = "The source recording Lifecycle safety net requires recording cleanup alerts to be enabled."
+    }
   }
 }
 

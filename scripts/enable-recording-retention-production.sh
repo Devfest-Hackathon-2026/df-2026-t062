@@ -8,8 +8,9 @@ region="${GCP_REGION:?Set GCP_REGION}"
 job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
 channels="${MONITORING_NOTIFICATION_CHANNEL_IDS:?Set MONITORING_NOTIFICATION_CHANNEL_IDS as comma-separated resource names}"
 apply="${APPLY:-false}"
-enable_scheduler="${ENABLE_RECORDING_CLEANUP_SCHEDULER:-true}"
+enable_scheduler="${ENABLE_RECORDING_CLEANUP_SCHEDULER:-false}"
 enable_lifecycle="${ENABLE_SOURCE_LIFECYCLE:-false}"
+confirm_production_apply="${CONFIRM_RECORDING_RETENTION_PRODUCTION:-false}"
 plan_path="${TF_PLAN_PATH:-$(mktemp "${TMPDIR:-/tmp}/recording-retention.XXXXXX.tfplan")}"
 
 cleanup() {
@@ -48,8 +49,13 @@ done < <(jq -r '.[]' <<< "$channel_json")
 case "$enable_scheduler" in true|false) ;; *) echo "ENABLE_RECORDING_CLEANUP_SCHEDULER must be true or false" >&2; exit 2 ;; esac
 case "$enable_lifecycle" in true|false) ;; *) echo "ENABLE_SOURCE_LIFECYCLE must be true or false" >&2; exit 2 ;; esac
 case "$apply" in true|false) ;; *) echo "APPLY must be true or false" >&2; exit 2 ;; esac
+case "$confirm_production_apply" in true|false) ;; *) echo "CONFIRM_RECORDING_RETENTION_PRODUCTION must be true or false" >&2; exit 2 ;; esac
 if [[ "$enable_lifecycle" == true && "$enable_scheduler" != true ]]; then
   echo "ENABLE_SOURCE_LIFECYCLE=true requires ENABLE_RECORDING_CLEANUP_SCHEDULER=true" >&2
+  exit 2
+fi
+if [[ "$apply" == true && "$confirm_production_apply" != true ]]; then
+  echo "APPLY=true requires CONFIRM_RECORDING_RETENTION_PRODUCTION=true" >&2
   exit 2
 fi
 
@@ -72,7 +78,7 @@ terraform_args=(
 
 terraform -chdir="$repo_root/infra/gcp" plan "${terraform_args[@]}" -out="$plan_path"
 if [[ "$apply" != true ]]; then
-  echo "Plan only. Review the plan, then rerun with APPLY=true to apply it."
+  echo "Plan only. Review the plan, then rerun with APPLY=true and CONFIRM_RECORDING_RETENTION_PRODUCTION=true to apply it."
   exit 0
 fi
 
