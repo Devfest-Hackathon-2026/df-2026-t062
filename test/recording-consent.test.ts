@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE } from '../core/recording-consent.ts'
+import { RECORDING_CONSENT_POLICY_TEXT, RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE } from '../core/recording-consent.ts'
 import { api } from '../src/lib/api.ts'
 
 test('録音同意のポリシー版と対象範囲は固定値を共有する', () => {
   assert.equal(RECORDING_CONSENT_POLICY_VERSION, 'recording-consent-v1')
   assert.equal(RECORDING_CONSENT_SCOPE, 'recording_and_ai_processing')
+  assert.match(RECORDING_CONSENT_POLICY_TEXT, /録音/)
+  assert.match(RECORDING_CONSENT_POLICY_TEXT, /文字起こし/)
+  assert.match(RECORDING_CONSENT_POLICY_TEXT, /AI/)
 })
 
 test('録音同意の確認APIは確認済みであることを明示して送る', async (t) => {
