@@ -70,6 +70,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0035_office_topics_training.sql',
       '0036_recording_retention_14_days.sql',
       '0037_recording_intermediate_retention.sql',
+      '0038_recording_consent.sql',
     ])
     const backfilled = (await db.query(
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
@@ -86,6 +87,12 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     assert.equal(migrated.source_delete_status, 'pending')
     assert.equal(migrated.intermediate_delete_status, 'pending')
     assert.equal(Number(migrated.intermediate_seconds), 14 * 24 * 60 * 60)
+    const consentColumn = (await db.query(
+      `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'recordings' AND column_name = 'consent_event_id'`,
+    )).rows[0]
+    assert.equal(consentColumn.is_nullable, 'YES')
+    assert.equal((await db.query("SELECT to_regclass(current_schema() || '.recording_consent_events') AS table_name")).rows[0].table_name, 'recording_consent_events')
     const oldApiInsert = (await db.query(
       `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by)
        VALUES ($1,$2,$3,'recordings/old-api.webm','audio/webm',$4)
