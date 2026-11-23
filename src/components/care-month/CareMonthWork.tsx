@@ -1,3 +1,6 @@
+import { useContext } from 'react'
+import { CarePaperFlow } from '../care-paper/CarePaperFlow.ts'
+import { PaperDialog } from '../care-paper/PaperDialog.tsx'
 import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { careMonthPrint } from '../../../core/care-month-print.ts'
 import { CareMonthHeaderFields } from './CareMonthHeaderFields.tsx'
@@ -22,6 +25,8 @@ function PreviewDialog({title,children,onCancel}:{title:string;children:ReactNod
 function monthBefore(month:string){const date=new Date(month+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()-1);return date.toISOString().slice(0,7)}
 type Preview={type:'create';data:Awaited<ReturnType<typeof api.previewCareMonth>>;planId:string;month:string}|{type:'change';entries:MonthEntry[];added:number;removed:number;skipped:number}
 export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyChange,onOpenFee,visible=true}:{clientId:string;clientName:string;onBack:()=>void;onDirtyChange?:(v:boolean)=>void;onBusyChange?:(v:boolean)=>void;visible?:boolean;onOpenFee?:(source:Omit<CareFeeSourceSelection,'requestId'>)=>void}) {
+ const continuous=useContext(CarePaperFlow)
+ const [choosing,setChoosing]=useState(false)
  const [list,setList]=useState<CareMonthSummary[]>([]),[plans,setPlans]=useState<CarePlanSummary[]>([]),[planId,setPlanId]=useState('')
  const [target,setTarget]=useState(()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit'}).format(new Date()))
  const [headers,setHeaders]=useState<MonthHeaderValues>(()=>MonthHeaders.parse({}))
@@ -53,8 +58,8 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
   return await saveCurrent()||false
  }
  const load=async(id:string)=>{const r=await api.careMonth(id);if(!active.current)return;setCurrent(r.month);setTarget(r.month.month);setPlanId(r.month.planId);setEntries(r.month.entries);setHeaders(r.month.headers??MonthHeaders.parse({}));setPast(undefined);setServiceId(r.month.services[0]?.id??'');await history(r.month.documentId)}
- const select=(id:string)=>void run(async()=>{if(await preserve()===false)return;await load(id)})
- const generate=()=>void run(async()=>{if(await preserve()===false)return;const data=await api.previewCareMonth(clientId,planId,target);setPreview({type:'create',data,planId,month:target})})
+ const select=(id:string)=>void run(async()=>{if(await preserve()===false)return;await load(id);setChoosing(false)})
+ const generate=()=>void run(async()=>{if(await preserve()===false)return;const data=await api.previewCareMonth(clientId,planId,target);setChoosing(false);setPreview({type:'create',data,planId,month:target})})
  const accept=()=>void run(async()=>{
   if(!preview)return
   if(preview.type==='change'){setEntries(preview.entries);setPast(undefined);setPreview(undefined);return}
@@ -72,13 +77,16 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
  const shownHeaders=past?past.headers??MonthHeaders.parse({}):headers
  const saveButton=<button className="savebtn" disabled={busy||!!past} onClick={()=>void run(async()=>{await saveCurrent()})}>第6表を保存</button>
  const add=()=>{if(!current)return;const service=current.services.find(s=>s.id===serviceId);if(!service)return;setEntries(rows=>[...rows,{id:crypto.randomUUID(),sourceKey:null,serviceId:service.id,slotId:null,content:service.content,provider:service.provider,serviceKind:service.serviceKind,insured:service.insured,plan:{date:current.month+'-01',start:'09:00',end:'10:00',endDate:current.month+'-01',status:'scheduled',note:''},actual:null}])}
- return <main className="care-record-work care-month-work">
-  <header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>void run(async()=>{if(await preserve()!==false)onBack()})}>ケアプランに戻る</button><h1>{clientName} さんのサービス利用票</h1>{onOpenFee&&view&&<div role="group" aria-label="第7表へ引き継ぐ"><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'planned'})}>この保存版で第7表（予定）</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'actual'})}>この保存版で第7表（実績）</button></div>}</header>
-  <div className="care-record-columns"><aside className="care-record-list" aria-label="第6表の月選択">
+ const monthSelection=(
+<aside className="care-record-list" aria-label="第6表の月選択">
    <h2>第6表を作成</h2><label>確定済み計画版<select aria-label="確定済み計画版" value={planId} disabled={busy} onChange={e=>setPlanId(e.target.value)}><option value="">選択してください</option>{confirmed.map(p=><option key={p.id} value={p.id}>計画版 {p.version} ・ {p.effectiveFrom}～{p.effectiveTo??''}</option>)}</select></label>
    {!confirmed.length&&<p>確定済みの第3表が必要です。</p>}<label>対象年月<input type="month" value={target} onChange={e=>setTarget(e.target.value)} disabled={busy} /></label><button className="btn" disabled={busy||!planId||!target} onClick={generate}>週間計画から予定を確認</button>
    <h2>保存済みの月間予定</h2>{!list.length?<p>月間予定はまだありません。</p>:<ol>{list.map(m=><li key={m.id}><button type="button" disabled={busy} aria-pressed={current?.id===m.id} onClick={()=>select(m.id)}>{m.month} ・ 計画版 {m.planVersion}<small>{m.revision?'保存版 '+m.revision:'未保存'}</small></button></li>)}</ol>}
-  </aside><section className="care-record-editor" aria-label="第6表の編集">
+  </aside>
+ )
+ return <main className="care-record-work care-month-work">
+  <header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>void run(async()=>{if(await preserve()!==false)onBack()})}>ケアプランに戻る</button><h1>{clientName} さんのサービス利用票</h1>{continuous&&<button type="button" className="btn" disabled={busy} onClick={()=>setChoosing(true)}>対象月を選ぶ</button>}{onOpenFee&&view&&<div role="group" aria-label="第7表へ引き継ぐ"><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'planned'})}>この保存版で第7表（予定）</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'actual'})}>この保存版で第7表（実績）</button></div>}</header>
+  <div className="care-record-columns">{(!continuous||choosing)&&(continuous?<PaperDialog title="第6表の対象月を選ぶ" onClose={()=>setChoosing(false)}>{monthSelection}</PaperDialog>:monthSelection)}<section className="care-record-editor" aria-label="第6表の編集">
    {error&&!preview&&<p role="alert" className="care-record-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
    {!view?<OfficialCareWorkspace disabled={busy} formKind="care_plan_6" values={{}} title="第6表・サービス利用票" status="未作成"><p>確定した週間計画と対象年月から予定を確認してください。閲覧だけでは記録は作成されません。</p></OfficialCareWorkspace>:<OfficialCareWorkspace disabled={busy} readOnly={!!past} documentId={view.documentId} savedRevision={view.revision} revision={past?.revision} values={careMonthPrint({...view,entries:shown,headers:past?.headers??(past?undefined:headers)})} title="第6表・サービス利用票" status={past ? `保存版 ${past.revision}（閲覧のみ）` : dirty || !current?.revision ? '未保存' : '保存済み'}
      toolbar={saveButton}

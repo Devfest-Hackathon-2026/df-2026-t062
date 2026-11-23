@@ -8,12 +8,12 @@ import { PaperText, type PaperTextField } from './PaperText.tsx'
 import './care-paper.css'
 
 /** PDF出力と同じ原紙・印字座標を使用する。保存版はその版の値と様式を読む。 */
-export function OfficialCareWorkspace({ documentId, formKind, revision, formVersionId, savedRevision, values, title, status, children, disabled=false, readOnly = false, staticFields = false, textField, toolbar, operationsLabel = '入力・修正', details }: {
+export function OfficialCareWorkspace({ documentId, formKind, revision, formVersionId, savedRevision, values, title, status, children, disabled=false, readOnly = false, staticFields = false, textField, toolbar, operationsLabel = '入力・修正', operationsAvailable = !!documentId, details }: {
   documentId?: string, formKind?:string, revision?: number, formVersionId?: string, savedRevision?: number, values: Record<string, unknown>, title: string, status?: ReactNode, children: ReactNode, disabled?:boolean,
   readOnly?: boolean,
   staticFields?: boolean,
   textField?: (slot: string, binding: Binding | undefined, page: number, rowOffset: number) => PaperTextField | undefined,
-  toolbar?: ReactNode, operationsLabel?: string,
+  toolbar?: ReactNode, operationsLabel?: string, operationsAvailable?: boolean,
   details?: { slot: string, content: ReactNode },
 }) {
   const [loaded, setLoaded] = useState<{ identity: string, form: FormDef, assets: FormAssetsView, base: Record<string, unknown> }>()
@@ -66,9 +66,9 @@ export function OfficialCareWorkspace({ documentId, formKind, revision, formVers
     field?.scrollIntoView({ block: 'nearest' })
   },[editing])
   return <div className="care-paper-workspace">
-    <div className="care-paper-toolbar"><strong>{title}</strong>{status && <span role="status" className="care-paper-status">{status}</span>}<div role="group" aria-label="用紙の拡大"><button type="button" className="btn" aria-label="用紙を縮小" onClick={() => setZoom(z => Math.max(80, z - 20))}>−</button><span>{zoom}%</span><button type="button" className="btn" aria-label="用紙を拡大" onClick={() => setZoom(z => Math.min(180, z + 20))}>＋</button></div>{!continuous && rendered.pages.length > 1 && <div role="group" aria-label="用紙のページ"><button type="button" className="btn" aria-label="前の用紙" disabled={visibleIndex === 0} onClick={() => setPageIndex(visibleIndex - 1)}>‹</button><span>{visibleIndex + 1} / {rendered.pages.length}</span><button type="button" className="btn" aria-label="次の用紙" disabled={visibleIndex === rendered.pages.length - 1} onClick={() => setPageIndex(visibleIndex + 1)}>›</button></div>}{toolbar}<button className="btn" type="button" disabled={disabled||!current} onClick={() => openEditor()}>{operationsLabel}</button></div>
+    <div className="care-paper-toolbar"><strong>{title}</strong>{status && <span role="status" className="care-paper-status">{status}</span>}<div role="group" aria-label="用紙の拡大"><button type="button" className="btn" aria-label="用紙を縮小" onClick={() => setZoom(z => Math.max(80, z - 20))}>−</button><span>{zoom}%</span><button type="button" className="btn" aria-label="用紙を拡大" onClick={() => setZoom(z => Math.min(180, z + 20))}>＋</button></div>{!continuous && rendered.pages.length > 1 && <div role="group" aria-label="用紙のページ"><button type="button" className="btn" aria-label="前の用紙" disabled={visibleIndex === 0} onClick={() => setPageIndex(visibleIndex - 1)}>‹</button><span>{visibleIndex + 1} / {rendered.pages.length}</span><button type="button" className="btn" aria-label="次の用紙" disabled={visibleIndex === rendered.pages.length - 1} onClick={() => setPageIndex(visibleIndex + 1)}>›</button></div>}{toolbar}<button className="btn" type="button" disabled={disabled||!current||!operationsAvailable} onClick={() => openEditor()}>{operationsLabel}</button></div>
     <div className="care-paper-scroll" aria-label="公式様式の用紙">
-      {editing && <section ref={operations} className="care-paper-operations" aria-label={`${title}の操作`}>
+      {editing && operationsAvailable && <section ref={operations} className="care-paper-operations" aria-label={`${title}の操作`}>
         <header><strong>{title}の操作</strong><button className="btn" type="button" onClick={() => setEditing(false)}>用紙に戻る</button></header>
         {children}
       </section>}
