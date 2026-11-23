@@ -130,6 +130,13 @@ export function useDocument(docId: string | undefined) {
     void load()
   }, [load])
 
+  useEffect(() => {
+    if (!conflicts.size) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [conflicts.size])
+
   // ---------- 今の値（サーバーの値に、まだ送っていない直しを当てたもの） ----------
   const local = useMemo(() => {
     if (!doc || !form) return { values: {} as Values, keys: new Set<string>(), revert: new Set<string>() }
@@ -239,7 +246,7 @@ export function useDocument(docId: string | undefined) {
         if (active.current === docId) {
           setError('')
         }
-        return true
+        return pending.conflicts.size === 0
       } catch (e) {
         if (active.current === docId) setError(String((e as Error).message))
         return false

@@ -59,7 +59,7 @@ export function PadList({ staffName }: { staffName: string }) {
             <button type="button" className="btn" onClick={() => setRetry((n) => n + 1)}>もう一度</button>
           </div>
         )}
-        {loading && !error && <div role="status" style={{ padding: '18px 20px', color: '#5A6270', fontSize: 14 }}>読み込み中...</div>}
+        {loading && !error && <div role="status" style={{ padding: '18px 20px', color: '#5A6270', fontSize: 14 }}>読み込んでいます</div>}
         {!loading && !error && clients?.length === 0 && <div role="status" style={{ padding: '18px 20px', color: '#5A6270', fontSize: 14 }}>その名前の利用者はいません</div>}
         {!error && !loading && sorted.map((c) => (
           <a key={c.id} className="row" {...linkProps(`/clients/${c.id}`)}>

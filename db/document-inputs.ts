@@ -37,7 +37,7 @@ function view(row: StoredInput): DocumentInputView {
   return {
     id: row.id, fileName: row.file_name, mime: row.mime, sha256: row.sha256,
     status: row.status, errorKind: row.error_kind, createdAt: new Date(row.created_at).toISOString(),
-    result: row.result, adopted: row.adopted, adoptedValues: row.adopted_values,
+    result: row.status === 'review' ? row.result : null, adopted: row.adopted, adoptedValues: row.adopted_values,
   }
 }
 
@@ -70,11 +70,16 @@ export async function startInput(db: Db, staff: Staff, documentId: string, input
     [staff.officeId, doc.clientId, doc.id, staff.id, input.fileName, input.mime, input.sha256, input.bytes, doc.formVersionId])
     const r = (await c.query<StoredInput>('SELECT * FROM document_inputs WHERE document_id=$1 AND sha256=$2 FOR UPDATE', [documentId, input.sha256])).rows[0]
     if (r.mime !== input.mime || r.bytes !== input.bytes) throw new Conflict('原本の情報が一致しません')
-    // 読取後に様式の版が変わっていたら、古い候補のままにせず、同じ原本を今の版で読み取り直す。
-    if (r.status === 'review' && r.template_version_id !== doc.formVersionId) {
-      await c.query(`UPDATE document_inputs SET status='queued',result=NULL,summary_bundle=NULL,error_kind=NULL,attempts=0,run_token=NULL,lease_until=NULL,
-        upload_url=NULL,template_version_id=$2,updated_at=now() WHERE id=$1`, [r.id, doc.formVersionId])
-      r.status = 'queued'; r.result = null; r.error_kind = null; r.upload_url = null; r.template_version_id = doc.formVersionId
+    const versionChanged = r.template_version_id !== doc.formVersionId
+    const adopted = new Set(r.adopted)
+    const stale = r.status === 'review' && r.result?.candidates.some((candidate) =>
+      !adopted.has(candidate.key) && !sameValue(candidate.base, doc.fields[candidate.key]?.value ?? null))
+    if (r.status === 'review' && (versionChanged || stale)) {
+      // 原本の読取結果を再利用し、今の用紙に対して未反映の候補を作り直す。
+      await c.query(`UPDATE document_inputs SET status='queued',summary_bundle=CASE WHEN $3 THEN NULL ELSE summary_bundle END,
+        error_kind=NULL,attempts=0,run_token=NULL,lease_until=NULL,upload_url=NULL,template_version_id=$2,updated_at=now() WHERE id=$1`,
+      [r.id, doc.formVersionId, versionChanged])
+      r.status = 'queued'; r.error_kind = null; r.upload_url = null; r.template_version_id = doc.formVersionId
     }
     if (r.status === 'uploading') {
       const path = documentInputPath(staff.officeId, r.client_id, r.id, r.upload_generation)
