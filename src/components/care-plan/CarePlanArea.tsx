@@ -58,7 +58,8 @@ export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outp
   const userScroll=()=>{manual.current=true;clearTimeout(scrollIdle.current);scrollIdle.current=setTimeout(()=>{manual.current=false},250)}
   const trackScroll=()=>{
     const container=scroll.current;if(!container)return
-    if(anchor.current&&!manual.current){const target=container.querySelector<HTMLElement>(`[data-care-table="${anchor.current.number}"]`);if(target){const delta=target.getBoundingClientRect().top-container.getBoundingClientRect().top-anchor.current.offset;if(Math.abs(delta)>1)container.scrollTop+=delta}return}
+    // Focus, browser search and programmatic navigation may scroll without wheel events.
+    // Preserve position only for layout changes in ResizeObserver; never undo navigation here.
     const toolbar=container.querySelector('.sheet-toolbar')?.getBoundingClientRect()
     const header=container.querySelector('.cp-work>.cp-header')?.getBoundingClientRect().height??0
     const top=container.getBoundingClientRect().top+Math.max(80,toolbar&&toolbar.top<=container.getBoundingClientRect().top+header+1?header+toolbar.height+20:0)

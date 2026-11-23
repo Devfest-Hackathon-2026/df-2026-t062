@@ -20,6 +20,12 @@ test('中央のスクロールだけで第1〜7表へ移動し、左の選択と
  await nav.getByRole('tab',{name:'第6表 サービス利用票',exact:true}).click()
  await expect(container.locator('[data-care-table="6"]')).toBeInViewport()
  await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0)
+ // Browser focus can navigate without a wheel/touch event (keyboard and assistive technology).
+ const focused=container.locator('[data-care-table="7"] button').first()
+ await focused.evaluate(e=>e.focus())
+ await expect(focused).toBeFocused()
+ await expect(focused).toBeInViewport()
+ await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBe(0)
 })
 
 test('ケアプランを開くと左の縦一覧から全7表の空用紙を閲覧でき、記録は作成しない',async({page,ui,clientId})=>{
