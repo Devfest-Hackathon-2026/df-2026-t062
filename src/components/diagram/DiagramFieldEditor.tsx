@@ -64,7 +64,7 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
   function add(object: PaletteObject, at = { x: 300, y: 220 }) {
     const id = uid()
     if ('sex' in object) {
-      const person: Person = { id, sex: object.sex, name: '', household: '不明', deceased: false, x: Math.min(700, at.x), y: Math.min(450, at.y) }
+      const person: Person = { id, sex: object.sex, name: '', household: '不明', deceased: null, x: Math.min(700, at.x), y: Math.min(450, at.y) }
       commit({ ...doc, family: { ...doc.family, people: [...doc.family.people, person] } })
     } else {
       const body = field.kind === 'body'
@@ -78,10 +78,14 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
   function close() { if (!busy && (!changed || window.confirm('この図の変更を破棄して戻りますか？'))) onClose() }
   function pointerDown(e: PointerEvent<HTMLDivElement>) {
     if (busy || confirm || !e.isPrimary || e.button !== 0) return
+    if (family) {
+      select((e.target as Element).closest('[data-person-id]')?.getAttribute('data-person-id') ?? '')
+      return
+    }
     const at = point({ x: e.clientX, y: e.clientY }); if (!at) return
     if (pendingBody) { add({ kind: pendingBody }, at); return }
     // Rooms are always behind other objects, including hit testing.
-    const ordered = family ? objects : roomsBehind(objects as Item[])
+    const ordered = roomsBehind(objects as Item[])
     const hit = [...ordered].reverse().find((o) => contains(o, at))
     select(hit?.id ?? '')
     if (hit) { drag.current = { id: hit.id, x: at.x, y: at.y, doc: history[index], moved: false }; e.currentTarget.setPointerCapture(e.pointerId) }
@@ -91,9 +95,9 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
     const at = point({ x: e.clientX, y: e.clientY }); if (!at) return
     if (Math.hypot(at.x - g.x, at.y - g.y) < 2 && !g.moved) return
     g.moved = true
-    const original = family ? g.doc.family.people.find((p) => p.id === g.id)! : g.doc[field.kind as 'house' | 'body'].items.find((p) => p.id === g.id)!
-    const x = Math.max(0, Math.min(family ? 700 : 820 - (original as Item).width, original.x + at.x - g.x))
-    const y = Math.max(0, Math.min(family ? 450 : 560 - (original as Item).height, original.y + at.y - g.y))
+    const original = g.doc[field.kind as 'house' | 'body'].items.find((p) => p.id === g.id)!
+    const x = Math.max(0, Math.min(820 - original.width, original.x + at.x - g.x))
+    const y = Math.max(0, Math.min(560 - original.height, original.y + at.y - g.y))
     setMoving(editObject({ x, y }, g.doc))
   }
   async function apply() {
@@ -112,7 +116,7 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
         <div className="diagram-scroll"><div ref={canvas} className="diagram-canvas" style={{ width: `${zoom * 100}%` }} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={(e) => { if (moving) commit(moving); drag.current = null; if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId) }} onPointerCancel={() => { drag.current = null; setMoving(null) }}>
           <Preview doc={doc} tab={field.kind} selected={selected} editing />
         </div></div>
-        <p>{pendingBody ? '図の上で配置する位置を選んでください。' : '図を押して選ぶと、内容を編集できます。位置調整ボタンでも動かせます。'}</p>
+        <p>{pendingBody ? '図の上で配置する位置を選んでください。' : family ? '図の人物を押して編集できます。' : '図を押して選ぶと、内容を編集できます。位置調整ボタンでも動かせます。'}</p>
       </section>
       <aside aria-label="入力と調整">
         <button aria-expanded={palette} onClick={() => setPalette(!palette)}>足りない図形を追加する</button>
@@ -123,16 +127,16 @@ export default function DiagramFieldEditor({ field, onApply, onClose }: DiagramF
           {person && <>
             <label>年齢<input type="number" min={0} max={130} value={person.age ?? ''} onChange={(e) => commit(editObject({ age: e.target.value === '' ? null : Number(e.target.value) }))} /></label>
             <label>性別<select value={person.sex} onChange={(e) => commit(editObject({ sex: e.target.value as Person['sex'] }))}><option value="female">女性</option><option value="male">男性</option><option value="unknown">不明</option></select></label>
-            <label>同居・別居<select value={person.household} onChange={(e) => commit(editObject({ household: e.target.value as Person['household'] }))}>{['同居', '別居', '不明'].map((s) => <option key={s}>{s}</option>)}</select></label>
+            {person.deceased !== true && <label>同居・別居<select value={person.household} onChange={(e) => commit(editObject({ household: e.target.value as Person['household'] }))}>{['同居', '別居', '不明'].map((s) => <option key={s}>{s}</option>)}</select></label>}
             <label><input type="checkbox" checked={!!person.isSubject} onChange={(e) => commit({ ...doc, family: { ...doc.family, people: doc.family.people.map((p) => ({ ...p, isSubject: e.target.checked ? p.id === selected : p.id === selected ? false : p.isSubject })) } })} />本人</label>
-            <label><input type="checkbox" checked={!!person.deceased} onChange={(e) => commit(editObject({ deceased: e.target.checked }))} />死亡</label>
+            <label>生死<select value={person.deceased === null ? 'unknown' : person.deceased ? 'dead' : 'alive'} onChange={(e) => commit(editObject({ deceased: e.target.value === 'unknown' ? null : e.target.value === 'dead' }))}><option value="unknown">生死未確認</option><option value="alive">生存</option><option value="dead">死亡</option></select></label>
           </>}
           {item && <>
             {(['width', 'height', 'rotation'] as const).map((key) => <label key={key}>{({ width: '幅', height: '高さ', rotation: '回転' })[key]}<input type="number" min={key === 'rotation' ? -360 : 20} max={key === 'width' ? 820 : key === 'height' ? 560 : 360} value={item[key]} onChange={(e) => commit(editObject({ [key]: Number(e.target.value) }))} /></label>)}
             {item.kind === 'step' && <label>段差の高さ（cm）<input type="number" min={0} max={1000} value={item.stepHeightCm ?? ''} onChange={(e) => commit(editObject({ stepHeightCm: e.target.value === '' ? null : Number(e.target.value) }))} /></label>}
             {field.kind === 'body' && <label>正面・背面<select value={item.view} onChange={(e) => { const back = e.target.value === 'back'; commit(editObject({ view: back ? 'back' : 'front', x: back ? Math.min(740, item.x < 410 ? item.x + 410 : item.x) : item.x >= 410 ? item.x - 410 : item.x })) }}><option value="front">正面</option><option value="back">背面</option></select></label>}
           </>}
-          <div className="diagram-arrows" role="group" aria-label="位置調整">{([['←', -10, 0], ['↑', 0, -10], ['↓', 0, 10], ['→', 10, 0]] as const).map(([label, x, y]) => <button key={label} onClick={() => commit(editObject({ x: Math.max(0, Math.min(family ? 700 : 820 - item!.width, object.x + x)), y: Math.max(0, Math.min(family ? 450 : 560 - item!.height, object.y + y)) }))}>{label}</button>)}</div>
+          {item && <div className="diagram-arrows" role="group" aria-label="位置調整">{([['←', -10, 0], ['↑', 0, -10], ['↓', 0, 10], ['→', 10, 0]] as const).map(([label, x, y]) => <button key={label} onClick={() => commit(editObject({ x: Math.max(0, Math.min(820 - item.width, object.x + x)), y: Math.max(0, Math.min(560 - item.height, object.y + y)) }))}>{label}</button>)}</div>}
           <button onClick={() => { if (family) commit(removePerson(doc, selected)); else { const kind = field.kind as 'house' | 'body'; commit({ ...doc, [kind]: { ...doc[kind], items: doc[kind].items.filter((p) => p.id !== selected) } }) } select('') }}>選択した図形を削除</button>
         </div>}
         {family && <details><summary>家族の線</summary>{(['source', 'target'] as const).map((key) => <label key={key}>{key === 'source' ? '接続元（親）' : '接続先（子）'}<select value={relation[key]} onChange={(e) => setRelation({ ...relation, [key]: e.target.value })}><option value="">選択してください</option>{doc.family.people.map((p, i) => <option key={p.id} value={p.id}>{p.name || `名称未入力 ${i + 1}`}</option>)}</select></label>)}<label>関係<select value={relation.kind} onChange={(e) => setRelation({ ...relation, kind: e.target.value as Relation['kind'] })}>{['婚姻', '離婚', '親子'].map((s) => <option key={s}>{s}</option>)}</select></label><button disabled={!relation.source || !relation.target} onClick={() => commit({ ...doc, family: { ...doc.family, relations: [...doc.family.relations, { id: uid(), ...relation }] } })}>線を追加</button>{doc.family.relations.map((r) => <div key={r.id}>{doc.family.people.find((p) => p.id === r.source)?.name || '名称未入力'} → {doc.family.people.find((p) => p.id === r.target)?.name || '名称未入力'}（{r.kind}）<button onClick={() => commit({ ...doc, family: { ...doc.family, relations: doc.family.relations.filter((p) => p.id !== r.id) } })}>線を削除</button></div>)}</details>}

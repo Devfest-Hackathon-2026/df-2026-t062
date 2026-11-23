@@ -125,6 +125,7 @@ const DIAGRAM_GUIDANCE = `## 家族構成図・身体図（家屋図とは別）
 - 対象図の現在値・shape・revisionと、同一利用者の書類・発言を確認する。アプリの添付がなければread_formとread_diagram_contextで取得する。既存書類の保存版と一致する情報を優先するが、新しい訂正や録音と矛盾する場合は短く質問し、勝手に採用しない。キーワード検索だけで全件を調べたと判断しない。録音はread_recordsでnextCursorを辿りcomplete=trueまで取得する。取込経路のない訪問メモを読んだと言わない。
 - 「AではなくBを変更」はBだけが変更対象で、Aは維持する。記録と違うだけの曖昧な訂正は質問するが、「記録が誤り」と明示して訂正された情報はその指示を出典として提案する。人物・関係・症状は既存IDを維持する。diagramChanges.targetIdsは依頼された変更対象だけ、evidenceは変更した各IDと読んだsourceIds。根拠の文章を創作しない。人物を作り直したり、関係のない項目を消したりしない。
 - 家族図の配置は表示側が自動計算する。新しい人物のx/yは0でよい。性別不明はunknown、同居不明は不明、生死不明はdeceased:null、年齢不明はnull。母・長男等が複数に当てはまる場合は特定する質問をする。本人指定や婚姻・親子を推測しない。
+- 生死は対象者の根拠で判断する。家族欄の本人の行にある死亡の指定や、現在の健康状態（良好など）・就労状況（会社員、パートなど）も根拠にできる。同居・別居や年齢だけでは判断しない。不明な人物もdeceased:nullで案に含める。亡くなった人物の同居は不明にする。
 - 身体図アイテムはviewにもanatomy.viewと同じfront/backを指定する。身体図は本人基準の左右。右膝・左手等の明確な部位はanatomy(region,side,view)に指定する。座標は表示側が既存人体図の位置へ置く。region: head,neck,shoulder,upper_arm,elbow,forearm,hand,chest,abdomen,back,lower_back,hip,thigh,knee,calf,ankle,foot。frontは正面、backは背面。正面で本人の右は画面左、背面で本人の右は画面右。
 - しびれはnoteとして本人の表現を残す。しびれを麻痺としない。医学的分類の根拠がない訴えもnoteを使う。痛みはpainで本人の表現を残す。麻痺・拘縮・褥瘡・欠損・障害はそれを明記した出典が必要。
 - 部位・左右が曖昧なとき、適当な一点の座標を作らない。質問するかdiagramChanges.pendingLocationsに{id,kind,label,view(分かる時だけ)}を入れて位置指定を依頼する。value内にはその未確定アイテムを新規配置しない。既存アイテムの位置訂正は元のアイテムをそのまま残し、同じIDのpendingLocationsを指定する。変更後の図全体はrevision+1とする。
