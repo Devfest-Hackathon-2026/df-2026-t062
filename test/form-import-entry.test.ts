@@ -101,6 +101,7 @@ test('出口の確かめ: すべての印字欄に対応がある・key が fiel
     localFields: [{ key: 'local.x', label: 'x', type: 'text' as const }, { key: 'local.x', label: 'x2', type: 'text' as const }, { key: 'z', label: 'z', type: 'text' as const }],
   }
   assert.deepEqual(checkDraftVersion(v), [
+    '1 ページ: ページの寸法がありません',
     'b: 印字欄に対応がない',
     'c: 対応があるのに印字欄がない',
     'c: fields.json にも local_fields にもない key local.y',

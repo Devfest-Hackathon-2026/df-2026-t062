@@ -218,6 +218,8 @@ export const api = {
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),
   managedVersion: (id: string) => req<ManagedVersion>('GET', `/api/office/form-versions/${id}`),
+  positionSlots: (id: string, base: string, schemas: ManagedVersion['formVersion']['schemas']) =>
+    req<ManagedVersion>('PATCH', `/api/office/form-versions/${id}`, { base, schemas }),
   managedAssets: (id: string) => req<FormAssetsView>('GET', `/api/office/form-versions/${id}/assets`),
   teachSlot: (id: string, slot: string, base: string, text: string) =>
     req<ManagedVersion & { matched: 'field' | 'local' }>('POST', `/api/office/form-versions/${id}/slots/${encodeURIComponent(slot)}`, { base, text }),

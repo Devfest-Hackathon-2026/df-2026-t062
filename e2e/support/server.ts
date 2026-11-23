@@ -1,5 +1,6 @@
 import { fakeModel } from '../../api/chat.ts'
 // E2E専用: 実API・独立したDBスキーマ・一時ストレージを起動する。本番依存は接続しない。
+import { seedOfficeReview } from './office-review.ts'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -49,6 +50,7 @@ try {
     if (!pdf) throw new Error(message)
     await putFormAssets(storage, readMeta(kind), pdf)
   }
+  await seedOfficeReview(db, storage)
   api = createApiServer({
     db: async () => db, verifier: () => new DevVerifier(), storage: () => storage,
     // E2E-only scripted record model. Production uses the configured existing Gemini adapter.

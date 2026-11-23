@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, ApiError, type KindFormState, type ManagedVersion } from '../../lib/api.ts'
 import { navigate } from '../../lib/router.tsx'
-import { fsz, pos } from '../../components/document/layout.ts'
+import { SlotGeometryEditor } from './SlotGeometryEditor.tsx'
+import type { SlotGeometry } from '../../../core/slot-geometry.ts'
 import { BackLink, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { AddPublishDialog, AddSteps } from '../../components/office-add/AddSteps.tsx'
 import { adding, reviewSlotNames } from '../../components/office-add/addFlow.ts'
@@ -39,12 +40,14 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   // 確かめ済みの欄（印字欄の名前 → そのときの入る内容）。直した欄（fix）も同じところに覚える
   const [done, setDone] = useState<Record<string, string>>(() => loadDone(versionId))
   const [unused, setUnused] = useState<string[]>([])
+  const [moved, setMoved] = useState<Record<string,string>>(() => loadDone(versionId + '.positions'))
   const [publishing, setPublishing] = useState<'ask' | 'busy' | null>(null)
   const [publishError, setPublishError] = useState('')
   const back = `/office/forms/${encodeURIComponent(kind)}`
   const scroll = useRef<HTMLDivElement>(null)
 
   useEffect(() => { saveDone(versionId, done) }, [versionId, done])
+  useEffect(() => { saveDone(versionId + '.positions', moved) }, [versionId, moved])
   // 選んだ欄が見えるところまで用紙を動かす（右の一覧から選んだとき）
   useEffect(() => {
     if (!sel) return
@@ -84,9 +87,9 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
 
   const reviewSlots = useMemo(() => (fix || !v ? [] : reviewSlotNames(v.review)), [v, fix])
   const exists = useCallback((name: string) => !!v && v.formVersion.schemas.some((p) => p.some((s) => s.name === name)), [v])
-  const isDone = (name: string) => name in done || unused.includes(name)
+  const isDone = (name: string) => name in done || unused.includes(name) || (fix && name in moved)
   const open = reviewSlots.filter((n) => !isDone(n))
-  const finished = fix ? Object.keys(done).concat(unused.filter((n) => !(n in done))) : reviewSlots.filter((n) => isDone(n)).concat(unused.filter((n) => !reviewSlots.includes(n)))
+  const finished = fix ? [...new Set([...Object.keys(done), ...Object.keys(moved), ...unused])] : reviewSlots.filter((n) => isDone(n)).concat(unused.filter((n) => !reviewSlots.includes(n)))
   const noSlots = !!v && !v.formVersion.schemas.some((p) => p.length)
   const ready = !noSlots && (fix ? finished.length > 0 : open.length === 0)
   const what = (name: string) => (unused.includes(name) && !exists(name) ? '何も入れない' : v?.slots[name]?.what ?? '（まだ決まっていません）')
@@ -114,6 +117,17 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
       setPop({ mode: 'confirm' })
     } catch (e) {
       setSlotError(e instanceof ApiError && e.status === 409 ? 'ほかの人が先に直しました。画面を読み直してください。' : `直せませんでした（${(e as Error).message}）`)
+    } finally { setBusy(false) }
+  }
+  const move = async (name: string, box: SlotGeometry) => {
+    if (!v) return
+    setBusy(true)
+    try {
+      const schemas = v.formVersion.schemas.map(p => p.map(s => s.name === name ? { ...s, position: { x: box.x, y: box.y }, width: box.w, height: box.h } : s))
+      setV(await api.positionSlots(versionId, v.formVersion.contentSha, schemas))
+      setMoved(old => ({...old, [name]: what(name)}))
+    } catch (e) {
+      throw new Error(e instanceof ApiError && e.status === 409 ? 'ほかの人が先に直しました。画面を読み直してください。' : '位置を保存できませんでした。入力は残しています。')
     } finally { setBusy(false) }
   }
   const markUnused = async () => {
@@ -174,12 +188,12 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   const pages = v.formVersion.pages
   const current = pages.find((p) => p.no === page) ?? pages[0]
   const countOn = (no: number) => open.filter((n) => pageOfSlot(v, n) === no).length
-  const slotStyle = (b: SlotBox): CSSProperties => ({ ...pos(b.x, b.y, b.w, b.h), fontSize: b.mark ? undefined : `min(${fsz(Math.min(b.pt, 10))}, ${(b.h * 0.7 / 2.97).toFixed(2)}cqw)` })
+  const slotStyle = (b: SlotBox): CSSProperties => ({ left: `${b.x/current.width*100}%`, top: `${b.y/current.height*100}%`, width: `${b.w/current.width*100}%`, height: `${b.h/current.height*100}%`, fontSize: b.mark ? undefined : `${Math.min(b.pt,10)*.3528/current.width*100}cqw` })
 
   const popFor = (b: SlotBox) => {
     const m = v.slots[b.name]
     const below = b.y + b.h + 2
-    const style: CSSProperties = { left: `${Math.min(b.x, 210 - 85) / 210 * 100}%`, ...(below < 230 ? { top: `${below / 297 * 100}%` } : { bottom: `${(297 - b.y + 2) / 297 * 100}%` }) }
+    const style: CSSProperties = { left: `${Math.min(b.x, Math.max(0,current.width - 100)) / current.width * 100}%`, ...(below < current.height - 65 ? { top: `${below / current.height * 100}%` } : { bottom: `${(current.height - b.y + 2) / current.height * 100}%` }) }
     const doneHere = b.name in done && pop.mode === 'ask'
     return (
       <div className="of-pop" role="dialog" aria-label="この欄に入るもの" style={style} onClick={(e) => e.stopPropagation()}>
@@ -214,6 +228,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
             </div>
           </>
         )}
+        <SlotGeometryEditor key={`${b.name}:${v.formVersion.contentSha}`} box={{ x:b.x, y:b.y, w:b.w, h:b.h }} page={current} disabled={busy} onSave={box=>move(b.name,box)} />
         {slotError && <div role="alert" className="of-err">{slotError}</div>}
       </div>
     )
@@ -236,7 +251,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
         </nav>
         <section className="of-paper-area" aria-label="書式">
           <div className="of-tools">
-            <span className="hint">{fix ? 'ずれている欄を押すと、何が入るかを直せます。' : '色の付いた欄を押すと、何が入るかを確かめられます。ほかの欄も押して直せます。'}</span>
+            <span className="hint">{fix ? 'ずれている欄を押すと、入る内容や位置・大きさを直せます。' : '色の付いた欄を押すと、何が入るかを確かめられます。ほかの欄も押して直せます。'}</span>
             <span className="of-zoom">
               <button type="button" className="btn btn-s btn-i" aria-label="小さくする" onClick={() => setZoom((z) => Math.max(60, z - 10))}>−</button>
               <span>{zoom}%</span>
@@ -245,8 +260,8 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
           </div>
           <div className="of-scroll" ref={scroll} onClick={() => setSel(null)}>
             <div className="of-sheet" style={{ width: `${Math.round(7.2 * zoom)}px`, maxWidth: 'none' }}>
-              <div className="pg">
-                {images[current.no] ? <img className="pimg" src={images[current.no]!} alt={`${current.no} ページ`} draggable={false} /> : <div className="pimg" role="img" aria-label={`${current.no} ページ`} />}
+              <div className="pg" style={{aspectRatio:`${current.width}/${current.height}`}}>
+                {images[current.no] ? <img className="pimg" src={images[current.no]!} alt={`${current.no} ページ`} style={{aspectRatio:`${current.width}/${current.height}`}} draggable={false} /> : <div className="pimg" style={{aspectRatio:`${current.width}/${current.height}`}} role="img" aria-label={`${current.no} ページ`} />}
                 {(boxes.get(current.no) ?? []).map((b) => {
                   const doubt = reviewSlots.includes(b.name) && !isDone(b.name)
                   const cls = ['of-slot', b.mark ? 'mark' : '', b.area ? 'area' : '', sel === b.name ? 'sel' : doubt ? 'doubt' : isDone(b.name) ? 'done' : ''].filter(Boolean).join(' ')
