@@ -12,7 +12,7 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   expect(initiallySaved.status).toBe('draft')
   expect(initiallySaved.plan1['plan.overallPolicy']).toBe('地域で安全に暮らせるよう支援する。')
   await addNeed(page)
-  await page.getByRole('button', { name: '空いているニーズ欄（押して編集）', exact: true }).click()
+  await page.getByRole('button', { name: 'ニーズ 2行目（押して編集）', exact: true }).click()
   const needs = page.getByRole('dialog', { name: '第2表・ニーズの追加と選択' })
   await expect(needs.getByRole('button', { name: '＋ ニーズを追加' })).toBeEnabled()
   await needs.getByRole('button', { name: '閉じる', exact: true }).click()
