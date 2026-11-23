@@ -1222,5 +1222,338 @@
     },
     "part": "d",
     "year": "short"
+  },
+  "フリガナ": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "furigana"
+      ]
+    }
+  },
+  "性別": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "sex"
+      ]
+    }
+  },
+  "変更日": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevelChangeDate"
+      ]
+    }
+  },
+  "区分支給限度基準額": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitUnits"
+      ]
+    }
+  },
+  "前月までの短期入所利用日数": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "previousShortStayDays"
+      ]
+    }
+  },
+  "短期入所利用日数": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "shortStayDays"
+      ]
+    }
+  },
+  "福祉用具名称": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "equipmentName"
+      ]
+    }
+  },
+  "TAISコード": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "taisCode"
+      ]
+    }
+  },
+  "福祉用具届出コード": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "notificationCode"
+      ]
+    }
+  },
+  "要介護状態区分_1": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護1"
+    }
+  },
+  "要介護状態区分_2": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護2"
+    }
+  },
+  "要介護状態区分_3": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護3"
+    }
+  },
+  "要介護状態区分_4": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護4"
+    }
+  },
+  "要介護状態区分_5": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護5"
+    }
+  },
+  "変更後の要介護状態区分_1": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護1"
+    }
+  },
+  "変更後の要介護状態区分_2": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護2"
+    }
+  },
+  "変更後の要介護状態区分_3": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護3"
+    }
+  },
+  "変更後の要介護状態区分_4": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護4"
+    }
+  },
+  "変更後の要介護状態区分_5": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護5"
+    }
+  },
+  "限度額適用開始月_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitFrom"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "限度額適用開始月_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitFrom"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "限度額適用終了月_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitTo"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "限度額適用終了月_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitTo"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "生年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "生年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "生年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "認定区分_認定済": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "certificationStatus"
+      ]
+    },
+    "is": {
+      "eq": "認定済"
+    }
+  },
+  "認定区分_申請中": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "certificationStatus"
+      ]
+    },
+    "is": {
+      "eq": "申請中"
+    }
   }
 }

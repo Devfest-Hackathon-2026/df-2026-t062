@@ -35,3 +35,14 @@ test('複数回/他サービス/未展開/跨日/夜間/保険外は限定範囲
  for(const s of cases){const copy=structuredClone(s),r=calculateFee(s,input());assert.equal(r.status,'needs_review');assert.equal(r.benefit,null);assert.deepEqual(s,copy)}
  const s=source();s.revision=0;assert.equal(calculateFee(s,input()).status,'needs_review')
 })
+
+test('第6表で追加入力した介護区分や限度額の矛盾、福祉用具は限定算定へ流さない',()=>{
+ const s=source();s.month.headers={insurerNumber:'',insurerName:'',insuredNumber:'',submittedDate:'',careLevel:'要介護2'}
+ let r=calculateFee(s,input());assert.equal(r.status,'needs_review');assert.equal(r.gross,null);assert.ok(r.reasons.includes('source_header_mismatch'))
+ s.month.headers={...s.month.headers,careLevel:'要介護1',limitUnits:'12345'}
+ assert.ok(calculateFee(s,input()).reasons.includes('source_header_mismatch'))
+ s.month.headers={...s.month.headers,limitUnits:'16765'}
+ assert.equal(calculateFee(s,input()).status,'calculated')
+ s.month.entries[0].taisCode='000000-000000'
+ r=calculateFee(s,input());assert.equal(r.status,'needs_review');assert.equal(r.gross,null);assert.ok(r.reasons.includes('code_unsupported'))
+})

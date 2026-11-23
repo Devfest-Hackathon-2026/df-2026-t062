@@ -183,7 +183,7 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
     </Modal>}
     {selected ? <PlanEditor key={selected.id} initial={selected} continuous={continuous} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
-      : listLoaded && hideNavigation ? <>{(continuous?[0,1,2]:[selectedTable]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={selectedTable===i}><OfficialCareWorkspace formKind={`care_plan_${i+1}`} values={{}} title={names[i]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace></section>)}</> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
+      : listLoaded && hideNavigation ? <>{(continuous?[0,1,2]:[selectedTable]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={selectedTable===i}><OfficialCareWorkspace formKind={`care_plan_${i+1}`} onStart={() => { setCopyFrom(undefined); setCreating(true) }} values={{}} title={names[i]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace></section>)}</> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 

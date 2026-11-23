@@ -72,8 +72,9 @@ test('第6表: 未ログイン401・他事業所404・不正月400・未確定�
 
 test('第6表: 保険者情報の先頭ゼロ・届出日を保存版に固定し、更新後も旧版PDFを再現する',{skip},async()=>{
  const month=await create('2024-04'),path='/api/care-plan-months/'+month.id
+ month.entries[0]={...month.entries[0],equipmentName:'架空機器',taisCode:'000000-000000',notificationCode:'000000'}
  const initial=await call(path,'PUT',{requestId:randomUUID(),baseVersion:month.lockVersion,entries:month.entries});assert.equal(initial.status,200)
- const headers={insurerNumber:'001234',insurerName:'架空保険者',insuredNumber:'0000123456',submittedDate:'2024-04-02'}
+ const headers={insurerNumber:'001234',insurerName:'架空保険者',insuredNumber:'0000123456',submittedDate:'2024-04-02',certificationStatus:'認定済',furigana:'カクウ ハナコ',birthDate:'1940-05-06',sex:'女',careLevel:'要介護1',changedCareLevel:'',careLevelChangeDate:'',limitUnits:'16765',limitFrom:'2024-04',limitTo:'2024-12',previousShortStayDays:'0',shortStayDays:'0'}
  const first=await call(path,'PUT',{requestId:randomUUID(),baseVersion:initial.body.month.lockVersion,entries:month.entries,headers})
  assert.equal(first.status,200,JSON.stringify(first.body));assert.deepEqual(first.body.month.headers,headers)
  assert.equal((await call(path+'/revisions/1')).body.month.headers,undefined)
@@ -86,5 +87,5 @@ test('第6表: 保険者情報の先頭ゼロ・届出日を保存版に固定�
  const pdf=await call(`/api/documents/${month.documentId}/pdf?rev=2`);assert.equal(pdf.status,200)
  const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');const loading=getDocument({data:new Uint8Array(pdf.body)});const doc=await loading.promise
  let text='';for(let p=1;p<=doc.numPages;p++)text+=(await(await doc.getPage(p)).getTextContent()).items.map(i=>'str'in i?i.str:'').join('')
- await loading.destroy();assert.ok(text.includes('001234'));assert.ok(text.includes('0000123456'));assert.ok(text.includes('架空保険者'));assert.ok(!text.includes('架空の変更後保険者'))
+ await loading.destroy();assert.ok(text.includes('001234'));assert.ok(text.includes('0000123456'));assert.ok(text.includes('架空保険者'));assert.ok(!text.includes('架空の変更後保険者'));assert.ok(text.includes('カクウ'));assert.ok(text.includes('16765'));assert.ok(text.includes('000000-000000'));assert.ok(text.includes('架空機器'))
 })

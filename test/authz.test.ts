@@ -178,6 +178,14 @@ test('care.work: ほかの事業所の利用者は、ケアマネも責任者も
   assert.equal((await call('/api/clients/abc', WHO.care)).status, 404, 'ID の形でないものも「無い」')
 })
 
+test('recording.retention.manage: 録音の保持一覧は責任者だけが見え、事業所外には出ない', { skip }, async () => {
+  const own = await call(`/api/office/clients/${ids.clientA}/recordings/retention`, WHO.admin)
+  assert.equal(own.status, 200)
+  assert.deepEqual(own.body, { recordings: [] })
+  assert.equal((await call(`/api/office/clients/${ids.clientA}/recordings/retention`, WHO.care)).status, 403)
+  assert.equal((await call(`/api/office/clients/${ids.clientA}/recordings/retention`, WHO.adminB)).status, 404)
+})
+
 test('/api/me: 自分の役割でできる操作を返す', { skip }, async () => {
   const me = async (t: string) => ((await call('/api/me', t)).body as { staff: { role: string, operations: string[] } }).staff
   assert.deepEqual((await me(WHO.care)).operations, ['care.work'])

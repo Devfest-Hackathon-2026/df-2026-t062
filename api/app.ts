@@ -820,6 +820,15 @@ export function createApp(deps: ApiDeps) {
     return json(c, { retention })
   }))
 
+  app.get('/api/office/clients/:id/recordings/retention', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const clientId = c.req.param('id')!
+    const client = await repo.getClient(db, staff.officeId, clientId)
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'recording_retention', accessMode: 'list', action: 'recording.retention.list',
+    })
+    return json(c, { recordings: await repo.listRecordingRetentions(db, staff.officeId, client.id) })
+  }))
+
   app.put('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
     const input = await body(c, RecordingRetentionHoldInput)
     const holdUntil = new Date(input.holdUntil)

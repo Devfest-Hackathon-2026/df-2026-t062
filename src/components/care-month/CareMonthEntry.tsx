@@ -16,6 +16,7 @@ export function CareMonthEntry({ entry, index, disabled, onChange }: { entry:Mon
  return <fieldset className="care-month-entry" disabled={disabled} aria-label={label}>
   <legend>{index+1}. {entry.content}</legend>
   <p>{entry.provider||'提供事業所未入力'} ・ {entry.plan.status==='scheduled'?'予定あり':entry.plan.status==='cancelled'?'取消':'削除'} ／ 実績：{entry.actual===null?'未入力':entry.actual.status==='provided'?'実施':'未実施'}</p>
+  <div className="care-record-dates">{([['equipmentName','福祉用具名称'],['taisCode','TAISコード'],['notificationCode','福祉用具届出コード']] as const).map(([key,name])=><label key={key}>{name}<input aria-label={label+'の'+name} value={entry[key]??''} onChange={e=>onChange({...entry,[key]:e.target.value})}/></label>)}</div>
   <div className="care-record-dates"><label>予定日<input aria-label={label+'の日付'} type="date" value={entry.plan.date} onChange={e=>setPlan({date:e.target.value})} /></label><label>開始<input aria-label={label+'の開始'} type="time" value={entry.plan.start} onChange={e=>setPlan({start:e.target.value})} /></label><label>終了<input aria-label={label+'の終了'} type="time" value={entry.plan.end} onChange={e=>setPlan({end:e.target.value})} /></label></div>
   {entry.plan.endDate!==entry.plan.date&&<p>終了は翌日 {entry.plan.endDate}</p>}
   {entry.actual?.status==='provided'&&(entry.actual.date!==entry.plan.date||entry.actual.start!==entry.plan.start||entry.actual.end!==entry.plan.end||entry.actual.endDate!==entry.plan.endDate||entry.plan.status!=='scheduled')&&<p>実績が予定と異なります。予定・実績はそれぞれ保持しています。</p>}
