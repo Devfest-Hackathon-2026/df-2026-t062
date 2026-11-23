@@ -10,6 +10,7 @@ import type { Db } from '../db/pool.ts'
 import { applyBatch } from '../db/repo.ts'
 import { incompleteFieldKeys, prepareWriterValues } from './job-values.ts'
 import type { Storage } from '../api/storage.ts'
+import { safeAiJobErrorCode, usageFromSteps, writeAiJobEvent } from './ai-job-observability.ts'
 import type { Person, ProposedValue, Providers, SummaryLine, Usage, Utterance } from './types.ts'
 
 export interface WorkerDeps {
@@ -57,7 +58,7 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
       `UPDATE jobs SET status = 'processing', attempts = attempts + 1, run_token = $2,
          lease_until = now() + interval '30 minutes', updated_at = now()
        WHERE id = $1 AND attempts < $3 AND (status = 'queued' OR (status = 'processing' AND lease_until < now()))
-       RETURNING id, office_id, client_id, document_id, recording_id, steps, attempts`,
+       RETURNING id, office_id, client_id, document_id, recording_id, steps, attempts, created_at`,
       [jobId, token, MAX_ATTEMPTS],
     )).rows[0]
   } catch (e) {
@@ -65,13 +66,15 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
     if ((e as { code?: string }).code === '23505') return log({ msg: 'job waits for another job', jobId }, context)
     throw e
   }
-  if (!job) return log({ msg: 'job already taken or done', jobId })
+  if (!job) return log({ msg: 'job already taken or done', jobId }, context)
   const steps = (job.steps ?? {}) as Record<string, Record<string, unknown>>
   const t0 = Date.now()
+  const queueWaitMs = Math.max(0, Date.now() - new Date(job.created_at).getTime())
+  writeAiJobEvent({ jobType: 'recording', phase: 'started', jobId, attempt: job.attempts, queueWaitMs, context })
   // 長い STT・Gemini 呼び出し中にも lease を延長する。古い実行の更新は token で拒否する。
   const heartbeat = setInterval(() => {
     void db.query("UPDATE jobs SET lease_until = now() + interval '30 minutes' WHERE id = $1 AND run_token = $2 AND status = 'processing' AND lease_until > now()", [jobId, token])
-      .catch((e) => log({ msg: 'lease heartbeat failed', jobId, error: (e as Error).name }, context))
+      .catch((e) => log({ msg: 'lease heartbeat failed', jobId, error: safeAiJobErrorCode((e as Error).name) }, context))
   }, 60_000)
   heartbeat.unref()
   try {
@@ -154,14 +157,27 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
         auditContext: { requestId: context?.requestId, correlationId: context?.correlationId, traceId: context?.traceId, source: 'worker' },
       },
     })
-    log({ msg: 'job done', jobId, status, seconds: (Date.now() - t0) / 1000, changes: plan.changes.length, kept: plan.kept.length }, context)
+    const durationMs = Date.now() - t0
+    let latest: unknown = steps
+    try {
+      latest = (await db.query('SELECT steps FROM jobs WHERE id = $1', [jobId])).rows[0]?.steps ?? steps
+    } catch (e) {
+      log({ msg: 'AI job observability read failed', jobId, error: safeAiJobErrorCode((e as Error).name) }, context)
+    }
+    writeAiJobEvent({
+      jobType: 'recording', phase: status === 'partial' ? 'partial' : 'succeeded', jobId,
+      attempt: job.attempts, durationMs, usage: usageFromSteps(latest),
+      counts: { changes: plan.changes.length, kept: plan.kept.length }, context,
+    })
+    log({ msg: 'job done', jobId, status, seconds: durationMs / 1000, changes: plan.changes.length, kept: plan.kept.length }, context)
   } catch (e) {
     const kind = (e as Error)?.name ?? 'Error'
     // 誤りの番号（gRPC・HTTP の状態の番号）だけを足す。文面は中身が入りうるので出さない
     const code = typeof (e as { code?: unknown })?.code === 'number' ? (e as { code: number }).code : null
     const terminal = job.attempts >= MAX_ATTEMPTS || kind === 'IntermediateRetentionExpired'
     await db.query("UPDATE jobs SET status = $3, error_kind = $4, lease_until = NULL, run_token = NULL, updated_at = now() WHERE id = $1 AND run_token = $2", [jobId, token, terminal ? 'failed' : 'queued', code === null ? kind : `${kind}:${code}`])
-    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'job failed', jobId, error: kind, code }))
+    writeAiJobEvent({ jobType: 'recording', phase: terminal ? 'failed' : 'retry', jobId, attempt: job.attempts, durationMs: Date.now() - t0, errorCode: kind, retryable: !terminal, context })
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'job failed', jobId, error: safeAiJobErrorCode(kind), code }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e
@@ -297,6 +313,12 @@ async function fromSummaries(ctx: StepCtx, recording: Providers['recording']): P
 /** 見回り: 積み損ね・止まった処理・待たされたジョブを積み直す（Cloud Scheduler が 5 分ごとに呼ぶ） */
 export async function reconcile(deps: WorkerDeps, enqueue: (jobId: string) => Promise<void>): Promise<number> {
   const db = await deps.db()
+  let expiredCount = 0
+  try {
+    expiredCount = Number((await db.query("SELECT count(*) AS n FROM jobs WHERE status = 'processing' AND lease_until < now()")).rows[0].n) || 0
+  } catch (e) {
+    log({ msg: 'AI queue observability read failed', error: safeAiJobErrorCode((e as Error).name) })
+  }
   await db.query(
     "UPDATE jobs SET status = 'failed', lease_until = NULL, run_token = NULL, error_kind = coalesce(error_kind, 'AttemptsExhausted'), updated_at = now() WHERE attempts >= $1 AND (status = 'queued' OR (status = 'processing' AND lease_until < now()))",
     [MAX_ATTEMPTS],
@@ -308,5 +330,28 @@ export async function reconcile(deps: WorkerDeps, enqueue: (jobId: string) => Pr
      ORDER BY created_at LIMIT 20`,
   )
   for (const row of r.rows) await enqueue(row.id)
+  if (expiredCount > 0) writeAiJobEvent({ jobType: 'recording', phase: 'lease_expired', counts: { lease_expired_count: expiredCount } })
+  try {
+    const snapshot = (await db.query(`
+      SELECT
+        count(*) FILTER (WHERE status = 'queued')::int AS queued_count,
+        count(*) FILTER (WHERE status = 'processing')::int AS processing_count,
+        coalesce(extract(epoch FROM (now() - min(created_at) FILTER (WHERE status = 'queued'))), 0)::int AS oldest_queued_age_seconds,
+        coalesce(extract(epoch FROM (now() - min(updated_at) FILTER (WHERE status = 'processing'))), 0)::int AS oldest_processing_age_seconds,
+        count(*) FILTER (WHERE status = 'processing' AND lease_until < now())::int AS lease_expired_count
+      FROM jobs`)).rows[0]
+    writeAiJobEvent({
+      eventName: 'ai.queue', jobType: 'recording', phase: 'started', counts: {
+        queue_queued_count: Number(snapshot.queued_count) || 0,
+        queue_processing_count: Number(snapshot.processing_count) || 0,
+        queue_oldest_queued_age_seconds: Number(snapshot.oldest_queued_age_seconds) || 0,
+        queue_oldest_processing_age_seconds: Number(snapshot.oldest_processing_age_seconds) || 0,
+        queue_lease_expired_count: Number(snapshot.lease_expired_count) || 0,
+        queue_requeued_count: r.rows.length,
+      },
+    })
+  } catch (e) {
+    log({ msg: 'AI queue observability snapshot failed', error: safeAiJobErrorCode((e as Error).name) })
+  }
   return r.rows.length
 }

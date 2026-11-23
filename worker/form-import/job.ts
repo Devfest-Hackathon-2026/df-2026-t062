@@ -9,6 +9,7 @@ import type { Storage } from '../../api/storage.ts'
 import { basePdfAssetPath, importPdfPath, pageImageAssetPath, type FormPage } from '../../core/form.ts'
 import * as imports from '../../db/form-imports.ts'
 import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
+import { safeAiJobErrorCode, writeAiJobEvent, writeAiQueueSnapshot } from '../ai-job-observability.ts'
 import { importPdf, type ImportLimits } from './index.ts'
 import { openPdf } from './pdf.ts'
 
@@ -48,7 +49,7 @@ export async function runFormImport(deps: WorkerDeps, importId: string, opts: { 
   if (!claimed) return log({ msg: 'form import already taken or done', importId }, context)
   // 長い変換（AI を何回も呼ぶ）の間も印の期限を延ばす。古い実行の書き込みは token で断る
   const heartbeat = setInterval(() => {
-    void imports.extendImportLease(db, importId, token).catch((e) => log({ msg: 'form import lease heartbeat failed', importId, error: (e as Error).name }, context))
+    void imports.extendImportLease(db, importId, token).catch((e) => log({ msg: 'form import lease heartbeat failed', importId, error: safeAiJobErrorCode((e as Error).name) }, context))
   }, 60_000)
   heartbeat.unref()
   const t0 = Date.now()
@@ -72,15 +73,19 @@ export async function runFormImport(deps: WorkerDeps, importId: string, opts: { 
       review = r.draft.review.length
     }
     const usage = llm.usage()
-    log({ msg: 'form import done', importId, status: r.status, seconds: (Date.now() - t0) / 1000, calls: usage.calls, yen: usage.yen, review })
+    const durationMs = Date.now() - t0
+    writeAiJobEvent({ jobType: 'form_import', phase: r.status === 'failed' ? 'failed' : 'succeeded', jobId: importId, attempt: claimed.attempts, durationMs, usage, counts: { review }, context })
+    log({ msg: 'form import done', importId, status: r.status, seconds: durationMs / 1000, calls: usage.calls, yen: usage.yen, review }, context)
     if (r.status !== 'failed') {
-      await removeUpload(deps, importId, claimed.officeId).catch((e) => log({ msg: 'form import upload not removed', importId, error: (e as Error).name }))
+      await removeUpload(deps, importId, claimed.officeId).catch((e) => log({ msg: 'form import upload not removed', importId, error: safeAiJobErrorCode((e as Error).name) }))
     }
   } catch (e) {
     if (e instanceof LeaseLost) return log({ msg: 'form import lease lost', importId }, context)
     const kind = (e as Error)?.name ?? 'Error'
-    await imports.releaseImport(db, importId, token, claimed.attempts >= imports.MAX_IMPORT_ATTEMPTS)
-    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'form import failed', importId, error: kind }))
+    const retryable = claimed.attempts < imports.MAX_IMPORT_ATTEMPTS
+    await imports.releaseImport(db, importId, token, !retryable)
+    writeAiJobEvent({ jobType: 'form_import', phase: retryable ? 'retry' : 'failed', jobId: importId, attempt: claimed.attempts, durationMs: Date.now() - t0, errorCode: kind, retryable, context })
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'form import failed', importId, error: safeAiJobErrorCode(kind) }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e
@@ -95,7 +100,8 @@ export async function reconcileFormImports(deps: WorkerDeps, enqueue: (importId:
   const ids = await imports.importsToRequeue(db)
   for (const id of ids) await enqueue(id)
   for (const u of await imports.uploadsToDelete(db)) {
-    await removeUpload(deps, u.id, u.officeId).catch((e) => log({ msg: 'form import upload not removed', importId: u.id, error: (e as Error).name }))
+    await removeUpload(deps, u.id, u.officeId).catch((e) => log({ msg: 'form import upload not removed', importId: u.id, error: safeAiJobErrorCode((e as Error).name) }))
   }
+  await writeAiQueueSnapshot(db, 'form_import', ids.length)
   return ids.length
 }
