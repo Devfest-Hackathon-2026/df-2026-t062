@@ -85,35 +85,30 @@ function clinicalReason(kind: string, label: string, sources: DiagramSource[]) {
   if (required[kind] && !sources.some((s) => s.quote.split(/[。\n]/).some((clause) => required[kind].test(clause) && !/なし|ない|ません|否定|不明|疑い|未確認/.test(clause)))) return '医学的分類の根拠がありません。本人の訴えは注記として残すか確認してください'
   return null
 }
-const lifeWords = /存命|健在|生存|生きて(?:いる|います)/
-const deathWords = /死亡|亡くな|死去|他界|逝去/
-const uncertainLife = /していな|してな|していません|ではな|ではありま|じゃな|なっていな|なっていません|不明|未確認|疑い|かもしれ|可能性|かどうか/
+const aliveStatement = /^(?:現在|今も)?(?:存命|健在|生存)(?:です|しています|している)?$|^(?:現在|今も)?生きて(?:いる|います)$/
+const deathStatement = /^(?:すでに|(?:約)?[0-9]+年前に?)?(?:(?:死亡|死去|他界|逝去)(?:です|した|しました|している|しています)?|亡くな(?:った|りました|っている|っています))$/
 const personName = (name: string) => name.normalize('NFKC').replace(/^※\s*/, '').replace(/\s/g, '')
 
 function lifeStatus(person: Person, sources: DiagramSource[], context: DiagramContext): boolean | null {
   const claims = new Set<boolean>()
   const name = personName(person.name)
   let hasCurrentActivity = false
-  function readText(value: string, requireName: boolean) {
+  function readText(value: string, ownRow: boolean) {
     for (const clause of value.split(/[。\n；;]/)) {
-      if (uncertainLife.test(clause)) continue
-      let statement = clause
-      if (requireName) {
-        const compact = personName(clause)
-        const index = name ? compact.indexOf(name) : -1
-        if (index < 0) continue
-        statement = compact.slice(index + name.length).replace(/^(?:さん|様)?(?:は|が|:|、)?(?:現在|今も)?/, '')
-        // A named person's relative must not supply that person's life status.
-        if (!/^(?:(?:約)?[0-9]+年前に?)?(?:死亡|亡くな|死去|他界|逝去|存命|健在|生存|生きて)/.test(statement)) continue
-      }
-      if (deathWords.test(statement)) claims.add(true)
-      if (lifeWords.test(statement)) claims.add(false)
+      const compact = personName(clause)
+      const named = name && compact.startsWith(name)
+        ? /^(?:さん|様)?(?:は|が|:|、)(.+)$/.exec(compact.slice(name.length))?.[1]
+        : undefined
+      // 主語の省略を認めるのは、氏名で照合した家族欄の行だけ。
+      const statement = named ?? (ownRow ? compact : '')
+      if (deathStatement.test(statement)) claims.add(true)
+      if (aliveStatement.test(statement)) claims.add(false)
     }
   }
   for (const source of sources) {
     const rows = context.familyRows.get(source.id)
     if (!rows) {
-      readText(source.quote, source.type === 'field')
+      readText(source.quote, false)
       continue
     }
     for (const row of rows) {
@@ -123,7 +118,7 @@ function lifeStatus(person: Person, sources: DiagramSource[], context: DiagramCo
         const value = (row as Record<string, unknown>)[key]
         return typeof value === 'string' ? [value] : []
       })
-      for (const note of notes) readText(note, false)
+      for (const note of notes) readText(note, true)
       // Current health/employment describes this row's person. A bare household label or age does not.
       const currentHealth = 'health' in row && typeof row.health === 'string' && /^(?:良好|健康|元気|特に問題なし)[。\s]*$/.test(row.health.trim())
       const currentEmployment = 'employment' in row && typeof row.employment === 'string' && /^(?:会社員|公務員|自営業|パート(?:[（(][^）)]*[）)])?|アルバイト|勤務中|就労中)$/.test(row.employment.trim())
@@ -173,7 +168,7 @@ export function prepareDiagramProposal(proposal: ChatProposal, raw: unknown, con
       const old = previous.get(person.id) as Person | undefined
       if (!changed.has(person.id) || (old && old.deceased === person.deceased && old.deceased !== null)) return attached
       const status = lifeStatus(person, verified.get(person.id) ?? [], context)
-      const deceased = status ?? (person.deceased === null ? null : old?.deceased ?? null)
+      const deceased = status ?? old?.deceased ?? null
       return { ...attached, deceased }
     })
     after = { ...after, data: { people, relations: after.data.relations.map(attach) } }

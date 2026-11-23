@@ -352,3 +352,43 @@ test('family routes never share an orthogonal segment, even with more than ten e
     }
   }
 })
+
+test('family life status requires a statement about the named person in chat, recordings and notes', () => {
+  const d = blank()
+  d.family.people = [{ id: 'father', name: '見本 太郎', sex: 'male', household: '別居', deceased: null, x: 0, y: 0 }]
+  const p = candidate('family.genogram', null, nextDiagram('family', d, 0))
+  const life = (c: ReturnType<typeof context>, sourceId: string) => {
+    const r = prepareDiagramProposal(p, meta(['father'], sourceId), c)
+    assert.ok(typeof r !== 'string')
+    const value = diagramSchema.parse(r.after)
+    assert.equal(value.kind, 'family')
+    return value.data.people[0].deceased
+  }
+  for (const text of [
+    '見本太郎を図に追加。母の見本花子は亡くなりました。',
+    '見本太郎の母は亡くなりました。',
+    '見本太郎は亡くなった母のことを話しました。',
+    '見本太郎は亡くなったかもしれません。',
+    '見本太郎子さんは死亡。',
+  ]) {
+    const c = context(text)
+    assert.equal(life(c, userSource(c)), null, text)
+  }
+  const confirmed = context('見本 太郎さんは5年前に亡くなりました。')
+  assert.equal(life(confirmed, userSource(confirmed)), true)
+  const alive = context('見本太郎は今も健在です。')
+  assert.equal(life(alive, userSource(alive)), false)
+
+  const recorded = context('録音を使ってください', [{
+    recordedAt: '2026-11-20', utterances: [{ id: 'event', speaker: '本人', text: '花子が亡くなりました。' }],
+  }])
+  const part = readDiagramRecords(recorded, 0).parts?.[0]
+  assert.ok(part)
+  assert.equal(life(recorded, part.id), null)
+
+  const document = { ...doc, fields: { 'family.members': { value: [{ name: '見本太郎', note: '母の花子が亡くなりました。' }], by: 'cm' as const } } }
+  const listed = makeDiagramContext([document], [], [])
+  const details = readDiagramContext(listed, 'family.genogram')
+  assert.ok(details.documents)
+  assert.equal(life(listed, details.documents[0].fields[0].source.id), null)
+})
