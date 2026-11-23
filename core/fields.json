@@ -616,29 +616,61 @@
     {"key": "admission.enclosedOther", "label": "その他の同封書類", "type": "text", "source": ["event"], "forms": {"adm": "4. □その他（　）"}},
     {"key": "admission.intentionPersonSeePlan", "label": "本人の意向は「同封の居宅サービス計画（1）参照」とする", "type": "bool", "source": ["event"], "forms": {"adm": "3. 本人の意向 □同封の居宅サービス計画（1）参照"}},
     {"key": "admission.intentionFamilySeePlan", "label": "家族の意向は「同封の居宅サービス計画（1）参照」とする", "type": "bool", "source": ["event"], "forms": {"adm": "3. 家族の意向 □同封の居宅サービス計画（1）参照"}},
-    {"key": "outlook.requirements", "label": "在宅生活に必要な要件", "type": "longtext", "source": ["judge"], "forms": {"adm": "5. 在宅生活に必要な要件"}},
-    {"key": "outlook.household", "label": "退院後の世帯状況", "type": "object", "source": ["judge"], "forms": {"adm": "5. 退院後の世帯状況"}, "note": "household.* を初期値にして、変わるかをケアマネに聞く", "fields": [
+    {"key": "outlook.requirements", "label": "在宅生活に必要な要件", "type": "longtext", "source": ["talk", "judge"], "forms": {"adm": "5. 在宅生活に必要な要件"}},
+    {"key": "outlook.household", "label": "退院後の世帯状況", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 退院後の世帯状況"}, "note": "household.* を初期値にして、変わるかをケアマネに聞く", "fields": [
       {"key": "type", "label": "世帯", "type": "enum", "choices": "世帯"},
       {"key": "memberCount", "label": "家族構成員数", "type": "number"},
       {"key": "daytimeAlone", "label": "日中独居", "type": "bool"},
       {"key": "other", "label": "その他の内容", "type": "text", "requires": {"type": ["その他"]}}
     ]},
-    {"key": "outlook.householdConsideration", "label": "世帯に対する配慮", "type": "object", "source": ["judge"], "forms": {"adm": "5. 世帯に対する配慮（不要・必要（　））"}, "fields": [
+    {"key": "outlook.householdConsideration", "label": "世帯に対する配慮", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 世帯に対する配慮（不要・必要（　））"}, "fields": [
       {"key": "needed", "label": "必要", "type": "bool"},
       {"key": "detail", "label": "内容", "type": "text", "requires": {"needed": [true]}}
     ]},
-    {"key": "outlook.caregiver", "label": "退院後の主介護者", "type": "object", "source": ["judge"], "forms": {"adm": "5. 退院後の主介護者（本シート2に同じ・左記以外（氏名・続柄・年齢））"}, "fields": [
+    {"key": "outlook.caregiver", "label": "退院後の主介護者", "type": "object", "source": ["talk", "judge"], "forms": {"adm": "5. 退院後の主介護者（本シート2に同じ・左記以外（氏名・続柄・年齢））"}, "fields": [
       {"key": "sameAsNow", "label": "今の主介護者と同じ", "type": "bool"},
       {"key": "name", "label": "氏名", "type": "text", "requires": {"sameAsNow": [false]}},
       {"key": "relationship", "label": "続柄", "type": "text", "requires": {"sameAsNow": [false]}},
       {"key": "age", "label": "年齢", "type": "number", "requires": {"sameAsNow": [false]}}
     ]},
-    {"key": "outlook.careCapacity", "label": "介護力", "type": "enum", "choices": ["介護力が見込める（十分）", "介護力が見込める（一部）", "介護力は見込めない", "家族や支援者はいない"], "source": ["judge"], "forms": {"adm": "5. 介護力"}},
-    {"key": "outlook.abuseSuspicion", "label": "家族や同居者等による虐待の疑い", "type": "object", "of": "HasDetail", "source": ["judge"], "forms": {"adm": "5. 家族や同居者等による虐待の疑い（なし・あり（　））"}},
-    {"key": "outlook.notes", "label": "今後の在宅生活の展望の特記事項", "type": "longtext", "source": ["judge"], "forms": {"adm": "5. 特記事項"}},
-    {"key": "conference.inHospital", "label": "「院内の多職種カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 院内の多職種カンファレンスへの参加"}},
-    {"key": "conference.preDischarge", "label": "「退院前カンファレンス」への参加希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前カンファレンスへの参加"}},
-    {"key": "conference.preDischargeRequest", "label": "退院前カンファレンスへの具体的な要望", "type": "text", "source": ["judge"], "forms": {"adm": "6. ・具体的な要望（　）"}},
-    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}}
+    {"key": "outlook.careCapacity", "label": "介護力", "type": "enum", "choices": ["介護力が見込める（十分）", "介護力が見込める（一部）", "介護力は見込めない", "家族や支援者はいない"], "source": ["talk", "judge"], "forms": {"adm": "5. 介護力"}},
+    {"key": "outlook.abuseSuspicion", "label": "家族や同居者等による虐待の疑い", "type": "object", "of": "HasDetail", "source": ["talk", "judge"], "forms": {"adm": "5. 家族や同居者等による虐待の疑い（なし・あり（　））"}},
+    {"key": "outlook.notes", "label": "今後の在宅生活の展望の特記事項", "type": "longtext", "source": ["talk", "judge"], "forms": {"adm": "5. 特記事項"}},
+    {"key": "conference.inHospital", "label": "「院内の多職種カンファレンス」への参加希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 院内の多職種カンファレンスへの参加"}},
+    {"key": "conference.preDischarge", "label": "「退院前カンファレンス」への参加希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 退院前カンファレンスへの参加"}},
+    {"key": "conference.preDischargeRequest", "label": "退院前カンファレンスへの具体的な要望", "type": "text", "source": ["talk", "judge"], "forms": {"adm": "6. ・具体的な要望（　）"}},
+    {"key": "conference.homeVisitAccompany", "label": "「退院前訪問指導」を実施する場合の同行希望", "type": "bool", "source": ["talk", "judge"], "forms": {"adm": "6. 退院前訪問指導を実施する場合の同行"}},
+    {"group": "居宅介護支援経過 第5表"},
+    {"key": "progress.date", "label": "記録年月日", "type": "date", "source": ["talk"], "note": "実際の対応日。不明な日を推測しない"},
+    {"key": "progress.time", "label": "記録時刻", "type": "text", "format": "time", "source": ["talk"], "note": "24時間のHH:mm。実際の対応時刻。不明は空欄"},
+    {"key": "progress.category", "label": "項目・連絡方法", "type": "text", "source": ["talk"], "note": "訪問先、電話の発着信など、確認できた方法と項目"},
+    {"key": "progress.content", "label": "支援経過の内容", "type": "longtext", "source": ["talk"], "note": "発言、支援内容、判断の根拠、持ち越し課題。未実施の行為や未確認の発言者を創作しない"},
+    {"group": "サービス担当者会議 第4表"},
+    {"key": "meeting.date", "label": "開催日", "type": "date", "source": ["talk"]},
+    {"key": "meeting.place", "label": "開催場所", "type": "text", "source": ["talk"]},
+    {"key": "meeting.start", "label": "開催開始時刻", "type": "text", "source": ["talk"], "format": "time"},
+    {"key": "meeting.end", "label": "開催終了時刻", "type": "text", "source": ["talk"], "format": "time"},
+    {"key": "meeting.number", "label": "開催回数", "type": "number", "source": ["talk"]},
+    {"key": "meeting.personAttended", "label": "本人の出席", "type": "enum", "source": ["talk"], "choices": ["出席", "欠席", "不明"]},
+    {"key": "meeting.familyAttended", "label": "家族の出席", "type": "enum", "source": ["talk"], "choices": ["出席", "欠席", "不明"]},
+    {"key": "meeting.relationship", "label": "出席家族の続柄", "type": "text", "source": ["talk"]},
+    {"key": "meeting.items", "label": "検討した項目", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.discussion", "label": "検討内容（話し合った内容）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.conclusion", "label": "結論（合意・決定済みの内容のみ）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.remaining", "label": "残された課題（未決定事項）", "type": "longtext", "source": ["talk"]},
+    {"key": "meeting.nextDate", "label": "次回の開催時期", "type": "text", "source": ["talk"]},
+    {"key": "meeting.attendees", "label": "会議出席者", "type": "list", "rowKey": "id", "source": ["talk"], "note": "出席が確認できた人物だけを追加する。所属・職種・氏名を推測しない", "fields": [{"key": "id", "label": "行ID", "type": "text"}, {"key": "affiliation", "label": "所属", "type": "text"}, {"key": "profession", "label": "職種", "type": "text"}, {"key": "name", "label": "氏名", "type": "text"}]},
+    {"group": "サービス利用票 第6表"},
+    {"key": "monthly.header", "label": "第6表の保険者情報と届出日", "type": "object", "fields": [{"key": "insurerNumber", "label": "保険者番号", "type": "text"}, {"key": "insurerName", "label": "保険者名", "type": "text"}, {"key": "insuredNumber", "label": "被保険者番号", "type": "text"}, {"key": "submittedDate", "label": "届出年月日", "type": "text"}]},
+    {"key": "monthly.monthDate", "label": "対象月（1日で保持）", "type": "date"},
+    {"key": "monthly.legend", "label": "利用票の印字凡例", "type": "text"},
+    {"key": "monthly.details", "label": "利用票の全明細", "type": "longtext"},
+    {"key": "monthly.printRows", "label": "利用票の印字行", "type": "list", "rowKey": "id", "fields": [{"key": "id", "label": "id", "type": "text"}, {"key": "time", "label": "time", "type": "text"}, {"key": "content", "label": "content", "type": "text"}, {"key": "provider", "label": "provider", "type": "text"}, {"key": "totalPlan", "label": "totalPlan", "type": "text"}, {"key": "totalActual", "label": "totalActual", "type": "text"}, {"key": "p1", "label": "p1", "type": "text"}, {"key": "p2", "label": "p2", "type": "text"}, {"key": "p3", "label": "p3", "type": "text"}, {"key": "p4", "label": "p4", "type": "text"}, {"key": "p5", "label": "p5", "type": "text"}, {"key": "p6", "label": "p6", "type": "text"}, {"key": "p7", "label": "p7", "type": "text"}, {"key": "p8", "label": "p8", "type": "text"}, {"key": "p9", "label": "p9", "type": "text"}, {"key": "p10", "label": "p10", "type": "text"}, {"key": "p11", "label": "p11", "type": "text"}, {"key": "p12", "label": "p12", "type": "text"}, {"key": "p13", "label": "p13", "type": "text"}, {"key": "p14", "label": "p14", "type": "text"}, {"key": "p15", "label": "p15", "type": "text"}, {"key": "p16", "label": "p16", "type": "text"}, {"key": "p17", "label": "p17", "type": "text"}, {"key": "p18", "label": "p18", "type": "text"}, {"key": "p19", "label": "p19", "type": "text"}, {"key": "p20", "label": "p20", "type": "text"}, {"key": "p21", "label": "p21", "type": "text"}, {"key": "p22", "label": "p22", "type": "text"}, {"key": "p23", "label": "p23", "type": "text"}, {"key": "p24", "label": "p24", "type": "text"}, {"key": "p25", "label": "p25", "type": "text"}, {"key": "p26", "label": "p26", "type": "text"}, {"key": "p27", "label": "p27", "type": "text"}, {"key": "p28", "label": "p28", "type": "text"}, {"key": "p29", "label": "p29", "type": "text"}, {"key": "p30", "label": "p30", "type": "text"}, {"key": "p31", "label": "p31", "type": "text"}, {"key": "a1", "label": "a1", "type": "text"}, {"key": "a2", "label": "a2", "type": "text"}, {"key": "a3", "label": "a3", "type": "text"}, {"key": "a4", "label": "a4", "type": "text"}, {"key": "a5", "label": "a5", "type": "text"}, {"key": "a6", "label": "a6", "type": "text"}, {"key": "a7", "label": "a7", "type": "text"}, {"key": "a8", "label": "a8", "type": "text"}, {"key": "a9", "label": "a9", "type": "text"}, {"key": "a10", "label": "a10", "type": "text"}, {"key": "a11", "label": "a11", "type": "text"}, {"key": "a12", "label": "a12", "type": "text"}, {"key": "a13", "label": "a13", "type": "text"}, {"key": "a14", "label": "a14", "type": "text"}, {"key": "a15", "label": "a15", "type": "text"}, {"key": "a16", "label": "a16", "type": "text"}, {"key": "a17", "label": "a17", "type": "text"}, {"key": "a18", "label": "a18", "type": "text"}, {"key": "a19", "label": "a19", "type": "text"}, {"key": "a20", "label": "a20", "type": "text"}, {"key": "a21", "label": "a21", "type": "text"}, {"key": "a22", "label": "a22", "type": "text"}, {"key": "a23", "label": "a23", "type": "text"}, {"key": "a24", "label": "a24", "type": "text"}, {"key": "a25", "label": "a25", "type": "text"}, {"key": "a26", "label": "a26", "type": "text"}, {"key": "a27", "label": "a27", "type": "text"}, {"key": "a28", "label": "a28", "type": "text"}, {"key": "a29", "label": "a29", "type": "text"}, {"key": "a30", "label": "a30", "type": "text"}, {"key": "a31", "label": "a31", "type": "text"}]},
+    {"key": "monthly.weekdays", "label": "対象月の曜日", "type": "list", "rowKey": "order", "fields": [{"key": "label", "label": "曜日", "type": "text"}]},
+    {"group": "サービス利用票別表 第7表"},
+    {"key": "fees.status", "label": "算定状態と対象月", "type": "text"},
+    {"key": "fees.limit", "label": "区分支給限度基準額", "type": "number"},
+    {"key": "fees.details", "label": "算定の明細と確認事項", "type": "longtext"},
+    {"key": "fees.row", "label": "別表の限定算定行", "type": "object", "fields": [{"key": "provider", "label": "provider", "type": "text"}, {"key": "content", "label": "content", "type": "text"}, {"key": "code", "label": "code", "type": "text"}, {"key": "unit", "label": "unit", "type": "text"}, {"key": "count", "label": "count", "type": "text"}, {"key": "units", "label": "units", "type": "text"}, {"key": "managed", "label": "managed", "type": "text"}, {"key": "over", "label": "over", "type": "text"}, {"key": "within", "label": "within", "type": "text"}, {"key": "price", "label": "price", "type": "text"}, {"key": "gross", "label": "gross", "type": "text"}, {"key": "rate", "label": "rate", "type": "text"}, {"key": "benefit", "label": "benefit", "type": "text"}, {"key": "patient", "label": "patient", "type": "text"}, {"key": "outside", "label": "outside", "type": "text"}]}
   ]
 }

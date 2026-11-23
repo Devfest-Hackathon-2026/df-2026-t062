@@ -57,7 +57,7 @@ const topKey = (b: Binding) => b.ref.key
 /** 対応 → 入る内容の言葉と、録音から AI が書くか */
 export function slotMeaning(b: Binding, dict: FieldDict, localFields: readonly LocalField[] = []): SlotMeaning {
   const label = refLabel(b.ref, dict)
-  const rec = writableFields({ keys: [topKey(b)], localFields }).length > 0 || (!!dict.get(topKey(b))?.local && !!dict.get(topKey(b))?.note)
+  const rec = writableFields({ keys: [topKey(b)], localFields }).length > 0 || !!dict.get(topKey(b))?.local
   if (!label) return { what: UNKNOWN, rec: false, ...(b.ui === 'check' || b.ui === 'circle' ? { mark: true as const } : {}) }
   switch (b.op) {
     case 'option@1': {

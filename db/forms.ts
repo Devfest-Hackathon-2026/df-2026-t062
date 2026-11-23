@@ -6,6 +6,7 @@ import { fieldDict, type LocalField } from '../core/dictionary.ts'
 import { basePdfAssetPath, contentOf, toFormDef, type FormDef, type FormKind, type FormPage, type FormVersionView, type TemplateSlot } from '../core/form.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { Conflict, Forbidden } from './repo.ts'
+import { writeBusinessAudit, type AuditContext } from './audit.ts'
 
 type Q = Db | Tx
 
@@ -225,7 +226,20 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
     const print = p.print
     if (!print) continue
     const namesOnPage = new Set(slots.map((s) => s.name))
-    if (!['text', 'table', 'timeline'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
+    if (!['text', 'table', 'timeline', 'flow', 'sections'].includes(print.type)) errors.push(`ページ ${p.no} の印字展開の種類が不正`)
+    if (print.type === 'sections') {
+      if (!Array.isArray(print.slots) || !print.slots.length || print.slots.length > 30 || new Set(print.slots).size !== print.slots.length || print.slots.some(n => !slots.some(s => s.name === n && s.type === 'text'))) errors.push(`ページ ${p.no} の文章区分の継続設定が不正`)
+      if (print.list && (!Number.isInteger(print.list.rowsPerPage) || print.list.rowsPerPage < 1 || print.list.rowsPerPage > 100 || !formKeys(input.bindings).includes(print.list.key))) errors.push(`ページ ${p.no} の継続する表が不正`)
+    }
+    if (print.type === 'flow') {
+      if (!Array.isArray(print.slots)) { errors.push(`ページ ${p.no} の文章の継続領域が不正`); continue }
+      const slots = print.slots?.map(n => input.schemas[p.pdfIndex].find(s => s.name === n)) ?? []
+      if (!slots.length || slots.length > 8 || new Set(print.slots).size !== slots.length || slots.some(s => !s || s.type !== 'text')) errors.push(`ページ ${p.no} の文章の継続領域が不正`)
+      const first = slots[0]
+      if (first && slots.some(s => s && (s.width !== first.width || s.height !== first.height || s.fontSize !== first.fontSize || s.lineHeight !== first.lineHeight || s.dynamicFontSize?.min !== first.dynamicFontSize?.min))) errors.push(`ページ ${p.no} の文章の継続領域の寸法が不一致`)
+      const refs = print.slots?.map(n => input.bindings[n]) ?? []
+      if (refs.some(b => b?.op !== 'text@1' || JSON.stringify(b) !== JSON.stringify(refs[0]))) errors.push(`ページ ${p.no} の文章の継続領域の対応が不一致`)
+    }
     if (print.type === 'table') {
       if (!Number.isInteger(print.rowsPerPage) || print.rowsPerPage < 1 || print.rowsPerPage > 100 ||
           !Number.isFinite(print.rowHeight) || print.rowHeight <= 0 ||
@@ -234,6 +248,15 @@ export function checkVersion(input: Pick<VersionInput, 'schemas' | 'bindings' | 
         errors.push(`ページ ${p.no} の表の印字設定が不正`)
       }
       if (!formKeys(input.bindings).includes(print.key)) errors.push(`ページ ${p.no} の表が対応のないkeyを読む`)
+      if (print.groupSlots !== undefined) {
+        const groups = print.groupSlots
+        if (!Array.isArray(groups) || !Array.isArray(print.nested) || !Array.isArray(print.slots) ||
+            groups.length > print.nested.length ||
+            groups.some(group => !Array.isArray(group) || !group.length || group.some(name => !print.slots.includes(name))) ||
+            new Set(groups.flat()).size !== groups.flat().length) {
+          errors.push(`ページ ${p.no} の表のまとめ方が不正`)
+        }
+      }
     }
     if (print.type === 'timeline') {
       if (!namesOnPage.has(print.slot) || !Array.isArray(print.days) || !print.days.length ||
@@ -335,10 +358,11 @@ export async function rebaseDocuments(db: Db, templateId: string, opts: { dryRun
     const offices = new Map<string, number>()
     for (const r of moved.rows) offices.set(r.office_id, (offices.get(r.office_id) ?? 0) + 1)
     for (const [officeId, n] of offices) {
-      await c.query(
-        "INSERT INTO audit_events (office_id, action, detail) VALUES ($1, 'form.rebase', $2)",
-        [officeId, JSON.stringify({ kind: target.kind, from: await Promise.all(olds.map(async (id) => { const v = await loadVersion(c, id); return { version: v.version, contentSha: v.contentSha } })), to: { version: target.version, contentSha: target.contentSha }, documents: n })],
-      )
+      await writeBusinessAudit(c, {
+        officeId,
+        action: 'form.rebase',
+        detail: { kind: target.kind, from: await Promise.all(olds.map(async (id) => { const v = await loadVersion(c, id); return { version: v.version, contentSha: v.contentSha } })), to: { version: target.version, contentSha: target.contentSha }, documents: n },
+      })
     }
     return result
   })
@@ -349,6 +373,14 @@ export async function rebaseDocuments(db: Db, templateId: string, opts: { dryRun
 export interface KindFormState {
   key: string
   name: string
+  /** 事業所で足した種類か（#153。全体の種類は false） */
+  own: boolean
+  perClient: 'one' | 'many'
+  createFrom: string | null
+  /** 録音から AI が書く種類か（拾う内容が空でない） */
+  records: boolean
+  /** 事業所で足した種類の拾う内容（手順 4 で直す）。全体の種類は空 */
+  topics: { id: string, name: string, guide: string, last: boolean }[]
   /** 新しい書類に使う書式。office: 事業所で上げた書式か（でなければ全体の書式）。since: 使い始めた日時 */
   current: { versionId: string, office: boolean, since: string | null } | null
   /** 事業所の書式を使っていないときの、前に使っていた事業所の書式（「事業所の書式に戻す」） */
@@ -363,11 +395,15 @@ const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : null)
 
 /** 事業所の、書類の種類ごとの書式の様子 */
 export async function officeFormStates(db: Q, officeId: string): Promise<KindFormState[]> {
-  const kinds = (await db.query('SELECT key, name FROM form_kinds ORDER BY is_primary DESC, key')).rows
+  // 全体の種類と、その事業所の種類（やめたものは出さない。#153）
+  const kinds = (await db.query(
+    'SELECT key, name, office_id, per_client, create_from, topics FROM form_kinds WHERE (office_id IS NULL OR office_id = $1) AND retired_at IS NULL ORDER BY is_primary DESC, office_id NULLS FIRST, key',
+    [officeId],
+  )).rows
   const out: KindFormState[] = []
   for (const k of kinds) {
     const v = (await db.query(
-      `SELECT v.id, v.status, v.created_at, v.published_at, v.retired_at, t.office_id, jsonb_path_exists(v.schemas, '$[*][*]') AS has_slots FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id
+      `SELECT v.id, v.version, v.status, v.created_at, v.published_at, v.retired_at, t.office_id, jsonb_path_exists(v.schemas, '$[*][*]') AS has_slots FROM form_template_versions v JOIN form_templates t ON t.id = v.template_id
        WHERE t.kind = $1 AND (t.office_id = $2 OR (t.office_id IS NULL AND v.status = 'published'))
        ORDER BY v.version DESC`,
       [k.key, officeId],
@@ -377,7 +413,8 @@ export async function officeFormStates(db: Q, officeId: string): Promise<KindFor
     const globalPub = v.find((r) => r.office_id === null)
     const cur = officePub ?? globalPub
     const retired = officePub ? undefined : [...mine].filter((r) => r.status === 'retired').sort((a, b) => (b.retired_at?.getTime() ?? 0) - (a.retired_at?.getTime() ?? 0))[0]
-    const draft = mine.find((r) => r.status === 'draft')
+    // 使っている事業所の版より古い下書き（読めなかった取り込みの残りなど）は、もう出さない（#153）
+    const draft = mine.find((r) => r.status === 'draft' && (!officePub || r.version > officePub.version))
     const fromImport = draft ? (await db.query('SELECT review FROM form_imports WHERE version_id = $1 ORDER BY created_at DESC LIMIT 1', [draft.id])).rows[0] : undefined
     const imp = (await db.query(
       'SELECT id, status, uploaded_at, error_kind, version_id, created_at, updated_at FROM form_imports WHERE office_id = $1 AND kind = $2 ORDER BY created_at DESC, id LIMIT 1',
@@ -385,6 +422,8 @@ export async function officeFormStates(db: Q, officeId: string): Promise<KindFor
     )).rows[0]
     out.push({
       key: k.key, name: k.name,
+      own: k.office_id !== null, perClient: k.per_client, createFrom: k.create_from ?? null, records: (k.topics as unknown[]).length > 0,
+      topics: k.office_id !== null ? (k.topics as { id: string, name: string, guide: string, last: boolean }[]).map((t) => ({ id: t.id, name: t.name, guide: t.guide, last: t.last })) : [],
       current: cur ? { versionId: cur.id, office: cur.office_id !== null, since: iso(cur.published_at) } : null,
       shelved: retired ? { versionId: retired.id, since: iso(retired.published_at) } : null,
       draft: draft ? { versionId: draft.id, createdAt: iso(draft.created_at)!, fromImport: !!fromImport, empty: !draft.has_slots, review: fromImport?.review ?? [] } : null,
@@ -438,7 +477,7 @@ export async function draftFrom(db: Db, scope: ManagerScope, id: string): Promis
 }
 
 /** 最初の書式（全体の書式）に戻す: 事業所の使う版を退かせる。もう戻っていれば何もしない。今の書類は前の版のまま */
-export async function revertToGlobal(db: Db, officeId: string, staffId: string, kind: string): Promise<void> {
+export async function revertToGlobal(db: Db, officeId: string, staffId: string, kind: string, auditContext?: AuditContext): Promise<void> {
   await tx(db, async (c) => {
     if (!(await c.query('SELECT 1 FROM form_kinds WHERE key = $1', [kind])).rows.length) throw new FormNotFound(kind)
     const t = (await c.query('SELECT id FROM form_templates WHERE kind = $1 AND office_id = $2 FOR UPDATE', [kind, officeId])).rows[0]
@@ -448,8 +487,13 @@ export async function revertToGlobal(db: Db, officeId: string, staffId: string, 
       [t.id],
     )
     if (!r.rows.length) return
-    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.revert', $3)",
-      [officeId, staffId, JSON.stringify({ kind, from: { version: Number(r.rows[0].version) } })])
+    await writeBusinessAudit(c, {
+      officeId,
+      actorStaffId: staffId,
+      action: 'form.revert',
+      detail: { kind, from: { version: Number(r.rows[0].version) } },
+      context: auditContext,
+    })
   })
 }
 
@@ -457,14 +501,19 @@ export async function revertToGlobal(db: Db, officeId: string, staffId: string, 
  * 前に使っていた事業所の書式に戻す。退いた版は公開し直せない（DB のトリガー）ので、同じ中身の版を作って公開する。
  * 退いた版でなければ NotDraft と同じ 409、全体の書式は 403
  */
-export async function reuseVersion(db: Db, scope: ManagerScope & { officeId: string }, staffId: string, id: string): Promise<FormVersion> {
+export async function reuseVersion(db: Db, scope: ManagerScope & { officeId: string }, staffId: string, id: string, auditContext?: AuditContext): Promise<FormVersion> {
   return tx(db, async (c) => {
     const v = await officeVersion(c, scope, id)
     if (v.status !== 'retired') throw new Conflict('form_version')
     const copy = await insertCopy(c, v)
     await publish(c, v.templateId, copy)
-    await c.query("INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'form.reuse', $3)",
-      [scope.officeId, staffId, JSON.stringify({ kind: v.kind, from: { version: v.version } })])
+    await writeBusinessAudit(c, {
+      officeId: scope.officeId,
+      actorStaffId: staffId,
+      action: 'form.reuse',
+      detail: { kind: v.kind, from: { version: v.version } },
+      context: auditContext,
+    })
     return readVersion(c, copy)
   })
 }

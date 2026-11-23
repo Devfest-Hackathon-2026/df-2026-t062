@@ -1,3 +1,4 @@
+import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // PC ② 作業画面（キャンバス Main）。新しい利用者は ③（PcNew）、2 回目からの書き換えのあとは ④（PcDiff）の印になる。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fieldDict } from '../../../core/dictionary.ts'
@@ -20,12 +21,16 @@ import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { PetHelper } from '../../components/assistant/PetHelper.tsx'
 import { countText } from '../../components/document/changes.ts'
 import { downloadBlob } from '../../lib/download.ts'
-import { CarePlanWork, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { PlanHistoryButton, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { FillDialog, fillStepIndex, fillStepLabel } from '../../components/document/FillDialog.tsx'
+import { useDocumentFill } from '../../components/document/useDocumentFill.ts'
+import type { PetFill } from '../../components/assistant/PetHelper.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
   const [carePlanOpen, setCarePlanOpen] = useState(false)
+  const [planHistoryRequest, setPlanHistoryRequest] = useState(0)
   const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
   const [planDirty, setPlanDirty] = useState(false)
   const [planBusy, setPlanBusy] = useState(false)
@@ -54,31 +59,51 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const [adoptingKey, setAdoptingKey] = useState('')
   const adoption = useRef<Promise<boolean> | null>(null)
   const [candidateError, setCandidateError] = useState('')
+  // 書類を作るときに AI が書く（#195）: 作った直後に聞く書類と、書いている間のダイアログ
+  const [fillAsk, setFillAsk] = useState('')
+  const [fillShown, setFillShown] = useState(false)
 
   useEffect(() => { saveRequest.current++; setSaveFeedback(undefined); setDiagramChatRequest(undefined); setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount || state.total.ai || state.total.hand) setDocSaved(false) }, [state.pendingCount, state.total.ai, state.total.hand])
 
+  /** 元の書類（create_from の種類）があり、AI が書ける種類か（ケアプランは対象外） */
+  function canFillFrom(key: string) {
+    const from = kinds?.find((k) => k.key === key)?.createFrom
+    return !!from && !isPlanKind(key) && !!client?.documents.some((d) => d.kind === from)
+  }
   // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
   const openKind = useCallback(async (key: string) => {
     if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
     setCarePlanOpen(false); setPlanDirty(false)
     setNewOpen(false)
     if (!client?.documents.some((d) => d.kind === key)) {
-      await api.createDocument(clientId, key)
+      const r = await api.createDocument(clientId, key)
+      if (r.created && canFillFrom(key)) setFillAsk(r.id)
       await reloadClient()
     }
     setTab(key)
-  }, [client, clientId, reloadClient, carePlanOpen, planDirty, planBusy])
+  }, [client, kinds, clientId, reloadClient, carePlanOpen, planDirty, planBusy, state.flush])
   // 何通も作れる種類は、押すたびに新しい書類を作る
   const createKind = useCallback(async (key: string) => {
+    if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
     setNewOpen(false)
-    await api.createDocument(clientId, key)
+    const r = await api.createDocument(clientId, key)
+    if (r.created && canFillFrom(key)) setFillAsk(r.id)
     await reloadClient()
     setTab(key)
-  }, [clientId, reloadClient])
+  }, [clientId, reloadClient, client, kinds, planBusy, carePlanOpen, planDirty])
 
   const doc = state.doc
   const isPrimary = open.isPrimary
+  const fillable = !!docId && canFillFrom(open.key)
+  const filling = useDocumentFill(fillable ? docId : undefined, () => reloadDoc.current())
+  const fillSource = open.fromName ?? ''
+  const runFill = () => { setFillAsk(''); setFillShown(true); void filling.start() }
+  const petFill: PetFill | undefined = !fillable || !filling.loaded ? undefined
+    : filling.working ? { phase: 'working', step: fillStepLabel(Math.min(2, fillStepIndex(filling.fill!.step)), fillSource), onShow: () => setFillShown(true) }
+      : filling.justDone ? { phase: 'done', sourceName: fillSource, changes: filling.fill?.changes ?? 0 }
+        : !filling.fill || filling.fill.status === 'failed' ? { phase: 'offer', sourceName: fillSource, onRun: runFill, error: filling.error || undefined }
+          : undefined
   const kindName = open.kind?.name ?? ''
   const pages = state.pages
   /** ページが何枚もある書類（ページの番号・いまのページを出す） */
@@ -214,8 +239,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   }
 
   const exportPdf = async () => {
-    if (!docId) return
-    await state.flush()
+    if (!docId || !await state.flush()) return
     const blob = await api.pdf(docId)
     downloadBlob(blob, `${client?.name ?? ''}_${kindName}.pdf`)
   }
@@ -234,6 +258,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
     )
   }
 
+
   return (
     <div className="pc pc-work" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', fontSize: 14, lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>
 
@@ -241,6 +266,10 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         <a {...linkProps('/')} onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
           if (planBusy || (carePlanOpen && planDirty && !window.confirm('ケアプランの未保存の入力を破棄して利用者一覧に移動しますか？'))) { e.preventDefault(); return }
+          if (!carePlanOpen && state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
+            e.preventDefault()
+            return
+          }
           linkProps('/').onClick(e)
         }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, textDecoration: 'none' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者一覧
@@ -249,14 +278,16 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{client ? `${client.name} さん` : ' '}</h1>
         </div>
         <div role="tablist" aria-label="書類" className="pc-work-tabs">
-          {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+          {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
             <button key={k.key} className={`dtab${!carePlanOpen && k.key === open.key ? ' dtab-on' : ''}`} role="tab" aria-selected={!carePlanOpen && k.key === open.key} disabled={planBusy} type="button" onClick={() => void openKind(k.key)}>{k.name}</button>
           ))}
+          {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`dtab${carePlanOpen ? ' dtab-on' : ''}`} role="tab" aria-selected={carePlanOpen} type="button" disabled={planBusy || !state.doc} onClick={async () => { if (await state.flush()) { setNewOpen(false); setPlanHistoryRequest(0); setCarePlanOpen(true) } }}>ケアプラン</button>}
+          {carePlanOpen && <PlanHistoryButton disabled={planBusy} onClick={() => setPlanHistoryRequest(n => n + 1)} />}
           <button className="dtab dtab-add" type="button" disabled={carePlanOpen} aria-haspopup="true" aria-expanded={newOpen} onClick={() => setNewOpen(!newOpen)}>＋ 書類を作る</button>
           {newOpen && (
             <div role="menu" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, width: 'min(300px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, boxShadow: '0 10px 30px rgba(20,24,32,0.18)', padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
               <div style={{ fontSize: 12, color: '#5A6270', padding: '4px 8px 6px' }}>{client?.name}さんの今の情報から、AI が書き込みます</div>
-              {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
+              {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && k.available && k.perClient === 'many').map((k) => (
                 <button key={k.key} className="mi" role="menuitem" type="button" onClick={() => void createKind(k.key)}><span>{k.name}</span></button>
               ))}
               {newDocMenu.map((d) => (
@@ -265,14 +296,13 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             </div>
           )}
         </div>
-        {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button className={`care-plan-entry${carePlanOpen ? ' care-plan-entry-on' : ''}`} aria-pressed={carePlanOpen} type="button" disabled={planBusy} onClick={async () => { if (await state.flush()) { setNewOpen(false); setCarePlanOpen(true) } }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 5H5v16h14V5h-4" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="m8 13 2 2 5-5" /></svg>ケアプランを作成</button>}
         {carePlanOpen ? <div className="pc-work-output" ref={setPlanOutputTarget} /> : <DocumentOutput
           status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
           progress={required} disabled={!docId} onExport={() => void exportPdf()} />}
       </div>
 
       <div className="pc-work-layout">
-        {carePlanOpen ? <CarePlanWork embedded outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
+        {carePlanOpen ? <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} embedded historyRequest={planHistoryRequest} outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
           onDirtyChange={setPlanDirty} onBusyChange={setPlanBusy} onBack={() => { setCarePlanOpen(false); setPlanDirty(false) }} /> : <>
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
@@ -327,7 +357,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </section>
         </>}
 
-        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics} unheard={doc?.id === docId ? state.unheard : []}
           hasUnsavedChanges={hasUpdates || state.hasLocalEdits || !!state.total.ai || !!state.total.hand}
           work={carePlanOpen || !docId || doc?.id !== docId ? undefined : {
             job, conflict: state.conflicts.size > 0,
@@ -340,6 +370,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram, dict: fieldDict(state.form?.localFields) }}
 
+          fill={carePlanOpen ? undefined : petFill}
           onIdentity={(sha, confirmed) => {
             setCandidateError('')
             setVerifiedSources((previous) => {
@@ -350,6 +381,12 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             })
           }} />
       </div>
+      {!carePlanOpen && fillable && fillAsk === docId && filling.loaded && !filling.fill && (
+        <FillDialog phase="ask" sourceName={fillSource} kindName={kindName} onRun={runFill} onDecline={() => setFillAsk('')} />
+      )}
+      {!carePlanOpen && fillShown && filling.working && (
+        <FillDialog phase="working" sourceName={fillSource} step={filling.fill!.step} onHide={() => setFillShown(false)} />
+      )}
     </div>
   )
 }

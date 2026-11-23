@@ -57,6 +57,7 @@ export function useRecorder(clientId: string, onSent: () => void) {
     const pending = await pendingRecordings(current.clientId).catch(() => {
       throw new Error('端末の録音を読み込めませんでした。ブラウザの保存設定を確認して再試行してください。')
     })
+    let failure: Error | undefined
     for (const recording of pending) {
       if (current.disposed) return
       setPhase('upload')
@@ -64,13 +65,15 @@ export function useRecorder(clientId: string, onSent: () => void) {
       try {
         await sendRecording(recording, (n) => { if (!current.disposed) setPct(n) })
       } catch {
-        throw new Error('録音を送れませんでした。未送信の録音はこの端末に残っています。通信できる場所で再試行してください。')
+        failure ??= new Error('送れなかった録音がこの端末に残っています。通信状態や録音先の書類を確認して再試行してください。')
+        continue
       }
       await deleteRecording(recording.id).catch(() => {
-        throw new Error('録音は送信済みですが、この端末の送信待ち一覧を更新できませんでした。再試行してください。')
+        failure ??= new Error('送信済みの録音を端末の送信待ち一覧から消せませんでした。再試行してください。')
       })
       if (!current.disposed) sent.current()
     }
+    if (failure) throw failure
     if (!current.disposed) setPhase(pending.length ? 'sent' : 'idle')
   }, [])
 
@@ -109,7 +112,8 @@ export function useRecorder(clientId: string, onSent: () => void) {
     }
   }, [clientId, run, sendPending])
 
-  const start = useCallback(async () => {
+  /** documentId: 録音をつなぐ書類（開いている書類） */
+  const start = useCallback(async (documentId?: string) => {
     const current = scope.current
     if (!current) return
     await run(current, async () => {
@@ -121,7 +125,7 @@ export function useRecorder(clientId: string, onSent: () => void) {
           return
         }
         setStorageWarning(false)
-        current.capture = captureRecording(stream, current.clientId, saveRecording, (saved) => {
+        current.capture = captureRecording(stream, current.clientId, documentId, saveRecording, (saved) => {
           if (!current.disposed) setStorageWarning(!saved)
         })
       } catch (e) {

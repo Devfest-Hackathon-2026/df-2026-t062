@@ -92,6 +92,19 @@ export const fakeFormImport = (): Llm => ({
   usage: () => ZERO_USAGE,
 })
 
+/** 書類を作るときに AI が書く（#195）の試用。どの欄も「書かない」と答える（値は変えない。費用なし） */
+export const fakeDocumentFill = (): Llm => {
+  let calls = 0
+  return {
+    ask: async (_prompt, schema) => {
+      calls++
+      const keys = Object.keys((schema as { properties: { fields: { properties: Record<string, unknown> } } }).properties.fields.properties)
+      return { fields: Object.fromEntries(keys.map((k) => [k, { action: 'skip', value: null, from: [] }])) }
+    },
+    usage: () => ({ ...ZERO_USAGE, calls }),
+  }
+}
+
 /** 記入済み原本の試用。内容を作らず、試用モードと明示する。 */
 export const fakeDocumentRead = (): Llm => ({
   ask: async () => ({ entries: [], issues: ['試用モードのため原本の内容は読み取っていません。'] }),

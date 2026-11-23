@@ -5,7 +5,7 @@ import type { PendingRecording } from './recordingStore.ts'
 const CHECKPOINT_MS = 9_000
 
 export function captureRecording(
-  stream: MediaStream, clientId: string, save: (recording: PendingRecording) => Promise<unknown>,
+  stream: MediaStream, clientId: string, documentId: string | undefined, save: (recording: PendingRecording) => Promise<unknown>,
   onCheckpoint: (saved: boolean) => void,
 ) {
   const preferredMime = pickRecordingMime((mime) => !!MediaRecorder.isTypeSupported?.(mime))
@@ -25,7 +25,7 @@ export function captureRecording(
   }
   const snapshot = (at: number): PendingRecording => {
     const mime = recorder.mimeType || chunks[0]?.type || preferredMime || 'audio/webm'
-    return { id, clientId, startedAt, mime, blob: new Blob(chunks, { type: mime }), durationMs: Math.max(0, at - startedAt) }
+    return { id, clientId, documentId, startedAt, mime, blob: new Blob(chunks, { type: mime }), durationMs: Math.max(0, at - startedAt) }
   }
 
   recorder.ondataavailable = ({ data }) => {

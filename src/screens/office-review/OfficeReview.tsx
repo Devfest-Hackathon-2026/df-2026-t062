@@ -3,10 +3,12 @@
 // 違うときは、何が入るかを言葉で書いてもらい、サーバーが fields.json の欄か、その書式だけの欄に当てはめる（責任者には欄の key を見せない）。
 // 「合っています」にした欄は、この下書きの間だけ、このブラウザに覚える。
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { api, ApiError, type ManagedVersion } from '../../lib/api.ts'
+import { api, ApiError, type KindFormState, type ManagedVersion } from '../../lib/api.ts'
 import { navigate } from '../../lib/router.tsx'
 import { fsz, pos } from '../../components/document/layout.ts'
 import { BackLink, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
+import { AddPublishDialog, AddSteps } from '../../components/office-add/AddSteps.tsx'
+import { adding, reviewSlotNames } from '../../components/office-add/addFlow.ts'
 
 interface SlotBox { name: string, x: number, y: number, w: number, h: number, pt: number, mark: boolean, area: boolean }
 
@@ -24,6 +26,8 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   const [v, setV] = useState<ManagedVersion | null>(null)
   const [images, setImages] = useState<Record<number, string | null>>({})
   const [kindName, setKindName] = useState('')
+  // 事業所の書類を足している途中（#153）の種類。手順 3 として出し、最後は手順 4（使い始める）へ。録音から書く項目は、使い始めるときにサーバーで AI が決める（#209）
+  const [addKind, setAddKind] = useState<KindFormState | null>(null)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [zoom, setZoom] = useState(100)
@@ -54,7 +58,9 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
         if (!live) return
         setV(mv)
         setImages(Object.fromEntries(assets.pages.map((p) => [p.no, p.url])))
-        setKindName(forms.kinds.find((k) => k.key === kind)?.name ?? '')
+        const k = forms.kinds.find((x) => x.key === kind)
+        setKindName(k?.name ?? '')
+        setAddKind(k && adding(k) ? k : null)
         if (!fix && mv.review[0]) {
           setSel(mv.review[0].slot)
           setPage(pageOfSlot(mv, mv.review[0].slot) ?? 1)
@@ -76,7 +82,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
     return out
   }, [v])
 
-  const reviewSlots = useMemo(() => (fix || !v ? [] : v.review.map((r) => r.slot)), [v, fix])
+  const reviewSlots = useMemo(() => (fix || !v ? [] : reviewSlotNames(v.review)), [v, fix])
   const exists = useCallback((name: string) => !!v && v.formVersion.schemas.some((p) => p.some((s) => s.name === name)), [v])
   const isDone = (name: string) => name in done || unused.includes(name)
   const open = reviewSlots.filter((n) => !isDone(n))
@@ -140,14 +146,19 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
     try {
       await api.publishVersion(versionId, v.formVersion.contentSha)
       try { sessionStorage.removeItem(doneKey(versionId)) } catch { /* なくてもよい */ }
-      navigate(back)
+      navigate(addKind ? '/office' : back)
     } catch (e) {
       setPublishing('ask')
       setPublishError(e instanceof ApiError && e.status === 422 ? 'まだ使い始められません。書式の中に、何が入るか決まっていない欄があります。' : `使い始められませんでした（${(e as Error).message}）`)
     }
   }
 
-  const head = (
+  const head = addKind ? (
+    <>
+      <AddSteps step={3} name={kindName} />
+      <header className="of-focus-head" style={{ paddingTop: 8, paddingBottom: 8 }}><BackLink to={`${back}/upload`} label="書式を上げる" /><h1>書式の読み取り結果</h1></header>
+    </>
+  ) : (
     <header className="of-focus-head">
       <BackLink to={back} label={kindName || '書類に戻る'} />
       <h1>{fix ? '書式を直す' : '書式の読み取り結果'}</h1>
@@ -278,11 +289,12 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
           ))}
           {!finished.length && <div className="of-side-msg">{fix ? 'まだありません。' : '「合っています」にした欄と、自分で直した欄が並びます。'}</div>}
           <div className="of-side-foot">
-            <button type="button" className="btn btn-p" disabled={!ready} onClick={() => setPublishing('ask')}>{fix ? '直した書式を使い始める' : 'この書式を使い始める'}</button>
+            <button type="button" className="btn btn-p" disabled={!ready} onClick={() => setPublishing('ask')}>{addKind ? '次へ（使い始める）' : fix ? '直した書式を使い始める' : 'この書式を使い始める'}</button>
           </div>
         </aside>
       </div>
-      {publishing && (
+      {publishing && addKind && <AddPublishDialog name={kindName} busy={publishing === 'busy'} error={publishError} onCancel={() => setPublishing(null)} onOk={() => void publish()} />}
+      {publishing && !addKind && (
         <>
           <div className="of-modal-back" onClick={() => publishing === 'ask' && setPublishing(null)} />
           <section className="of-modal" role="dialog" aria-modal="true" aria-labelledby="of-pub-h">

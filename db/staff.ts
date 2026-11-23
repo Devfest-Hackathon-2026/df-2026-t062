@@ -1,7 +1,8 @@
 // 職員の管理（責任者の staff.manage）と、サイト管理者（site.manage）の DB の読み書き。docs/再設計/14_認可.md。
 // サイト管理者の関数は、利用者の情報を持つ表を読まない。
 import { tx, type Db, type Tx } from './pool.ts'
-import { Forbidden, NotFound, type Staff } from './repo.ts'
+import { auditContextOf, Forbidden, NotFound, type Staff } from './repo.ts'
+import { writeSecurityAudit, type AuditContext } from './audit.ts'
 
 /** そのアカウント（uid）は、もう職員かサイト管理者として登録されている（409） */
 export class AlreadyRegistered extends Error {}
@@ -46,10 +47,16 @@ export interface NewStaff { authUid: string, name: string, email: string, role: 
 export async function createStaff(db: Db, actor: Staff, s: NewStaff): Promise<StaffMember> {
   return tx(db, async (c) => {
     const m = await insertStaff(c, actor.officeId, s)
-    await c.query(
-      "INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'staff.create', $3)",
-      [actor.officeId, actor.id, JSON.stringify({ target: m.id, role: m.role })],
-    )
+    await writeSecurityAudit(c, {
+      officeId: actor.officeId,
+      actorStaffId: actor.id,
+      targetStaffId: m.id,
+      targetType: 'staff',
+      targetId: m.id,
+      action: 'staff.create',
+      detail: { role: m.role },
+      context: auditContextOf(actor),
+    })
     return m
   })
 }
@@ -74,10 +81,16 @@ export async function updateStaff(db: Db, actor: Staff, staffId: string, change:
        RETURNING id, name, email, role, disabled_at, created_at`,
       [staffId, actor.officeId, change.role ?? null, change.disabled ?? null],
     )
-    await c.query(
-      "INSERT INTO audit_events (office_id, staff_id, action, detail) VALUES ($1, $2, 'staff.update', $3)",
-      [actor.officeId, actor.id, JSON.stringify({ target: staffId, ...change })],
-    )
+    await writeSecurityAudit(c, {
+      officeId: actor.officeId,
+      actorStaffId: actor.id,
+      targetStaffId: staffId,
+      targetType: 'staff',
+      targetId: staffId,
+      action: 'staff.update',
+      detail: { changed: Object.keys(change) },
+      context: auditContextOf(actor),
+    })
     return member(r.rows[0])
   })
 }
@@ -94,12 +107,20 @@ export async function siteAdminByAuth(db: Db, authUid: string): Promise<SiteAdmi
 export interface NewOffice { name: string, phone?: string | null, fax?: string | null, admin: Omit<NewStaff, 'role'> }
 
 /** サイト管理者が、事業所とその最初の責任者を登録する（1 つのトランザクション。責任者のアカウントは先に作る） */
-export async function createOffice(db: Db, o: NewOffice): Promise<{ office: { id: string, name: string, createdAt: string }, admin: StaffMember }> {
+export async function createOffice(db: Db, o: NewOffice, context?: AuditContext): Promise<{ office: { id: string, name: string, createdAt: string }, admin: StaffMember }> {
   return tx(db, async (c) => {
     await assertNew(c, o.admin.authUid)
     const r = (await c.query('INSERT INTO offices (name, phone, fax) VALUES ($1, $2, $3) RETURNING id, name, created_at', [o.name, o.phone ?? null, o.fax ?? null])).rows[0]
     const admin = await insertStaff(c, r.id, { ...o.admin, role: 'admin' })
-    await c.query("INSERT INTO audit_events (office_id, action, detail) VALUES ($1, 'office.create', $2)", [r.id, JSON.stringify({ admin: admin.id })])
+    await writeSecurityAudit(c, {
+      officeId: r.id,
+      targetStaffId: admin.id,
+      targetType: 'office',
+      targetId: r.id,
+      action: 'office.create',
+      detail: { adminStaffId: admin.id },
+      context,
+    })
     return { office: { id: r.id, name: r.name, createdAt: (r.created_at as Date).toISOString() }, admin }
   })
 }

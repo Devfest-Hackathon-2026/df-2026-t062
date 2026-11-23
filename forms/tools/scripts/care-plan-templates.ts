@@ -93,7 +93,11 @@ for (const no of [1, 2, 3]) {
     col('提供事業所', [0, 'shortGoals', 0, 'services', 0, 'provider'], 222, 16)
     col('頻度', [0, 'shortGoals', 0, 'services', 0, 'frequency'], 242, 16)
     col('サービス期間', [0, 'shortGoals', 0, 'services', 0, 'period'], 262, 15)
-    print = { type: 'table', key: 'plan.needs', nested: ['shortGoals', 'services'], slots: rowSlots, rowsPerPage: 5, rowHeight: 25.4 }
+    print = {
+      type: 'table', key: 'plan.needs', nested: ['shortGoals', 'services'], slots: rowSlots,
+      groupSlots: [['ニーズ', '長期目標', '長期期間'], ['短期目標', '短期期間']],
+      rowsPerPage: 5, rowHeight: 25.4,
+    }
   } else {
     text('利用者名', 'person.name', 29, 25.4, 29, 5)
     date('作成年月日', 'plan.createdDate', 15.2, [234, 250, 265], [10, 8, 8])

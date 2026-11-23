@@ -12,16 +12,26 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   expect(initiallySaved.status).toBe('draft')
   expect(initiallySaved.plan1['plan.overallPolicy']).toBe('地域で安全に暮らせるよう支援する。')
   await addNeed(page)
+  await page.getByRole('button', { name: '空いているニーズ欄（押して編集）', exact: true }).click()
+  const needs = page.getByRole('dialog', { name: '第2表・ニーズの追加と選択' })
+  await expect(needs.getByRole('button', { name: '＋ ニーズを追加' })).toBeEnabled()
+  await needs.getByRole('button', { name: '閉じる', exact: true }).click()
   await addSchedule(page)
   // 第2・3表の氏名は第1表から独立し、生活リズムも保存される。
-  await page.getByRole('textbox', { name: /^利用者名（/ }).fill('確認 花子')
-  await page.getByRole('textbox', { name: /^利用者名（/ }).blur()
-  await page.getByRole('button', { name: '主な日常生活上の活動を編集', exact: true }).click()
+  await page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ }).fill('確認 花子')
+  await page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ }).blur()
+  await page.getByRole('button', { name: '主な日常生活上の活動（押して編集）', exact: true }).first().click()
   const activities = page.getByRole('dialog', { name: '第3表・主な日常生活上の活動', exact: true })
   await activities.getByRole('button', { name: '＋ 生活時間を追加' }).click()
   await activities.getByLabel('時刻').selectOption('7')
-  await activities.getByLabel('本人の生活リズム').fill('朝食')
   await activities.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.getByRole('textbox', { name: '7:00 本人の生活リズム', exact: true }).fill('朝食')
+  await page.getByRole('button', { name: '週単位以外（押して編集）', exact: true }).click()
+  await page.getByRole('button', { name: '＋ 週単位以外を追加', exact: true }).click()
+  const other = page.getByRole('dialog', { name: '第3表・予定の編集', exact: true })
+  await other.getByLabel('第2表のサービス').selectOption({ index: 1 })
+  await other.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.getByRole('textbox', { name: '週単位以外の内容 2', exact: true }).fill('月末に家族と内容を確認')
   await save(page)
   const persisted = await getPlan(page, clientId)
   expect(persisted.hasUnsavedChanges).toBe(false)
@@ -29,17 +39,19 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   expect(new Set(persisted.documents.map((d) => d.latestRevision)).size).toBe(1)
   expect(persisted.needs[0].shortGoals[0].services[0].content).toBe('入浴介助')
   expect(persisted.slots[0]).toMatchObject({ weekday: 1, start: '09:00', end: '10:00' })
+  expect(persisted.slots[1]).toMatchObject({ scheduleType: 'other', note: '月末に家族と内容を確認' })
 
   await page.reload()
   await openPlan(page, ui)
   await expect(page.getByRole('button', { name: '計画を確定', exact: true })).toBeEnabled()
   await expect(policy).toHaveValue('地域で安全に暮らせるよう支援する。')
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
   await table(page, 2)
-  await expect(page.getByRole('button', { name: 'サービス内容（押して編集）', exact: true })).toHaveText('入浴介助')
+  await expect(page.getByRole('textbox', { name: 'サービス内容', exact: true })).toHaveValue('入浴介助')
   await table(page, 3)
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue('確認 花子')
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue('確認 花子')
   await expect(page.getByRole('button', { name: '週間枠（押して編集）', exact: true })).toContainText('09:00')
+  await expect(page.getByRole('textbox', { name: '週単位以外の内容 2', exact: true })).toHaveValue('月末に家族と内容を確認')
 
   const pdfResponse = page.waitForResponse((r) => r.url().includes(`/api/care-plans/${persisted.id}/pdf`))
   const downloading = page.waitForEvent('download')
@@ -57,16 +69,103 @@ test('3表を作成・編集・一括保存し、再表示・PDF・確定・改�
   expect((await getPlan(page, clientId)).status).toBe('confirmed')
   for (const number of [1, 2, 3]) {
     await table(page, number)
-    await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
+    await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toBeDisabled()
     await expect(page.getByRole('button', { name: '書類を保存', exact: true })).toBeDisabled()
   }
-  await page.getByRole('button', { name: 'この計画をもとに改定版を作る' }).click()
+  const openHistory = () => page.getByRole('button', { name: '計画の履歴', exact: true }).click()
+  const history = page.getByRole('dialog', { name: '計画の履歴', exact: true })
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('確定済み')
+  await openHistory()
+  await history.getByRole('button', { name: 'この計画から改定版を作る', exact: true }).click()
   await page.getByRole('dialog', { name: '改定版を作る', exact: true }).getByRole('button', { name: '第1〜3表を作る' }).click()
+  await table(page,1)
   await expect(policy).toBeEditable()
   const revised = await getPlan(page, clientId)
   expect(revised).toMatchObject({ version: 2, status: 'draft', previousPlanId: persisted.id })
   expect(revised.needs[0].shortGoals[0].services[0].id).not.toBe(persisted.needs[0].shortGoals[0].services[0].id)
   expect(revised.slots[0].serviceId).toBe(revised.needs[0].shortGoals[0].services[0].id)
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('第2版')
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('下書き')
+  await policy.fill('改定版で変更した方針')
+  await policy.blur()
+  await expect.poll(async () => (await getPlan(page, clientId)).plan1['plan.overallPolicy']).toBe('改定版で変更した方針')
+  await openHistory()
+  // 表示中の版を選び直しても、未保存の入力を読み直しで消さない。
+  await history.getByRole('button', { name: /^第2版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await openHistory()
+  page.once('dialog', dialog => dialog.dismiss())
+  await history.getByRole('button', { name: /^第1版/ }).click()
+  await expect(history).toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await history.getByRole('button', { name: '閉じる', exact: true }).click()
+  await save(page)
+  await openHistory()
+  await history.getByRole('button', { name: /^第1版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('地域で安全に暮らせるよう支援する。')
+  await expect(policy).toBeDisabled()
+  await expect(page.getByRole('group', { name: '表示中の計画' })).toContainText('第1版')
+  await openHistory()
+  await history.getByRole('button', { name: /^第2版/ }).click()
+  await expect(history).not.toBeVisible()
+  await expect(policy).toHaveValue('改定版で変更した方針')
+  await expect(policy).toBeEditable()
+
+})
+
+test('第2表の用紙で対策を編集し、複数目標の共通サービスを第3表で一度だけ選べる', async ({ page, clientId, ui }) => {
+  await createPlan(page, ui)
+  await addNeed(page)
+  await addSchedule(page)
+  await table(page, 2)
+  const serviceCell = page.getByRole('textbox', { name: 'サービス内容', exact: true })
+  const rowMenu = page.getByRole('button', { name: 'ニーズ1の行の操作', exact: true })
+  const need = page.getByRole('dialog', { name: '第2表・ニーズ 1', exact: true })
+  await serviceCell.click()
+  await expect(serviceCell).toBeFocused()
+  await expect(need).toHaveCount(0)
+  await rowMenu.click()
+  await need.getByRole('button', { name: '＋ 短期目標を追加', exact: true }).click()
+  const laterGoal = need.locator('.cp-goal').nth(1)
+  await laterGoal.getByRole('combobox', { name: '既存のサービスを紐づける', exact: true }).selectOption({ index: 1 })
+  await need.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.getByRole('textbox', { name: '短期目標 2', exact: true }).fill('安全に浴槽へ入る')
+  const frequency = page.getByRole('textbox', { name: '頻度', exact: true })
+  await frequency.nth(1).fill('週2回')
+  await expect(frequency.first()).toHaveValue('週2回')
+  await save(page)
+  const linked = await getPlan(page, clientId)
+  expect(linked.needs[0].shortGoals[1].services[0].id).toBe(linked.slots[0].serviceId)
+  expect(linked.slots).toHaveLength(1)
+  await table(page, 3)
+  await page.getByRole('button', { name: '週間枠（押して編集）', exact: true }).first().click()
+  await page.getByRole('dialog', { name: '第3表・予定の追加と選択' }).getByRole('button', { name: /^月 09:00/ }).click()
+  const choices = page.getByRole('dialog', { name: '第3表・予定の編集' }).getByLabel('第2表のサービス')
+  await expect(choices.getByRole('option', { name: /入浴介助.*週2回.*手すりを使う.*安全に浴槽へ入る/ })).toHaveCount(1)
+  await page.getByRole('dialog', { name: '第3表・予定の編集' }).getByRole('button', { name: '閉じる', exact: true }).click()
+
+  await table(page, 2)
+  await serviceCell.nth(1).click()
+  await expect(serviceCell.nth(1)).toBeFocused()
+  await rowMenu.click()
+  await need.locator('.cp-goal').first().getByRole('button', { name: 'この目標との紐づけを外す', exact: true }).click()
+  await need.getByRole('button', { name: '閉じる', exact: true }).click()
+  await save(page)
+  const unlinked = await getPlan(page, clientId)
+  expect(unlinked.needs[0].shortGoals[0].services).toHaveLength(0)
+  expect(unlinked.slots).toEqual(linked.slots)
+
+  await rowMenu.click()
+  const confirmation = page.waitForEvent('dialog')
+  const removing = laterGoal.getByRole('button', { name: 'サービスを削除', exact: true }).click()
+  const warning = await confirmation
+  expect(warning.message()).toContain('第3表の予定も1件削除')
+  await warning.dismiss()
+  await removing
+  await need.getByRole('button', { name: '閉じる', exact: true }).click()
+  await expect(serviceCell).toHaveValue('入浴介助')
 })
 
 test('未保存の移動・保存失敗・PDFの長文エラーで成功扱いにせず再試行できる', async ({ page, clientId, ui }) => {
@@ -119,19 +218,22 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   let assessmentTop = 0
   if (ui === 'pc') {
     assessmentTop = (await page.locator('.sheet-toolbar').boundingBox())!.y
-    const entry = page.getByRole('button', { name: 'ケアプランを作成', exact: true })
-    expect(await entry.evaluate((e) => e.closest('[role="tablist"]') === null)).toBe(true)
+    const entry = page.getByRole('tab', { name: 'ケアプラン', exact: true })
+    expect(await entry.evaluate((e) => e.closest('[role="tablist"]') !== null)).toBe(true)
     const entryBox = (await entry.boundingBox())!
-    expect(entryBox.x).toBeGreaterThan(viewport.width * .7)
+    expect(entryBox.x).toBeLessThan(viewport.width * .7)
   }
   await createPlan(page, ui)
   const initialCanvas = (await page.locator('.cp-canvas').boundingBox())!
   expect(initialCanvas.y).toBeLessThan(ui === 'pad' ? viewport.height * .45 : viewport.height - 220)
-  await expect(page.getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
-  if (ui === 'pc') expect(Math.abs((await page.locator('.sheet-toolbar').boundingBox())!.y - assessmentTop)).toBeLessThan(2)
+  await expect(page.locator('.cp-plan-paper[data-current=true]').getByRole('textbox', { name: /^利用者名（/ })).toHaveValue(clientName)
+  // CIのLinuxでは上部の描画寸法に2px差が出る。そこまでを許容し、大きな配置ずれは検出する。
+  if (ui === 'pc') expect(Math.abs((await page.locator('.cp-area-tabs').boundingBox())!.y - assessmentTop)).toBeLessThanOrEqual(2)
   const metrics = { browser: browser.version(), project: info.project.name, viewport, displays: [] as unknown[] }
   for (const number of [1, 2, 3]) {
     await table(page, number)
+    // 各表で同じ3表一括保存を重複表示しない。
+    await expect(page.locator('.cp-work').getByRole('button', { name: /^(書類を保存|保存)$/ })).toHaveCount(1)
     const image = page.locator('.cp-canvas img').first()
     await expect(image).toBeVisible()
     await expect.poll(() => image.evaluate((e: HTMLImageElement) => e.complete && e.naturalWidth > 0)).toBe(true)
@@ -140,7 +242,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
     expect(canvas.width).toBeGreaterThan(600)
     if (ui === 'pc') {
       const assistant = (await page.locator('.assistant-panel').boundingBox())!
-      const nav = (await page.locator('.cp-nav').boundingBox())!
+      const nav = (await page.locator('.cp-area-tabs').boundingBox())!
       expect(nav.x + nav.width).toBeLessThan(canvas.x)
       expect(canvas.x + canvas.width).toBeLessThan(assistant.x)
     }
@@ -174,7 +276,7 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   await page.getByRole('button', { name: '小さくする', exact: true }).click()
   await expect(page.locator('.sheet-zoom')).toContainText('100%')
-  await page.getByRole('button', { name: '予定を追加・編集', exact: true }).click()
+  await page.getByRole('button', { name: '週間予定（押して編集）', exact: true }).first().click()
   const dialog = page.getByRole('dialog', { name: '第3表・予定の追加と選択', exact: true })
   await expect(dialog).toBeVisible()
   const box = (await dialog.boundingBox())!
@@ -186,38 +288,41 @@ test('実際のviewportで3表・拡大・ダイアログが欠けず、上部�
 })
 
 
-test('候補ありAI原案を再開し、サービスと週間予定を対応付けて適用・保存する', async ({ page, clientId, ui }) => {
-  let generations = 0
-  page.on('request', (request) => { if (request.method() === 'POST' && /\/ai-drafts$/.test(request.url())) generations++ })
-  const client = await (await page.request.get(`/api/clients/${clientId}`, { headers })).json()
-  const documentId = client.client.documents.find((d: { kind: string }) => d.kind === 'assessment').id
-  const saved = await page.request.post(`/api/documents/${documentId}/save`, { headers, data: { scope: 'document' } })
-  expect(saved.ok()).toBeTruthy()
+test('左側は用紙の選択だけにし、確定は保存の横から明示的に行う', async ({ page, ui }) => {
   await createPlan(page, ui)
+  const nav = page.getByRole('tablist', { name: 'ケアプランの書類' })
+  await expect(nav.getByRole('tab')).toHaveCount(7)
+  await expect(nav.locator('select')).toHaveCount(0)
+  for (const name of ['読み直す', 'AI原案を作る', '計画を確定', '＋ 計画を作る']) {
+    await expect(nav.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  const context = page.getByRole('group', { name: '表示中の計画' })
+  await expect(context).toContainText('第1版')
+  await expect(context).toContainText('下書き')
+  await expect(context).toContainText('2026-04-01 〜 終了日未設定')
+  await expect(page.getByRole('button', { name: /^(ニーズ|予定)を追加・編集$/ })).toHaveCount(0)
+  await expect(page.getByText('計画メニュー', { exact: true })).toHaveCount(0)
+  const historyButton = page.getByRole('button', { name: '計画の履歴', exact: true })
+  await expect(historyButton).toBeVisible()
+  await expect(page.locator('.cp-canvas').getByRole('button', { name: '計画の履歴', exact: true })).toHaveCount(0)
+  if (ui === 'pc') {
+    const createBox = (await page.getByRole('tab', { name: 'ケアプラン', exact: true }).boundingBox())!
+    const historyBox = (await historyButton.boundingBox())!
+    expect(historyBox.x).toBeGreaterThanOrEqual(createBox.x + createBox.width)
+    expect(Math.abs(historyBox.y + historyBox.height / 2 - createBox.y - createBox.height / 2)).toBeLessThan(2)
+  }
+
+  const toolbar = page.locator('.sheet-toolbar')
+  await expect(toolbar.getByRole('button', { name: '書類を保存', exact: true })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeDisabled()
   await save(page)
-  await page.getByRole('button', { name: 'AI原案を作る', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '保存済みアセスメントからAI原案を作る', exact: true })
-  await dialog.getByLabel('参照するアセスメント').selectOption({ index: 1 })
-  await dialog.getByRole('button', { name: '原案を作る', exact: true }).click()
-  await expect(dialog).toContainText('第3表の候補：架空の入浴介助')
-  await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
-  await page.getByRole('button', { name: '前回のAI原案を開く', exact: true }).click()
-  await expect(dialog).toContainText('架空の方針：自宅で安全に暮らす')
-  expect(generations).toBe(1)
-  await dialog.getByRole('button', { name: 'この原案を入力する', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page.getByRole('status').filter({ hasText: 'AI原案を3項目入力しました' })).toBeVisible()
-  let plan = await getPlan(page, clientId)
-  expect(plan.slots).toHaveLength(1)
-  expect(plan.slots[0].serviceId).toBe(plan.needs[0].shortGoals[0].services[0].id)
-  expect(plan.status).toBe('draft')
-  await save(page)
-  await page.reload()
-  await openPlan(page, ui)
-  await table(page, 3)
-  plan = await getPlan(page, clientId)
-  expect(plan.slots[0].start).toBe('09:00')
-  expect(plan.hasUnsavedChanges).toBe(false)
+  await expect(toolbar.getByRole('button', { name: '計画を確定', exact: true })).toBeEnabled()
+  const order = await toolbar.locator('.sheet-save-actions > button').allTextContents()
+  expect(order.slice(-2)).toEqual(['保存', '計画を確定'])
+  const saveBox = (await toolbar.getByRole('button', { name: '書類を保存', exact: true }).boundingBox())!
+  const confirmBox = (await toolbar.getByRole('button', { name: '計画を確定', exact: true }).boundingBox())!
+  expect(Math.abs(saveBox.y + saveBox.height / 2 - confirmBox.y - confirmBox.height / 2)).toBeLessThan(2)
+  expect(confirmBox.x).toBeGreaterThanOrEqual(saveBox.x + saveBox.width)
 })
 
 test('ケアプランとの往復で相談履歴と参照元を保つ', async ({ page, clientId, ui }) => {

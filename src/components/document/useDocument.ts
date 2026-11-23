@@ -73,6 +73,7 @@ export function useDocument(docId: string | undefined) {
   /** 直せなかった理由（数秒だけ出す） */
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [unheard, setUnheard] = useState<{ id: string, name: string }[]>([])
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const retried = useRef(false)
   const active = useRef(docId)
@@ -99,8 +100,9 @@ export function useDocument(docId: string | undefined) {
   const load = useCallback(async () => {
     if (!docId) return
     try {
-      const { document } = await api.document(docId)
+      const { document, unheardTopics } = await api.document(docId)
       publish(document)
+      if (active.current === docId) setUnheard(unheardTopics ?? [])
       if (active.current === docId && refs.current.form?.id !== document.formVersionId) {
         const v = await api.formVersion(document.formVersionId)
         if (active.current === docId && refs.current.doc?.formVersionId === v.id) {
@@ -121,11 +123,19 @@ export function useDocument(docId: string | undefined) {
   useEffect(() => {
     setDoc(null)
     setError('')
+    setUnheard([])
     setDrafts(new Map())
     setEraDrafts(new Map())
     setReasons(new Map())
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!conflicts.size) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [conflicts.size])
 
   // ---------- 今の値（サーバーの値に、まだ送っていない直しを当てたもの） ----------
   const local = useMemo(() => {
@@ -236,7 +246,7 @@ export function useDocument(docId: string | undefined) {
         if (active.current === docId) {
           setError('')
         }
-        return true
+        return pending.conflicts.size === 0
       } catch (e) {
         if (active.current === docId) setError(String((e as Error).message))
         return false
@@ -430,6 +440,7 @@ export function useDocument(docId: string | undefined) {
     if (!docId || !(await flush()) || pending.conflicts.size) return false
     try {
       const r = await api.save(docId, body)
+      setError('')
       publish(r.document)
       return true
     } catch (e) {
@@ -496,6 +507,8 @@ export function useDocument(docId: string | undefined) {
   }, [pages, diffOf])
 
   return {
+    /** 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの */
+    unheard,
     doc, form, pages, slotPage, current, saved, rendered, renderedSaved, marks, counts, total, updates, updatedFields, notice, error,
     pendingCount: slotQueue.length + fieldQueue.size + conflicts.size,
     conflicts, resolveConflict,

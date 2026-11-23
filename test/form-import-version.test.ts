@@ -5,6 +5,7 @@ import { checkBindings, renderSlot, editSlot, type Binding } from '../core/bindi
 import type { DraftSlot, LocalField } from '../worker/form-import/draft.ts'
 import type { PageDraft } from '../worker/form-import/convert.ts'
 import { buildVersion } from '../worker/form-import/version.ts'
+import { checkDraftVersion } from '../worker/form-import/check.ts'
 
 const slot = (label: string, ui: DraftSlot['ui'], ref: string | null, more: Partial<DraftSlot> = {}): DraftSlot =>
   ({ x: 10, y: 10, w: 20, h: 4, ui, ref, label, confidence: 1, ...more })
@@ -103,4 +104,66 @@ test('事業所だけの欄: 定義をまとめて local_fields にする。印�
     { slot: 'p1_存在しない', reason: '値の一覧にない key なので、事業所だけの欄にした（nothing.here）' },
     { slot: '', reason: 'local.meetingPlace の定義がページで違う（先の定義を使う）' },
   ])
+})
+
+// #147: 点線で区切った時間割の行（ケアプラン第 3 表など）。一覧の行を、曜日と時刻の範囲で選ぶ
+test('一覧の行を条件（範囲を含む）で選ぶ欄は、条件に合う行をすべて改行でつなぐ join@1 にする。1 桁の時は 2 桁にそろえる', () => {
+  const v = buildVersion([page(1, [
+    slot('月 9:00', 'text', 'plan.weekly[day=月,start=9:00〜10:00].service'),
+    slot('火 22:00', 'text', 'plan.weekly[day=火,start=22:00~23:00].service'),
+  ])])
+  assert.deepEqual(v.bindings['p1_月9:00'], {
+    op: 'join@1', ui: 'text', ref: { key: 'plan.weekly' },
+    where: { day: { eq: '月' }, start: { between: ['09:00', '10:00'] } }, show: 'service', sep: '\n',
+  })
+  assert.deepEqual((v.bindings['p1_火22:00'] as Extract<Binding, { op: 'join@1' }>).where.start, { between: ['22:00', '23:00'] })
+  assert.deepEqual(v.review, [])
+  const values = { 'plan.weekly': [
+    { day: '月', start: '09:30', end: '10:30', service: '入浴介助' },
+    { day: '月', start: '09:00', end: '09:45', service: '服薬確認' },
+    { day: '月', start: '10:00', end: '11:00', service: '通所介護' },
+    { day: '火', start: '09:30', end: '10:30', service: '訪問看護' },
+  ] }
+  assert.equal(renderSlot(v.bindings['p1_月9:00'], values), '入浴介助\n服薬確認', '始まりが 9 時台の月曜の予定だけ。10:00 ちょうどは次の行')
+  assert.equal(renderSlot(v.bindings['p1_火22:00'], values), '')
+})
+
+test('条件で行を選ぶ欄: 一覧にない項目の名前は、値の一覧にない key として事業所だけの欄にする', () => {
+  const v = buildVersion([page(1, [slot('月 9:00', 'text', 'plan.weekly[weekday=月,start=09:00〜10:00].service')])])
+  assert.equal(v.bindings['p1_月9:00'].ref.key, 'local.p1_1')
+  assert.equal(v.review.length, 1)
+})
+
+test('等しいだけの条件を 2 つ書いた欄は、その両方に合う行（1 行）を読む', () => {
+  const v = buildVersion([page(1, [slot('月 9:00', 'text', 'plan.weekly[day=月,start=09:00].service')])])
+  assert.deepEqual(v.bindings['p1_月9:00'], { op: 'text@1', ui: 'text', ref: { key: 'plan.weekly', path: [{ match: { day: '月', start: '09:00' } }, 'service'] } })
+})
+
+// #128: 図欄（家族構成図・家屋見取図・身体図）。手で作った版（forms/seed/assessment）と同じ、image の印字欄と diagram@1 にする
+test('図の枠（ui: diagram）は、pdfme の image の欄と diagram@1 にし、版の確かめを通る', () => {
+  const v = buildVersion([page(2, [slot('家族構成図', 'diagram', 'family.genogram', { w: 75, h: 56 })])])
+  assert.deepEqual(v.bindings['p2_家族構成図'], { op: 'diagram@1', ui: 'diagram', ref: { key: 'family.genogram' } })
+  const [s] = v.schemas[0]
+  assert.deepEqual([s.type, s.content, s.position, s.width, s.height], ['image', '', { x: 10, y: 10 }, 75, 56])
+  assert.deepEqual(v.review, [])
+  assert.deepEqual(checkDraftVersion(v), [])
+})
+
+test('図の key を文字の欄（text・area）で答えても、図の欄にする', () => {
+  const v = buildVersion([page(3, [slot('見取図', 'area', 'housing.floorPlan'), slot('障害等の部位', 'text', 'health.bodyMap')])])
+  assert.deepEqual(Object.values(v.bindings).map((b) => [b.op, b.ui, b.ref.key]), [['diagram@1', 'diagram', 'housing.floorPlan'], ['diagram@1', 'diagram', 'health.bodyMap']])
+  assert.deepEqual(v.schemas[0].map((s) => s.type), ['image', 'image'])
+  assert.deepEqual(checkDraftVersion(v), [])
+})
+
+test('図の枠に図でない key・ない key を答えたら、複数行の文字の欄にして要確認', () => {
+  const v = buildVersion([page(1, [slot('生活歴', 'diagram', 'person.lifeHistory'), slot('地図', 'diagram', 'local.map')], [{ key: 'local.map', label: '地図', type: 'text' }])])
+  assert.deepEqual(v.bindings['p1_生活歴'], { op: 'text@1', ui: 'area', ref: { key: 'person.lifeHistory' } })
+  assert.deepEqual(v.bindings['p1_地図'], { op: 'text@1', ui: 'area', ref: { key: 'local.map' } })
+  assert.deepEqual(v.schemas[0].map((s) => s.type), ['text', 'text'])
+  assert.deepEqual(v.review, [
+    { slot: 'p1_生活歴', reason: '図の欄ではない key なので、文字の欄にした（person.lifeHistory）' },
+    { slot: 'p1_地図', reason: '図の欄ではない key なので、文字の欄にした（local.map）' },
+  ])
+  assert.deepEqual(checkDraftVersion(v), [])
 })

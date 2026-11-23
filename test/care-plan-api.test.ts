@@ -64,7 +64,7 @@ interface NeedBody {
   id: string
   need: string
   longGoal: { id: string, goal: string, periodText: string | null, periodFrom: string | null, periodTo: string | null }
-  shortGoals: { id: string, goal: string, services: { id: string, content: string }[] }[]
+  shortGoals: { id: string, goal: string, services: { id: string, content: string, insured: boolean }[] }[]
 }
 interface DraftBody {
   draft: {
@@ -389,6 +389,72 @@ test('第2表は stable ID のまま並べ替えられ、baseVersion と期間�
   assert.equal(badPeriod.status, 422)
 })
 
+test('第2表の保険給付は明示した場合だけ新規行を対象にし、省略更新では登録済みの区分を保つ', { skip }, async () => {
+  const plan = await createPlan(clients.sato)
+  const path = `/api/care-plans/${plan.id}/needs`
+  const [need] = needPayload()
+  const [firstGoal, ...otherGoals] = need.shortGoals
+  const needs = [{ ...need, shortGoals: [
+    { ...firstGoal, services: [...firstGoal.services, { content: '家族の見守り', kind: '家族による援助' }] },
+    ...otherGoals,
+  ] }]
+  const first = await put(path, { baseVersion: plan.lockVersion, needs })
+  assert.equal(first.status, 200, JSON.stringify(first.body))
+  const saved = first.body.plan
+  const services = saved.needs[0].shortGoals[0].services
+  assert.deepEqual(services.map((s: { insured: boolean }) => s.insured), [true, false])
+  for (const service of services) delete service.insured
+  const next = await put(path, { baseVersion: saved.lockVersion, needs: saved.needs })
+  assert.equal(next.status, 200, JSON.stringify(next.body))
+  assert.deepEqual(next.body.plan.needs[0].shortGoals[0].services.map((s: { insured: boolean }) => s.insured), [true, false])
+})
+
+test('同じサービスを複数の目標に紐づけても月間予定は1件ずつで、改定・紐づけ解除後も予定を保つ', { skip }, async () => {
+  let plan = await createPlan(clients.sato)
+  const path = `/api/care-plans/${plan.id}`
+  const initial = await put(`${path}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })
+  assert.equal(initial.status, 200)
+  plan = initial.body.plan
+  const needs = structuredClone(plan.needs!)
+  const service = needs[0].shortGoals[0].services[0]
+  const other = needPayload('（別のニーズ）')[0]
+  const additionalNeed = { ...other, shortGoals: [{ ...other.shortGoals[0], services: [service] }] }
+  const invalid = await put(`${path}/needs`, {
+    baseVersion: plan.lockVersion,
+    needs: [...needs, { ...additionalNeed, shortGoals: [{ ...additionalNeed.shortGoals[0], services: [{ ...service, content: '別の内容' }] }] }],
+  })
+  assert.equal(invalid.status, 422)
+  assert.match(JSON.stringify(invalid.body), /inconsistent_shared_service/)
+  const linked = await put(`${path}/needs`, { baseVersion: plan.lockVersion, needs: [...needs, additionalNeed] })
+  assert.equal(linked.status, 200, JSON.stringify(linked.body))
+  plan = linked.body.plan
+  assert.equal(plan.needs![1].shortGoals[0].services[0].id, service.id)
+  const scheduled = await put(`${path}/schedule`, {
+    baseVersion: plan.lockVersion,
+    slots: [{ serviceId: service.id, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '09:25' }],
+  })
+  assert.equal(scheduled.status, 200)
+  const saved = await savePlan(scheduled.body.plan)
+  assert.equal(saved.status, 200)
+  const confirmed = await post(`${path}/confirm`, { baseVersion: saved.body.plan.lockVersion })
+  assert.equal(confirmed.status, 200)
+
+  const preview = await post(`/api/clients/${plan.clientId}/care-plan-months/preview`, { planId: plan.id, month: '2026-06' })
+  assert.equal(preview.status, 200, JSON.stringify(preview.body))
+  assert.equal(preview.body.entries.length, 5)
+  assert.ok(preview.body.entries.every((entry: { serviceId: string }) => entry.serviceId === service.id))
+
+  const copy = await createPlan(plan.clientId, { copyFromPlanId: plan.id })
+  const copiedNeeds = copy.needs!
+  const copiedId = copiedNeeds[0].shortGoals[0].services[0].id
+  assert.notEqual(copiedId, service.id)
+  assert.equal(copiedNeeds[1].shortGoals[0].services[0].id, copiedId)
+  const unlinked = await put(`/api/care-plans/${copy.id}/needs`, { baseVersion: copy.lockVersion, needs: copiedNeeds.slice(1) })
+  assert.equal(unlinked.status, 200, JSON.stringify(unlinked.body))
+  assert.equal(unlinked.body.plan.needs[0].shortGoals[0].services[0].id, copiedId)
+  assert.deepEqual(unlinked.body.plan.slots, copy.slots)
+})
+
 test('保存は3表の版を一度に作り、第2表の射影は汎用の欄の直しから守る', { skip }, async () => {
   const plan = await createPlan(clients.sato)
   const withNeeds = (await put(`/api/care-plans/${plan.id}/needs`, { baseVersion: plan.lockVersion, needs: needPayload() })).body as { plan: PlanBody }
@@ -460,7 +526,12 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
     needs: [{
       need: 'AI が見つけたニーズ',
       longGoal: { goal: 'AI の長期目標', periodText: '2026年4月〜2027年3月' },
-      shortGoals: [{ goal: 'AI の短期目標', services: [{ content: '訪問介護', insured: true, kind: '訪問介護', frequency: '週1回' }] }],
+      shortGoals: [{ goal: 'AI の短期目標', services: [
+        { content: '訪問介護', insured: true, kind: '訪問介護', frequency: '週1回' },
+        { content: '家族の支援', insured: false },
+        { content: '型が不正なサービス', insured: 'false' },
+        { content: '保険区分のないサービス' },
+      ] }],
     }],
     conflicts: [],
   }
@@ -490,6 +561,12 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
   assert.ok(after.applied.skipped.some((s) => s.target === 'plan.overallPolicy' && s.reason === 'human_value'))
   assert.equal(after.plan.needs?.length, 1)
   assert.equal(after.plan.needs?.[0].need, 'AI が見つけたニーズ')
+  assert.deepEqual(after.plan.needs?.[0].shortGoals[0].services.map((s) => [
+    s.content, s.insured,
+  ]), [['訪問介護', true], ['家族の支援', false]])
+  assert.deepEqual(after.applied.skipped.filter((s) => s.reason === 'invalid_value').map((s) => s.target), [
+    'needs[0].shortGoals[0].services[2].insured', 'needs[0].shortGoals[0].services[3].insured',
+  ])
 
   // もう一度適用しても、同じニーズは増えない
   const again = await post(`/api/care-plans/${plan.id}/ai-drafts/${draft.id}/apply`, { baseVersion: after.plan.lockVersion })
@@ -660,7 +737,7 @@ test('AI週間候補は今回作ったサービスだけに対応付け、時刻
   const ref = { need: 0, shortGoal: 0, service: 0 }
   const slot = { serviceRef: ref, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '10:00' }
   aiProposal = {
-    plan1: {}, needs: [{ need: '週間候補の架空ニーズ', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴支援' }] }] }],
+    plan1: {}, needs: [{ need: '週間候補の架空ニーズ', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴支援', insured: true }] }] }],
     slots: [slot, slot, { ...slot, start: '10:00', end: '09:00' }, { ...slot, serviceRef: { ...ref, service: 5 } },
       { ...slot, serviceRef: undefined, serviceId: randomUUID() }, { serviceRef: ref, scheduleType: 'other', note: '月1回の確認' }],
   }

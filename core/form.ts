@@ -35,11 +35,13 @@ export interface FormPage {
   width: number
   height: number
   /** 保存値から印字時だけ展開する。様式の種類ではなく、この宣言で改ページを決める。 */
-  print?: { type: 'text' } | {
+  print?: { type: 'text' } | { type: 'flow', slots: string[] } | { type: 'sections', slots: string[], list?: { key: string, rowsPerPage: number } } | {
     type: 'table'
     key: string
     nested: string[]
     slots: string[]
+    /** 親から順に、同じ項目の続きでは同じページ内で再掲しない欄。 */
+    groupSlots?: string[][]
     rowsPerPage: number
     rowHeight: number
   } | {

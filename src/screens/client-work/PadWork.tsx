@@ -1,3 +1,4 @@
+import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // iPad ②③ 用紙（キャンバス PadWork・PadRec）と、録音から用紙へ書く流れ A〜E（PadFlow1〜5）。
 // iPad でできることは 2 つだけ: 録音するかしないか、用紙を書き換えるか。
 import { useEffect, useRef, useState } from 'react'
@@ -11,7 +12,7 @@ import { linkProps } from '../../lib/router.tsx'
 import { pickDocument, useFormKinds } from '../../components/document/useFormKinds.ts'
 import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { countText } from '../../components/document/changes.ts'
-import { CarePlanWork, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
 
 export function PadWork({ clientId }: { clientId: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -80,12 +81,20 @@ export function PadWork({ clientId }: { clientId: string }) {
   const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
   const batchLabel = doc?.batches[0]?.label ?? 'AI 書き込み'
 
-  if (carePlanOpen) return <CarePlanWork clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
+
+  if (carePlanOpen) return <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
 
   return (
     <div className="pad" style={{ width: '100%', height: '100dvh', boxSizing: 'border-box', overflow: 'hidden', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#E9EBEF', fontSize: 16, lineHeight: 1.6, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', position: 'relative', zIndex: 10 }}>
-        <a className="tb" {...linkProps('/')} style={{ border: 0, padding: '10px 6px', color: '#2453C4', fontWeight: 500 }}>
+        <a className="tb" {...linkProps('/')} onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+          if (state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
+            e.preventDefault()
+            return
+          }
+          linkProps('/').onClick(e)
+        }} style={{ border: 0, padding: '10px 6px', color: '#2453C4', fontWeight: 500 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者
         </a>
         <div style={{ fontSize: 19, fontWeight: 700, whiteSpace: 'nowrap' }}>{client ? `${client.name} さん` : ''}</div>
@@ -102,12 +111,12 @@ export function PadWork({ clientId }: { clientId: string }) {
         )}
         {docOpen && (
           <div role="menu" style={{ position: 'absolute', left: 150, top: 64, width: 380, background: '#FFFFFF', borderRadius: 16, boxShadow: '0 12px 36px rgba(20,24,32,0.28)', padding: 8, display: 'flex', flexDirection: 'column', zIndex: 20 }}>
-            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && (k.perClient === 'one' || client?.documents.some((d) => d.kind === k.key))).map((k) => (
+            {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
               <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
             ))}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
             <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る（{client?.name}さんの今の情報から AI が書き込みます）</div>
-            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
+            {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && k.available && k.perClient === 'many' && !(['care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7'].includes(k.key) && client?.documents.some((d) => d.kind === k.key))).map((k) => (
               <button key={k.key} className="toc" role="menuitem" type="button" onClick={() => void openDoc(k.key, { create: true })}>＋ {k.name}</button>
             ))}
             {newDocMenu.map((d) => (
@@ -115,7 +124,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             ))}
             <div className="care-plan-menu-section">
               <div className="care-plan-menu-title">ケアプラン</div>
-              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
+              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>ケアプラン</button>}
             </div>
           </div>
         )}
@@ -163,7 +172,7 @@ export function PadWork({ clientId }: { clientId: string }) {
       )}
       {recorder.phase === 'error' && (
         <div role="alert" className="strip" style={{ background: '#FDE8E7', color: '#A3261C' }}>
-          <div style={{ flex: '1 1 auto' }}>{recorder.error}。録音は iPad に残っています。通信状態を確認して再試行してください。</div>
+          <div style={{ flex: '1 1 auto' }}>{recorder.error}</div>
           <button type="button" onClick={recorder.retry} disabled={recorder.busy} className="tb">再試行</button>
           <button type="button" onClick={recorder.reset} style={{ font: 'inherit', fontSize: 15, fontWeight: 700, border: 0, background: 'transparent', color: '#A3261C', minHeight: 44 }}>閉じる</button>
         </div>
@@ -221,7 +230,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             <button type="button" onClick={() => void recorder.stop()} className="pill" style={{ pointerEvents: 'auto', border: 0, background: '#D93A2B', color: '#FFFFFF', cursor: 'pointer', boxShadow: '0 8px 24px rgba(217,58,43,0.35)' }}><span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 3, background: '#FFFFFF' }} />止める<span style={{ fontWeight: 500, fontSize: 18, opacity: 0.9 }}>{recorder.elapsed}</span></button>
           </>
         ) : phase === 'idle' || phase === 'done' ? (
-          <button type="button" onClick={() => { void recorder.start(); setTab('') }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
+          <button type="button" onClick={() => { void recorder.start(docId) }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
         ) : null}
       </div>
     </div>

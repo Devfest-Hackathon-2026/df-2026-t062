@@ -4,14 +4,14 @@ import { fieldDict } from '../../core/dictionary.ts'
 import { summaryTopics, topicsFor, type Topic, type OfficeTopics } from '../../core/topics.ts'
 import { loadFormDef } from '../../db/forms.ts'
 import { prepareWriterValues } from '../job-values.ts'
-import type { WorkerDeps } from '../jobs.ts'
+import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
 import { ZERO_USAGE, type Usage, type SummaryLine, type Summarizer } from '../types.ts'
 import { unresolvedFieldKeys } from './review.ts'
 import { DocumentReadError, readDocument } from './read.ts'
 
 const MAX_ATTEMPTS = 3
 class LeaseLost extends Error {}
-export async function runDocumentInput(deps: WorkerDeps, id: string) {
+export async function runDocumentInput(deps: WorkerDeps, id: string, context?: WorkerContext) {
   const db = await deps.db()
   const token = randomUUID()
   const row = (await db.query(`UPDATE document_inputs SET status='processing',attempts=attempts+1,run_token=$2,
@@ -82,10 +82,12 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     }) : { values: {}, usage: ZERO_USAGE, failed: [], incompleteFields: [] }
     const { proposed, droppedFields } = prepareWriterValues(written.values, fieldDict(form.localFields))
     const allowed = new Set(writableForm.keys)
-    const candidates = []
+    const adopted = new Set<string>(row.adopted)
+    const previous = row.result as DocumentInputResult | null
+    const candidates = previous?.candidates.filter((candidate) => adopted.has(candidate.key)) ?? []
     const missingEvidence: string[] = []
     for (const [key, proposal] of Object.entries(proposed)) {
-      if (!allowed.has(key) || proposal.value == null) continue
+      if (adopted.has(key) || !allowed.has(key) || proposal.value == null) continue
       const references = proposal.cite && !Array.isArray(proposal.cite) ? proposal.cite.ids : []
       const referenced = references.map((reference) => summaries.find((summary) => summary.id === reference))
       const cite = [...new Set(referenced.flatMap((summary) => summary ? bundle?.sourceIds?.[summary.topic] ?? [] : []))]
@@ -110,7 +112,7 @@ export async function runDocumentInput(deps: WorkerDeps, id: string) {
     const kind = e instanceof DocumentReadError ? e.kind : 'processing_failed'
     await update('status=$3,error_kind=$4,run_token=NULL,lease_until=NULL', [e instanceof DocumentReadError || row.attempts >= MAX_ATTEMPTS ? 'failed' : 'queued', kind])
     // 原文やモデル応答を含みうる例外はログに渡さない。
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'document input failed', id, error: kind }))
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'document input failed', id, error: kind }))
     if (!(e instanceof DocumentReadError)) throw new Error('document_input_retry')
   } finally { clearInterval(heartbeat) }
 }

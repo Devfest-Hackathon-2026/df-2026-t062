@@ -10,12 +10,20 @@ import { fieldDict } from '../core/dictionary.ts'
 import { validValue } from '../core/schema.ts'
 import { applyChanges, editSlot, slotKeys, type Values, type Who } from '../core/slots.ts'
 import { loadFormDef, publishedVersionId } from './forms.ts'
-import { kindOf, primaryKind } from './kinds.ts'
+import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
+import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
+import { setRecordingRetentionOnComplete, setRecordingSuccessRetention } from './recording-retention.ts'
 
 type Q = Db | Tx
 
 export interface Staff { id: string, officeId: string, name: string, email: string | null, role: string, officeName: string }
+
+const auditContexts = new WeakMap<Staff, AuditContext>()
+
+export function auditContextOf(staff: Staff | null | undefined): AuditContext | undefined {
+  return staff ? auditContexts.get(staff) : undefined
+}
 
 export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource, documentSource?: DocumentSource }
 export interface SavedRow { value: unknown, by: Who }
@@ -42,20 +50,36 @@ export class Forbidden extends Error {}
 // ---------- 職員 ----------
 
 /** ログインした職員。止めた職員（disabled_at あり）は null（リクエストのたびに DB から読むので、止めたらすぐ効く） */
-export async function staffByAuth(db: Q, authUid: string, email?: string, allowEmailMatch = false): Promise<Staff | null> {
+export async function staffByAuth(db: Q, authUid: string, email?: string, allowEmailMatch = false, auditContext?: AuditContext): Promise<Staff | null> {
   const sql = `SELECT s.id, s.office_id, s.name, s.email, s.role, o.name AS office_name
                FROM staff s JOIN offices o ON o.id = s.office_id
                WHERE (s.auth_uid = $1 ${allowEmailMatch ? 'OR (s.email IS NOT NULL AND s.email = $2)' : ''}) AND s.disabled_at IS NULL LIMIT 1`
   const r = await db.query(sql, allowEmailMatch ? [authUid, email ?? ''] : [authUid])
   const s = r.rows[0]
-  return s ? { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name } : null
+  if (!s) return null
+  const staff = { id: s.id, officeId: s.office_id, name: s.name, email: s.email, role: s.role, officeName: s.office_name }
+  if (auditContext) auditContexts.set(staff, auditContext)
+  return staff
 }
 
-export async function audit(db: Q, staff: Staff | null, officeId: string, action: string, ids: { clientId?: string, documentId?: string }, detail: Record<string, unknown> = {}) {
-  await db.query(
-    'INSERT INTO audit_events (office_id, staff_id, client_id, document_id, action, detail) VALUES ($1,$2,$3,$4,$5,$6)',
-    [officeId, staff?.id ?? null, ids.clientId ?? null, ids.documentId ?? null, action, JSON.stringify(detail)],
-  )
+export async function audit(
+  db: Q,
+  staff: Staff | null,
+  officeId: string | null,
+  action: string,
+  ids: { clientId?: string, documentId?: string },
+  detail: Record<string, unknown> = {},
+  context: AuditContext & { outcome?: AuditOutcome } = {},
+) {
+  await writeBusinessAudit(db, {
+    officeId,
+    actorStaffId: staff?.id ?? null,
+    action,
+    ids,
+    detail,
+    outcome: context.outcome,
+    context: { ...auditContextOf(staff), ...context },
+  })
 }
 
 // ---------- 利用者 ----------
@@ -444,11 +468,11 @@ export async function recordExport(db: Q, staff: Staff, documentId: string, rev:
 export interface ApplyInput {
   officeId: string
   documentId: string
-  kind: 'recording' | 'copy' | 'seed'
+  kind: 'recording' | 'copy' | 'seed' | 'fill'
   label: string
   jobId?: string
   /** Worker の今回の実行。ジョブ完了と用紙への反映を同じ transaction で確定する */
-  completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown> }
+  completion?: { token: string, status: 'succeeded' | 'partial', steps: Record<string, unknown>, auditContext?: AuditContext }
   proposed: Record<string, { value: unknown, cite?: Cite }>
   /** プログラムが決める欄の値（1 回目の録音の日をアセスメント実施日にする、など） */
   system?: Record<string, unknown>
@@ -468,6 +492,7 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       if (old) {
         const plan: BatchPlan = { changes: old.changes, kept: old.kept, skipped: [] }
         await finishJob(c, input, old.id, plan)
+        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion?.auditContext })
         return { batchId: old.id as string, plan }
       }
     }
@@ -480,7 +505,10 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
     const plan = planBatch(current, proposed, new Set(Object.keys(system)), fieldDict(form.localFields))
     if (!plan.changes.length && !plan.kept.length) {
-      if (input.completion) await finishJob(c, input, null, plan)
+      if (input.completion) {
+        await finishJob(c, input, null, plan)
+        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
+      }
       return { batchId: null, plan }
     }
     const batch = (await c.query(
@@ -492,7 +520,10 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     }
     await c.query('UPDATE clients SET updated_at = now() WHERE id = $1', [d.clientId])
     await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
-    if (input.completion) await finishJob(c, input, batch.id, plan)
+    if (input.completion) {
+      await finishJob(c, input, batch.id, plan)
+      await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
+    }
     return { batchId: batch.id as string, plan }
   })
 }
@@ -523,8 +554,10 @@ export async function createDocument(db: Db, staff: Staff, clientId: string, kin
 
 /** 計画版の作成など、ほかの書き込みと同じトランザクションで書類を作るとき（createDocument の中身） */
 export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
-  const kind = await kindOf(c, kindKey)
+  // ほかの事業所の種類は「無い」。やめた種類は新しく作れない（#153）
+  const kind = await visibleKind(c, staff.officeId, kindKey)
   if (!kind) throw new BadRequest('書類の種類がありません')
+  if (kind.retired) throw new Conflict('この書類はやめたので、新しく作れません')
   // 同じ利用者の書類づくりを 1 つずつにする（何通目か・1 通だけかを決めるため）
   const client = (await c.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2 AND archived_at IS NULL FOR UPDATE', [clientId, staff.officeId])).rows[0]
   if (!client) throw new NotFound()
@@ -591,26 +624,57 @@ export async function createRecording(db: Tx, staff: Staff, clientId: string, mi
 }
 
 export async function setRecordingUploadUrl(db: Tx, recordingId: string, url: string) {
-  await db.query('UPDATE recordings SET upload_url = $1 WHERE id = $2', [url, recordingId])
+  const result = await db.query(
+    `UPDATE recordings
+        SET upload_url = $1, upload_started_at = now(), upload_completed_at = NULL, status = 'uploading',
+            upload_cancel_attempts = 0, upload_cancel_claim_token = NULL, upload_cancel_claimed_at = NULL,
+            upload_cancel_last_attempt_at = NULL, upload_cancel_next_retry_at = NULL,
+            upload_cancel_last_error_code = NULL, upload_cancel_escalated_at = NULL
+      WHERE id = $2 AND status IN ('uploading', 'failed')
+      RETURNING id`,
+    [url, recordingId],
+  )
+  if (!result.rows.length) throw new Conflict('録音のアップロード状態を変更できません')
+}
+
+export interface UploadedRecordingObject {
+  size: number
+  generation: string
+  metageneration: string
 }
 
 /** 録音の行をロックし、完了とジョブの作成を同じトランザクションで確定する。 */
 export async function completeRecording(
   db: Db, staff: Staff, recordingId: string, durationMs: number | null, expectedBytes: number | undefined,
-  uploadedSize: (path: string) => Promise<number | null>,
+  uploadedObject: (path: string) => Promise<number | UploadedRecordingObject | null>,
 ): Promise<string | null> {
   return tx(db, async (c) => {
     const rec = (await c.query(
-      'SELECT client_id, document_id, object_path, bytes FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
+      'SELECT client_id, document_id, object_path, bytes, status, source_delete_status, source_generation, source_metageneration FROM recordings WHERE id = $1 AND office_id = $2 FOR UPDATE',
       [recordingId, staff.officeId],
     )).rows[0]
     if (!rec) throw new NotFound()
+    if (rec.status === 'abandoning') throw new Conflict('録音アップロードを整理中です')
     const existing = (await c.query('SELECT id FROM jobs WHERE recording_id = $1', [recordingId])).rows[0]
-    const bytes = existing ? Number(rec.bytes) : await uploadedSize(rec.object_path)
+    const uploaded: number | UploadedRecordingObject | null = existing ? null : await uploadedObject(rec.object_path)
+    const bytes = existing ? Number(rec.bytes) : typeof uploaded === 'number' ? uploaded : uploaded?.size ?? null
     if (!bytes || (expectedBytes !== undefined && bytes !== expectedBytes)) return null
     if (existing) return existing.id as string
 
-    await c.query("UPDATE recordings SET status = 'uploaded', bytes = $1, duration_ms = $2, upload_url = NULL WHERE id = $3", [bytes, durationMs, recordingId])
+    const uploadedMetadata = uploaded && typeof uploaded === 'object' ? uploaded : null
+    await c.query(
+      `UPDATE recordings
+          SET status = 'uploaded', bytes = $1, duration_ms = $2, upload_url = NULL,
+              upload_completed_at = now(), source_generation = $4, source_metageneration = $5,
+              upload_cancel_claim_token = NULL, upload_cancel_claimed_at = NULL,
+              upload_cancel_next_retry_at = NULL, upload_cancel_last_error_code = NULL
+        WHERE id = $3`,
+      [bytes, durationMs, recordingId, uploadedMetadata?.generation ?? null, uploadedMetadata?.metageneration ?? null],
+    )
+    await setRecordingRetentionOnComplete(c, recordingId, {
+      officeId: staff.officeId, actorStaffId: staff.id, clientId: rec.client_id, documentId: rec.document_id,
+      auditContext: auditContextOf(staff),
+    })
     const eta = durationMs ? Math.max(60, Math.round(durationMs / 1000 / 6) + 90) : 300
     const job = (await c.query(
       'INSERT INTO jobs (office_id, client_id, document_id, recording_id, eta_seconds) VALUES ($1,$2,$3,$4,$5) RETURNING id',

@@ -5,6 +5,8 @@ import { linkProps, navigate } from '../../lib/router.tsx'
 import { upload } from '../../lib/upload.ts'
 import { BackLink, Icon, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { useOfficeForms } from '../../components/form-status/formStatus.ts'
+import { AddSteps } from '../../components/office-add/AddSteps.tsx'
+import { adding } from '../../components/office-add/addFlow.ts'
 
 const MAX_BYTES = 20 * 1024 * 1024
 
@@ -41,12 +43,12 @@ export function OfficeUpload({ staffName, kind }: { staffName: string, kind: str
     }
   }
 
-  return (
-    <OfficeShell staffName={staffName} active="forms">
-      <BackLink to={back} label={name || '戻る'} />
-      <div className="of-upload">
-        <h1 className="of-h1">事業所の書式を上げる</h1>
-        <p className="of-lead">いつも使っている{name}の書式（PDF）を上げると、その形で書類を作れます。</p>
+  // 事業所の書類を足している途中（#153）なら、手順 2 として出す
+  const add = !!k && adding(k)
+  const content = (
+      <div className="of-upload" style={add ? { margin: '0 auto' } : undefined}>
+        {add ? <h2 className="of-h1" style={{ fontSize: 20 }}>{name}の書式を上げる</h2> : <h1 className="of-h1">事業所の書式を上げる</h1>}
+        <p className="of-lead">{add ? `いつも使っている${name}の書式（PDF）を上げてください。` : `いつも使っている${name}の書式（PDF）を上げると、その形で書類を作れます。`}</p>
         <h2 style={{ margin: '24px 0 0', fontSize: 16 }}>上げる前に</h2>
         <div className="of-conds">
           <div className="of-cond"><h3>何も書き込んでいない書式</h3><p>記入済みのものを上げると、利用者の情報がこのサービスに残ってしまいます。</p></div>
@@ -70,11 +72,17 @@ export function OfficeUpload({ staffName, kind }: { staffName: string, kind: str
             {file ? <><div className="of-file-name">{file.name}</div><div className="of-muted">{(file.size / 1024 / 1024).toFixed(1)} MB</div></> : !error && <div className="of-muted">まだ PDF を選んでいません</div>}
             {error && <div role="alert" className="of-err">{error}</div>}
           </div>
-          <a className="btn" {...linkProps(back)}>やめる</a>
+          <a className="btn" {...linkProps(add ? '/office' : back)}>{add ? '戻る' : 'やめる'}</a>
           <button type="button" className="btn btn-p" disabled={!file || pct !== null} onClick={() => void go()}>{pct !== null ? `送っています（${pct}%）` : '上げて読み取る'}</button>
         </div>
-        <p className="of-muted" style={{ marginTop: 12 }}>読み取りには数分かかります。そのあいだも、今の書式で書類を作れます。</p>
+        <p className="of-muted" style={{ marginTop: 12 }}>{add ? '読み取りには数分かかります。この画面を離れても、読み取りは続きます。' : '読み取りには数分かかります。そのあいだも、今の書式で書類を作れます。'}</p>
       </div>
+  )
+  if (add) return <OfficeShell staffName={staffName} active={null} wide><AddSteps step={2} name={name} /><main className="oa-body">{content}</main></OfficeShell>
+  return (
+    <OfficeShell staffName={staffName} active="forms">
+      <BackLink to={back} label={name || '戻る'} />
+      {content}
     </OfficeShell>
   )
 }

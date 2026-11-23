@@ -164,6 +164,20 @@ export async function openPdf(data: Uint8Array): Promise<OpenedPdf> {
       }
     }
 
+    // 細い画像は線とみなす。点線を、短い画像を並べて描く PDF がある（厚生労働省のケアプラン第 3 表は 2mm×0.25mm の画像を並べる。#147）。
+    // 画像は 1×1 の正方形を m で置いたもの。厚さが THIN_IMAGE pt 以下で、長さが厚さの 3 倍以上なら、真ん中を通る線にする
+    const THIN_IMAGE = 0.6 / PT
+    const addImage = (m: M) => {
+      const pts = [apply(m, 0, 0), apply(m, 1, 0), apply(m, 0, 1), apply(m, 1, 1)]
+      const xs = pts.map((p) => p[0])
+      const ys = pts.map((p) => p[1])
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+      const w = x1 - x0
+      const h = y1 - y0
+      if (h <= THIN_IMAGE && w >= 3 * h) addSegment(x0, (y0 + y1) / 2, x1, (y0 + y1) / 2)
+      else if (w <= THIN_IMAGE && h >= 3 * w) addSegment((x0 + x1) / 2, y0, (x0 + x1) / 2, y1)
+    }
+
     const showText = (glyphs: (Glyph | number)[]) => {
       const font = st.font
       const fs = st.fontSize
@@ -259,6 +273,17 @@ export async function openPdf(data: Uint8Array): Promise<OpenedPdf> {
         case OPS.setTextMatrix: st.textMatrix = args[0] as M; st.x = st.lineX = 0; st.y = st.lineY = 0; break
         case OPS.nextLine: st.x = st.lineX += 0; st.y = st.lineY += st.leading; break
         case OPS.showText: showText(args[0] as (Glyph | number)[]); break
+        case OPS.paintImageXObject:
+        case OPS.paintInlineImageXObject:
+        case OPS.paintImageMaskXObject:
+          addImage(st.ctm)
+          break
+        case OPS.paintImageXObjectRepeat: {
+          // 同じ画像を何度も置く命令（pdfjs がまとめる）。引数は [画像, 横の倍率, 縦の倍率, 置く位置の x・y の並び]
+          const [, sx, sy, positions] = args as [unknown, number, number, ArrayLike<number>]
+          for (let k = 0; k + 1 < positions.length; k += 2) addImage(mul(st.ctm, [sx, 0, 0, sy, positions[k], positions[k + 1]]))
+          break
+        }
         case OPS.constructPath: {
           const [op, [data]] = args as [number, [ArrayLike<number> | null]]
           if (!PAINT.has(op) || !data) break

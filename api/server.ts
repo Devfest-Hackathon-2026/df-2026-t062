@@ -4,6 +4,7 @@ import { defaultAccounts, defaultVerifier, type Accounts, type Verifier } from '
 import type { ChatModel } from './chat.ts'
 import type { CarePlanDrafter } from '../db/care-plans.ts'
 import type { FieldMatcher } from '../core/slot-meaning.ts'
+import type { TopicDrafter, TopicTeacher } from '../core/topics.ts'
 import { CloudTasksQueue, LocalQueue, type Queue } from './queue.ts'
 import { defaultStorage, type Storage } from './storage.ts'
 
@@ -16,6 +17,8 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
   let chat: Promise<ChatModel> | undefined
   let carePlanAi: Promise<CarePlanDrafter> | undefined
   let matcher: Promise<FieldMatcher> | undefined
+  let drafter: Promise<TopicDrafter> | undefined
+  let teacher: Promise<TopicTeacher> | undefined
   const getStorage = () => (storage ??= defaultStorage(env))
   return {
     db: async () => (await import('../db/pool.ts')).getDb(),
@@ -34,11 +37,15 @@ export function defaultApiDeps(env: NodeJS.ProcessEnv = process.env): ApiDeps {
         async (importId) => (await import('../worker/form-import/job.ts')).runFormImport(await workerDeps(), importId),
         async (inspectionId) => (await import('../worker/inspect/job.ts')).runInspection(await workerDeps(), inspectionId),
         async (id) => (await import('../worker/document-input/job.ts')).runDocumentInput(await workerDeps(), id),
+        async (recordingId, operationVersion) => (await import('../worker/recording-cleanup-service.ts')).synchronizeRetentionHold(await workerDeps(), recordingId, operationVersion),
+        async (id) => (await import('../worker/document-fill/job.ts')).runDocumentFill(await workerDeps(), id),
       ))
     },
     chat: () => (chat ??= defaultChat(env)),
     carePlanAi: () => (carePlanAi ??= defaultCarePlanAi(env)),
     fieldMatcher: () => (matcher ??= defaultFieldMatcher(env)),
+    topicDrafter: () => (drafter ??= defaultTopicDrafter(env)),
+    topicTeacher: () => (teacher ??= defaultTopicTeacher(env)),
     devAuth: env.AUTH_MODE === 'dev',
     accounts: () => (accounts ??= defaultAccounts(env)),
   }
@@ -60,6 +67,18 @@ async function defaultCarePlanAi(env: NodeJS.ProcessEnv): Promise<CarePlanDrafte
 async function defaultFieldMatcher(env: NodeJS.ProcessEnv): Promise<FieldMatcher> {
   if (env.AI_PROVIDER !== 'vertex') return (await import('../core/slot-meaning.ts')).fakeFieldMatcher
   return (await import('./field-match.ts')).geminiFieldMatcher(env)
+}
+
+/** 事業所が足した書類の拾う内容の案。AI_PROVIDER=vertex なら Gemini。既定は試しの案（欄の言葉をそのまま項目にする。費用なし） */
+async function defaultTopicDrafter(env: NodeJS.ProcessEnv): Promise<TopicDrafter> {
+  if (env.AI_PROVIDER !== 'vertex') return (await import('../core/topics.ts')).fakeTopicDrafter
+  return (await import('./topic-draft.ts')).geminiTopicDrafter(env)
+}
+
+/** 責任者のダメ出しの振り分け（#115）。AI_PROVIDER=vertex なら Gemini。既定は試しの振り分け（項目の名前が一言に入っているか。費用なし） */
+async function defaultTopicTeacher(env: NodeJS.ProcessEnv): Promise<TopicTeacher> {
+  if (env.AI_PROVIDER !== 'vertex') return (await import('../core/topics.ts')).fakeTopicTeacher
+  return (await import('./topic-teach.ts')).geminiTopicTeacher(env)
 }
 
 export function createApiServer(deps: ApiDeps = defaultApiDeps()) {
