@@ -36,8 +36,8 @@
 | `POST /api/documents/:id/chat` | 書き方の相談（`{messages:[{role:"user"\|"pet", text}]}`。やり取りは画面が持っていて毎回全部を送る。最大 40 件・1 件 4000 字、最後は `user`）。AI（Gemini の関数呼び出し。`AI_PROVIDER=fake` なら台本の答え）が道具（用紙を読む・足りない欄・録音を探す・書き換えの案）を使って答える。読む欄・印字するときだけ付く印・欄の定義は、書類の様式の版（版の欄の辞書。その様式だけの欄も含む）から、書類の名前は種類（`form_kinds.name`）から読む。用紙は同じ利用者のほかの書類も読める（同じ事業所のものだけ。案は開いている書類の欄だけ）。書き換えの案は、この書類の様式の版が読む欄（図の欄を除く。まとまりの欄は値の全体）。**用紙は変えない**（画面が `PATCH /fields` で入れる） | 1 行 1 つの JSON（`application/x-ndjson`）。道具を使うたびに `{type:"step", text}`、最後に `{type:"done", reply, steps, proposals:[{key, label, before, after}]}`。途中で失敗したら `{type:"error"}`（状態はもう 200）。入力の誤り・ほかの事業所の書類は、流す前に 400／404 |
 | `POST /api/documents/:id/save` | 保存（`{scope:"document"}`／`{scope:"page", page}`／`{scope:"hunk", key, hunkIndex}`） | `{rev, document}` |
 | `GET /api/documents/:id/pdf` | 最新の版から、その版の様式の元の PDF で PDF を作る。出力の置き場にも残す。元の PDF が置き場になければ 503 | `application/pdf` |
-| `GET /api/clients/:id/recording-consent` | 録音・文字起こし・AI によるケア記録の下書き作成について、現行ポリシー版の確認状態を返す | `200 {consent, policy}` |
-| `POST /api/clients/:id/recording-consent` | 職員が画面の説明を確認したことを記録する（`{confirmed:true}`）。同意イベントは追記のみで、現在の利用者に対する最新の付与イベントが現行ポリシー版なら有効 | `201 {consent}` |
+| `GET /api/clients/:id/recording-consent` | 録音・文字起こし・AI によるケア記録の下書き作成について、現行ポリシー版の確認状態と画面表示用の説明本文を返す | `200 {consent, policy:{version,scope,text}}` |
+| `POST /api/clients/:id/recording-consent` | 職員が画面の説明を確認したことを記録する（`{confirmed:true}`）。同意イベントは追記のみで、現在の利用者に対する最新の付与イベントが現行ポリシー版なら有効。同意済みの場合は新しいイベントを重複作成せず、現在の状態を返す | `201 {consent}` |
 | `POST /api/clients/:id/recording-consent/withdraw` | 今後の新規録音と新規の AI 処理開始を止める。既に始めた録音・正式なケア記録は削除しない | `200 {consent}` |
 | `POST /api/clients/:id/recordings` | 録音を始める（`{mime, documentId?}`）。有効な録音同意がない場合は GCS の送信セッションを作らず `409 recording_consent_required`。録音は、録音を始めた書類（`documentId`）につなぐ。省いたときは主な書類。ほかの利用者の書類は 404。Cloud Storage の再開できる送信の URL を返す | `201 {recordingId, uploadUrl}` |
 | `POST /api/recordings/:id/complete` | 送り終わり（`{durationMs}`）。置き場にあるのを確かめてジョブを積む。新しい録音は開始時に記録した同意イベントへ紐づく | `202 {jobId, status}` |

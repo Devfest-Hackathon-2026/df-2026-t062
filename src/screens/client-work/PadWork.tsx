@@ -15,7 +15,7 @@ import { pickDocument, useFormKinds } from '../../components/document/useFormKin
 import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { countText } from '../../components/document/changes.ts'
 import { isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
-import type { RecordingConsentView } from '../../../core/recording-consent.ts'
+import type { RecordingConsentPolicy, RecordingConsentView } from '../../../core/recording-consent.ts'
 
 export function PadWork({ clientId }: { clientId: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -29,6 +29,7 @@ export function PadWork({ clientId }: { clientId: string }) {
   const state = useDocument(docId)
   reloadDoc.current = () => { void state.reload(); void reloadClient() }
   const [consent, setConsent] = useState<RecordingConsentView | null>(null)
+  const [consentPolicy, setConsentPolicy] = useState<RecordingConsentPolicy | null>(null)
   const [consentOpen, setConsentOpen] = useState(false)
   const [consentChecked, setConsentChecked] = useState(false)
   const [consentError, setConsentError] = useState('')
@@ -45,9 +46,13 @@ export function PadWork({ clientId }: { clientId: string }) {
   useEffect(() => {
     let disposed = false
     setConsent(null)
+    setConsentPolicy(null)
     setConsentError('')
     void api.recordingConsent(clientId).then((result) => {
-      if (!disposed) setConsent(result.consent)
+      if (!disposed) {
+        setConsent(result.consent)
+        setConsentPolicy(result.policy)
+      }
     }).catch(() => {
       if (!disposed) setConsentError('録音の説明を読み込めませんでした。通信状態を確認して再読み込みしてください。')
     })
@@ -292,7 +297,8 @@ export function PadWork({ clientId }: { clientId: string }) {
         <div role="dialog" aria-modal="true" aria-labelledby="recording-consent-title" style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'rgba(20,24,32,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ width: 520, maxWidth: '100%', background: '#FFFFFF', borderRadius: 18, padding: 24, boxShadow: '0 18px 50px rgba(20,24,32,0.28)', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <h2 id="recording-consent-title" style={{ margin: 0, fontSize: 21 }}>録音と AI 処理の説明</h2>
-            <p style={{ margin: 0 }}>面談の音声を録音し、文字起こしと AI によるケア記録の下書き作成に利用します。AI の下書きは職員が確認・修正してから正式な記録にします。</p>
+            <p style={{ margin: 0 }}>{consentPolicy?.text ?? '録音と AI 処理の説明を読み込めませんでした。画面を再読み込みしてください。'}</p>
+            {consentPolicy && <p style={{ margin: 0, fontSize: 13, color: '#5A6270' }}>説明の版: {consentPolicy.version}</p>}
             <p style={{ margin: 0, fontSize: 14, color: '#5A6270' }}>録音原本は定めた保存期限で削除します。すでに始めた録音や正式な記録は、この設定を停止しても自動削除されません。</p>
             {consent?.active ? (
               <>

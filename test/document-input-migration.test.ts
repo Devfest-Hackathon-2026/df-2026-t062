@@ -75,6 +75,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0037_recording_intermediate_retention.sql',
       '0038_document_review.sql',
       '0039_recording_consent.sql',
+      '0040_recording_consent_integrity.sql',
     ])
     const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
     assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
@@ -102,6 +103,31 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     )).rows[0]
     assert.equal(consentColumn.is_nullable, 'YES')
     assert.equal((await db.query("SELECT to_regclass(current_schema() || '.recording_consent_events') AS table_name")).rows[0].table_name, 'recording_consent_events')
+    const consentEvent = (await db.query(
+      `INSERT INTO recording_consent_events
+         (office_id, client_id, event_type, scope, policy_version, method, actor_staff_id)
+       VALUES ($1,$2,'granted','recording_and_ai_processing','recording-consent-v1','staff_confirmed',$3)
+       RETURNING id`,
+      [office, client, staff],
+    )).rows[0].id
+    await assert.rejects(
+      db.query('UPDATE recording_consent_events SET event_type = \'withdrawn\' WHERE id = $1', [consentEvent]),
+      /immutable/,
+    )
+    await assert.rejects(
+      db.query('DELETE FROM recording_consent_events WHERE id = $1', [consentEvent]),
+      /immutable/,
+    )
+    const otherOffice = (await db.query("INSERT INTO offices (name, phone, fax) VALUES ('other office', '', '') RETURNING id")).rows[0].id
+    await assert.rejects(
+      db.query(
+        `INSERT INTO recording_consent_events
+           (office_id, client_id, event_type, scope, policy_version, method, actor_staff_id)
+         VALUES ($1,$2,'granted','recording_and_ai_processing','recording-consent-v1','staff_confirmed',$3)`,
+        [otherOffice, client, staff],
+      ),
+      /scope mismatch/,
+    )
     const oldApiInsert = (await db.query(
       `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by)
        VALUES ($1,$2,$3,'recordings/old-api.webm','audio/webm',$4)

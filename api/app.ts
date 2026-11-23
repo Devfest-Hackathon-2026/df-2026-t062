@@ -58,7 +58,7 @@ import {
   requestRecordingRetentionHoldRelease,
   type HoldReasonCode,
 } from '../db/recording-retention.ts'
-import { RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE } from '../core/recording-consent.ts'
+import { RECORDING_CONSENT_POLICY_TEXT, RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE } from '../core/recording-consent.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -814,7 +814,7 @@ export function createApp(deps: ApiDeps) {
     })
     return json(c, {
       consent: await repo.recordingConsent(db, staff.officeId, client.id),
-      policy: { version: RECORDING_CONSENT_POLICY_VERSION, scope: RECORDING_CONSENT_SCOPE },
+      policy: { version: RECORDING_CONSENT_POLICY_VERSION, scope: RECORDING_CONSENT_SCOPE, text: RECORDING_CONSENT_POLICY_TEXT },
     })
   }))
 

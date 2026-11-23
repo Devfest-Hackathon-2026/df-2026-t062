@@ -677,6 +677,8 @@ export async function recordingConsent(db: Q, officeId: string, clientId: string
 export async function grantRecordingConsent(db: Q, staff: Staff, clientId: string) {
   const client = (await db.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2', [clientId, staff.officeId])).rows[0]
   if (!client) throw new NotFound()
+  const current = await recordingConsent(db, staff.officeId, clientId)
+  if (current.active) return current
   const row = (await db.query(
     `INSERT INTO recording_consent_events
        (office_id, client_id, event_type, scope, policy_version, method, actor_staff_id)

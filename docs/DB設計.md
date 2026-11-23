@@ -35,7 +35,7 @@
 | `revisions` | 版 | `rev`、`scope`（`hunk`／`page`／`document`）、`values`（保存した値の全部）、`template_version_id`（PDF はこの様式の版から作る） |
 | `batches` | 書き込み | `kind`（`recording`／`copy`／`seed`）、`label`（「AI 書き込み 2・1/25 の録音」など）、`changes`（key・op・before・after）、`kept`（書き換えなかったケアマネの欄） |
 | `recordings` | 録音（原本の音声） | `object_path`（Cloud Storage の source バケットの場所）、`mime`、`bytes`、`duration_ms`、`status`、`consent_event_id`（録音開始時の説明確認イベント）、`source_expires_at`（原本を保持できる期限）、`source_delete_status`（削除候補などの状態）、`source_deleted_at`、`source_purge_expected_at`（GCS Soft Deleteを含む完全消去見込み）、`intermediate_expires_at`／`intermediate_delete_status`／`intermediate_deleted_at`（文字起こしなど中間データの期限・削除状態）、`retention_policy_version`、`retention_hold`／`retention_hold_target`／`retention_hold_sync_status`（GCS Object Hold の実状態・目標状態・同期状態）、`retention_hold_until`／`retention_hold_reason_code`／`retention_hold_set_at`／`retention_hold_set_by` |
-| `recording_consent_events` | 録音と AI 処理の説明確認・停止の履歴 | `event_type`（`granted`／`withdrawn`）、`scope`、`policy_version`、`method`、`actor_staff_id`、`occurred_at`。利用者・事業所単位で追記し、最新イベントが現行ポリシー版の `granted` の場合だけ新規録音を許可する |
+| `recording_consent_events` | 録音と AI 処理の説明確認・停止の履歴 | `event_type`（`granted`／`withdrawn`）、`scope`、`policy_version`、`method`、`actor_staff_id`、`occurred_at`。利用者・事業所単位で追記し、最新イベントが現行ポリシー版の `granted` の場合だけ新規録音を許可する。DBトリガーでも更新・削除を拒否し、職員・利用者・事業所の所属不一致を拒否する |
 | `transcripts` | 文字起こし（原本の文字） | `utterances`（id・時刻・話者の記号・人・文）、`speakers`、`model` |
 | `jobs` | 録音 1 本の処理 | `status`（queued／processing／succeeded／partial／failed）、`step`（transcribe／speakers／write／apply）、`steps`（段ごとの結果・時間・トークン・円）、`lease_until`、`run_token`、`attempts`、`error_kind`、`batch_id`。録音 1 つに 1 つ、同じ書類で処理中は 1 つだけ |
 | `exports` | 出した PDF | `revision_rev`、`template_version_id`、`object_path` |
