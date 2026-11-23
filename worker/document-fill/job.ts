@@ -13,6 +13,7 @@ import { loadFormDef, loadVersion } from '../../db/forms.ts'
 import { tx } from '../../db/pool.ts'
 import { applyBatch, readFields } from '../../db/repo.ts'
 import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
+import { safeAiJobErrorCode, writeAiJobEvent, writeAiQueueSnapshot } from '../ai-job-observability.ts'
 import type { Part } from '../vertex/gemini.ts'
 import { fillDocument } from './index.ts'
 
@@ -35,7 +36,7 @@ async function sourceImages(deps: WorkerDeps, versionId: string, values: Record<
       return parts
     } finally { await pdf.close() }
   } catch (e) {
-    log({ msg: 'document fill: source images unavailable', error: (e as Error)?.name ?? 'Error' }, context)
+    log({ msg: 'document fill: source images unavailable', error: safeAiJobErrorCode((e as Error)?.name ?? 'Error') }, context)
     return []
   }
 }
@@ -45,8 +46,10 @@ export async function runDocumentFill(deps: WorkerDeps, id: string, context?: Wo
   const token = randomUUID()
   const claimed = await fills.claimFill(db, id, token)
   if (!claimed) return log({ msg: 'document fill already taken or done', fillId: id }, context)
+  const startedAt = Date.now()
+  writeAiJobEvent({ jobType: 'document_fill', phase: 'started', jobId: id, attempt: claimed.attempts, context })
   const heartbeat = setInterval(() => {
-    void fills.touchFill(db, id, token).catch((e) => log({ msg: 'document fill lease heartbeat failed', fillId: id, error: (e as Error).name }, context))
+  void fills.touchFill(db, id, token).catch((e) => log({ msg: 'document fill lease heartbeat failed', fillId: id, error: safeAiJobErrorCode((e as Error).name) }, context))
   }, 60_000)
   heartbeat.unref()
   const t0 = Date.now()
@@ -102,12 +105,15 @@ export async function runDocumentFill(deps: WorkerDeps, id: string, context?: Wo
       return fills.finishFill(c, id, token, status, applied.batchId, { ...steps, apply: { changes: applied.plan.changes.length, kept: applied.plan.kept.length } })
     })
     if (!ok) throw new LeaseLost()
+    writeAiJobEvent({ jobType: 'document_fill', phase: status === 'partial' ? 'partial' : 'succeeded', jobId: id, attempt: claimed.attempts, durationMs: Date.now() - startedAt, usage: r.usage, counts: { target_count: targets.length, written_count: Object.keys(r.proposed).length }, context })
     log({ msg: 'document fill done', fillId: id, status, seconds: steps.totalSeconds, targets: targets.length, written: Object.keys(r.proposed).length, calls: r.usage.calls, yen: r.usage.yen }, context)
   } catch (e) {
     if (e instanceof LeaseLost) return log({ msg: 'document fill lease lost', fillId: id }, context)
     const kind = (e as Error)?.name ?? 'Error'
-    await fills.releaseFill(db, id, token, claimed.attempts >= fills.MAX_FILL_ATTEMPTS, kind)
-    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'document fill failed', fillId: id, error: kind }))
+    const retryable = claimed.attempts < fills.MAX_FILL_ATTEMPTS
+    await fills.releaseFill(db, id, token, !retryable, kind)
+    writeAiJobEvent({ jobType: 'document_fill', phase: retryable ? 'retry' : 'failed', jobId: id, attempt: claimed.attempts, durationMs: Date.now() - startedAt, errorCode: kind, retryable, context })
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'document fill failed', fillId: id, error: safeAiJobErrorCode(kind) }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e
@@ -118,7 +124,9 @@ export async function runDocumentFill(deps: WorkerDeps, id: string, context?: Wo
 
 /** 見回り: 積み損ね・止まった仕事を積み直す。積み直した数 */
 export async function reconcileDocumentFills(deps: WorkerDeps, enqueue: (id: string) => Promise<void>): Promise<number> {
-  const ids = await fills.fillsToRequeue(await deps.db())
+  const db = await deps.db()
+  const ids = await fills.fillsToRequeue(db)
   for (const id of ids) await enqueue(id)
+  await writeAiQueueSnapshot(db, 'document_fill', ids.length)
   return ids.length
 }

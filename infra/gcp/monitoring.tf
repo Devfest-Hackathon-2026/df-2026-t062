@@ -5,6 +5,11 @@ locals {
     "resource.labels.job_name=\"${var.recording_cleanup_job_name}\"",
     "jsonPayload.service=\"recording-cleanup\"",
   ])
+  ai_job_log_filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${var.worker_service_name}\"",
+    "jsonPayload.service=\"worker\"",
+  ])
 }
 
 resource "terraform_data" "recording_cleanup_alert_configuration" {
@@ -26,6 +31,19 @@ resource "terraform_data" "recording_cleanup_alert_configuration" {
     precondition {
       condition     = !var.source_recording_lifecycle_enabled || var.recording_cleanup_alerts_enabled
       error_message = "The source recording Lifecycle safety net requires recording cleanup alerts to be enabled."
+    }
+  }
+}
+
+resource "terraform_data" "ai_job_alert_configuration" {
+  input = {
+    enabled = var.ai_job_alerts_enabled
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.ai_job_alerts_enabled || length(var.monitoring_notification_channel_ids) > 0
+      error_message = "Enable AI job alerts only when monitoring_notification_channel_ids is configured."
     }
   }
 }
@@ -186,6 +204,149 @@ resource "google_logging_metric" "recording_cleanup_scheduler_error" {
 
   metric_descriptor {
     metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+# =========================================================
+# AI job observability
+# =========================================================
+
+resource "google_logging_metric" "ai_job_success" {
+  name   = "ai_job_success_count"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.phase=\"succeeded\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "ai_job_partial" {
+  name   = "ai_job_partial_count"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.phase=\"partial\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "ai_job_failure" {
+  name   = "ai_job_failure_count"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.phase=\"failed\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "ai_job_retry" {
+  name   = "ai_job_retry_count"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.phase=\"retry\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "ai_job_lease_expired" {
+  name   = "ai_job_lease_expired_count"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.phase=\"lease_expired\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_logging_metric" "ai_job_duration" {
+  name            = "ai_job_duration"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.duration_ms >= 0"
+  value_extractor = "EXTRACT(jsonPayload.duration_ms)"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "DISTRIBUTION"
+    unit        = "ms"
+  }
+
+  bucket_options {
+    explicit_buckets {
+      bounds = [1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000]
+    }
+  }
+}
+
+resource "google_logging_metric" "ai_job_queue_wait" {
+  name            = "ai_job_queue_wait"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.queue_wait_ms >= 0"
+  value_extractor = "EXTRACT(jsonPayload.queue_wait_ms)"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "DISTRIBUTION"
+    unit        = "ms"
+  }
+
+  bucket_options {
+    explicit_buckets {
+      bounds = [1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000]
+    }
+  }
+}
+
+resource "google_logging_metric" "ai_job_cost" {
+  name            = "ai_job_estimated_cost_yen"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.estimated_cost_yen >= 0"
+  value_extractor = "EXTRACT(jsonPayload.estimated_cost_yen)"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "DOUBLE"
+    unit        = "{JPY}"
+  }
+}
+
+resource "google_logging_metric" "ai_job_backlog_age" {
+  name            = "ai_job_backlog_age_seconds"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_queued_age_seconds >= 0"
+  value_extractor = "EXTRACT(jsonPayload.queue_oldest_queued_age_seconds)"
+
+  metric_descriptor {
+    metric_kind = "GAUGE"
+    value_type  = "INT64"
+    unit        = "s"
+  }
+}
+
+resource "google_logging_metric" "ai_job_processing_age" {
+  name            = "ai_job_processing_age_seconds"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_processing_age_seconds >= 0"
+  value_extractor = "EXTRACT(jsonPayload.queue_oldest_processing_age_seconds)"
+
+  metric_descriptor {
+    metric_kind = "GAUGE"
+    value_type  = "INT64"
+    unit        = "s"
+  }
+}
+
+resource "google_logging_metric" "ai_job_queue_depth" {
+  name            = "ai_job_queue_depth"
+  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_queued_count >= 0"
+  value_extractor = "EXTRACT(jsonPayload.queue_queued_count)"
+
+  metric_descriptor {
+    metric_kind = "GAUGE"
     value_type  = "INT64"
     unit        = "1"
   }
@@ -452,6 +613,122 @@ resource "google_monitoring_alert_policy" "recording_cleanup_scheduler_error" {
   }
 }
 
+resource "google_monitoring_alert_policy" "ai_job_failure" {
+  display_name = "[${var.monitoring_environment}] AI job failures"
+  combiner     = "OR"
+  enabled      = var.ai_job_alerts_enabled
+
+  documentation {
+    content   = "AI非同期ジョブの最終失敗が直近1時間に3件以上あります。個人情報をログ検索せず、AI処理監視Runbookに従ってジョブ状態・安全なエラーコード・Workerを確認してください。"
+    mime_type = "text/markdown"
+  }
+
+  notification_channels = var.monitoring_notification_channel_ids
+
+  conditions {
+    display_name = "AI job failures"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_failure.name}\" resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 2
+      duration        = "3600s"
+
+      aggregations {
+        alignment_period   = "3600s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "ai_job_backlog" {
+  display_name = "[${var.monitoring_environment}] AI job backlog"
+  combiner     = "OR"
+  enabled      = var.ai_job_alerts_enabled
+
+  documentation {
+    content   = "AIジョブの最古queued滞留が閾値を超えています。Cloud Tasks、Worker、Cloud SQLのジョブ状態を確認してください。"
+    mime_type = "text/markdown"
+  }
+
+  notification_channels = var.monitoring_notification_channel_ids
+
+  conditions {
+    display_name = "oldest queued AI job"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_backlog_age.name}\" resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.ai_job_backlog_age_threshold_seconds
+      duration        = "0s"
+
+      aggregations {
+        alignment_period   = "900s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "ai_job_processing_stuck" {
+  display_name = "[${var.monitoring_environment}] AI job processing stuck"
+  combiner     = "OR"
+  enabled      = var.ai_job_alerts_enabled
+
+  documentation {
+    content   = "processing状態のAIジョブが長時間滞留しています。Worker、Cloud Tasks、Vertex AIの状態とDBのlease_untilを確認してください。"
+    mime_type = "text/markdown"
+  }
+
+  notification_channels = var.monitoring_notification_channel_ids
+
+  conditions {
+    display_name = "oldest processing AI job"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_processing_age.name}\" resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.ai_job_processing_age_threshold_seconds
+      duration        = "0s"
+
+      aggregations {
+        alignment_period   = "900s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+    }
+  }
+}
+
+resource "google_monitoring_alert_policy" "ai_job_cost" {
+  display_name = "[${var.monitoring_environment}] AI estimated cost spike"
+  combiner     = "OR"
+  enabled      = var.ai_job_alerts_enabled
+
+  documentation {
+    content   = "24時間のAI費用推定値が閾値を超えています。これは請求額ではないため、Cloud Billingと処理件数を併せて確認してください。"
+    mime_type = "text/markdown"
+  }
+
+  notification_channels = var.monitoring_notification_channel_ids
+
+  conditions {
+    display_name = "estimated AI cost"
+
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_cost.name}\" resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.ai_job_cost_alert_yen
+      duration        = "86400s"
+
+      aggregations {
+        alignment_period   = "86400s"
+        per_series_aligner = "ALIGN_SUM"
+      }
+    }
+  }
+}
+
 # =========================================================
 # Cloud Monitoring Dashboard
 # =========================================================
@@ -508,6 +785,92 @@ resource "google_monitoring_dashboard" "recording_cleanup" {
               timeSeriesQuery = {
                 timeSeriesFilter = {
                   filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.recording_cleanup_duration.name}\" resource.type=\"cloud_run_job\""
+                }
+              }
+            }]
+          }
+        },
+      ]
+    }
+  })
+}
+
+resource "google_monitoring_dashboard" "ai_jobs" {
+  dashboard_json = jsonencode({
+    displayName = "[${var.monitoring_environment}] AI job operations"
+
+    gridLayout = {
+      columns = 2
+
+      widgets = [
+        {
+          title = "AI job outcome"
+          xyChart = {
+            dataSets = [
+              for metric in [
+                google_logging_metric.ai_job_success.name,
+                google_logging_metric.ai_job_partial.name,
+                google_logging_metric.ai_job_failure.name,
+                google_logging_metric.ai_job_retry.name,
+                ] : {
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"cloud_run_revision\""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          title = "AI job duration"
+          xyChart = {
+            dataSets = [{
+              timeSeriesQuery = {
+                timeSeriesFilter = {
+                  filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_duration.name}\" resource.type=\"cloud_run_revision\""
+                }
+              }
+            }]
+          }
+        },
+        {
+          title = "AI queue wait"
+          xyChart = {
+            dataSets = [{
+              timeSeriesQuery = {
+                timeSeriesFilter = {
+                  filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_queue_wait.name}\" resource.type=\"cloud_run_revision\""
+                }
+              }
+            }]
+          }
+        },
+        {
+          title = "AI queue backlog"
+          xyChart = {
+            dataSets = [
+              for metric in [
+                google_logging_metric.ai_job_queue_depth.name,
+                google_logging_metric.ai_job_backlog_age.name,
+                google_logging_metric.ai_job_processing_age.name,
+                ] : {
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/${metric}\" resource.type=\"cloud_run_revision\""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          title = "Estimated AI cost"
+          xyChart = {
+            dataSets = [{
+              timeSeriesQuery = {
+                timeSeriesFilter = {
+                  filter = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.ai_job_cost.name}\" resource.type=\"cloud_run_revision\""
                 }
               }
             }]

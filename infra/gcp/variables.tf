@@ -234,3 +234,42 @@ variable "recording_cleanup_alerts_enabled" {
   type        = bool
   default     = false
 }
+
+variable "ai_job_alerts_enabled" {
+  description = "AI非同期ジョブの監視アラートを有効化するか"
+  type        = bool
+  default     = false
+}
+
+variable "ai_job_backlog_age_threshold_seconds" {
+  description = "AIジョブの最古queued滞留を通知する秒数"
+  type        = number
+  default     = 900
+
+  validation {
+    condition     = var.ai_job_backlog_age_threshold_seconds >= 60
+    error_message = "AI job backlog threshold must be at least 60 seconds."
+  }
+}
+
+variable "ai_job_processing_age_threshold_seconds" {
+  description = "AIジョブの最古processing滞留を通知する秒数"
+  type        = number
+  default     = 1800
+
+  validation {
+    condition     = var.ai_job_processing_age_threshold_seconds >= 60
+    error_message = "AI job processing threshold must be at least 60 seconds."
+  }
+}
+
+variable "ai_job_cost_alert_yen" {
+  description = "24時間の推定AI費用アラート閾値（円）。正式請求額ではない。"
+  type        = number
+  default     = 5000
+
+  validation {
+    condition     = var.ai_job_cost_alert_yen > 0
+    error_message = "AI job cost alert threshold must be positive."
+  }
+}

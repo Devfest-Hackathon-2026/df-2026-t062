@@ -9,6 +9,7 @@ import { loadFormDef } from '../../db/forms.ts'
 import * as ins from '../../db/inspections.ts'
 import { tx } from '../../db/pool.ts'
 import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
+import { safeAiJobErrorCode, writeAiJobEvent, writeAiQueueSnapshot } from '../ai-job-observability.ts'
 import { inspect, type InspectDoc } from './index.ts'
 
 const log = (rec: Record<string, unknown>, context?: WorkerContext) => console.log(JSON.stringify({ severity: 'INFO', ...contextFields(context), ...rec }))
@@ -20,8 +21,10 @@ export async function runInspection(deps: WorkerDeps, id: string, context?: Work
   const token = randomUUID()
   const claimed = await ins.claimInspection(db, id, token)
   if (!claimed) return log({ msg: 'inspection already taken or done', inspectionId: id }, context)
+  const startedAt = Date.now()
+  writeAiJobEvent({ jobType: 'inspection', phase: 'started', jobId: id, attempt: claimed.attempts, context })
   const heartbeat = setInterval(() => {
-    void ins.extendInspectionLease(db, id, token).catch((e) => log({ msg: 'inspection lease heartbeat failed', inspectionId: id, error: (e as Error).name }, context))
+    void ins.extendInspectionLease(db, id, token).catch((e) => log({ msg: 'inspection lease heartbeat failed', inspectionId: id, error: safeAiJobErrorCode((e as Error).name) }, context))
   }, 60_000)
   heartbeat.unref()
   const t0 = Date.now()
@@ -79,12 +82,15 @@ export async function runInspection(deps: WorkerDeps, id: string, context?: Work
       return true
     })
     if (!ok) throw new LeaseLost()
+    writeAiJobEvent({ jobType: 'inspection', phase: status === 'partial' ? 'partial' : 'succeeded', jobId: id, attempt: claimed.attempts, durationMs: Date.now() - startedAt, usage: r.usage, counts: { item_count: r.findings.length, missing_count: r.findings.filter((f) => f.level === '1').length }, context })
     log({ msg: 'inspection done', inspectionId: id, status, seconds: steps.totalSeconds, items: r.findings.length, missing: r.findings.filter((f) => f.level === '1').length, calls: r.usage.calls, yen: r.usage.yen }, context)
   } catch (e) {
     if (e instanceof LeaseLost) return log({ msg: 'inspection lease lost', inspectionId: id }, context)
     const kind = (e as Error)?.name ?? 'Error'
-    await ins.releaseInspection(db, id, token, claimed.attempts >= ins.MAX_INSPECTION_ATTEMPTS, kind)
-    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'inspection failed', inspectionId: id, error: kind }))
+    const retryable = claimed.attempts < ins.MAX_INSPECTION_ATTEMPTS
+    await ins.releaseInspection(db, id, token, !retryable, kind)
+    writeAiJobEvent({ jobType: 'inspection', phase: retryable ? 'retry' : 'failed', jobId: id, attempt: claimed.attempts, durationMs: Date.now() - startedAt, errorCode: kind, retryable, context })
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'inspection failed', inspectionId: id, error: safeAiJobErrorCode(kind) }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
     if (process.env.DEBUG_JOBS) console.error(e)
     throw e
@@ -95,7 +101,9 @@ export async function runInspection(deps: WorkerDeps, id: string, context?: Work
 
 /** 見回り: 積み損ね・止まった点検を積み直す。積み直した数 */
 export async function reconcileInspections(deps: WorkerDeps, enqueue: (id: string) => Promise<void>): Promise<number> {
-  const ids = await ins.inspectionsToRequeue(await deps.db())
+  const db = await deps.db()
+  const ids = await ins.inspectionsToRequeue(db)
   for (const id of ids) await enqueue(id)
+  await writeAiQueueSnapshot(db, 'inspection', ids.length)
   return ids.length
 }
