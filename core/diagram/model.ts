@@ -10,6 +10,9 @@ export const itemSchema = z
     id,
     kind: z.enum([
       "wall",
+      "door",
+      "toilet",
+      "bathtub",
       "disability",
       "loss",
       "room",
@@ -28,7 +31,9 @@ export const itemSchema = z
     anatomy: anatomySchema.optional(),
     sources: z.array(sourceSchema).max(20).optional(),
     ...position,
-    width: number.min(20).max(820),
+    width: number.gt(0).max(Math.hypot(820, 560)),
+    wallLine: z.literal(true).optional(),
+    railLine: z.literal(true).optional(),
     height: number.min(20).max(560),
     rotation: number.min(-360).max(360),
     view: z.enum(["front", "back"]).optional(),
@@ -36,7 +41,18 @@ export const itemSchema = z
     labelOffsetY: z.number().min(-300).max(300).optional(),
     stepHeightCm: z.number().min(0).max(1000).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((item, ctx) => {
+    if (item.wallLine && item.kind !== 'wall') {
+      ctx.addIssue({ code: 'custom', path: ['wallLine'], message: '線は壁にだけ指定できます' });
+    }
+    if (item.railLine && item.kind !== 'rail') {
+      ctx.addIssue({ code: 'custom', path: ['railLine'], message: '手すりの線は手すりにだけ指定できます' });
+    }
+    if (!item.wallLine && !item.railLine && (item.width < 20 || item.width > 820)) {
+      ctx.addIssue({ code: 'custom', path: ['width'], message: '幅は20〜820の範囲で指定してください' });
+    }
+  });
 export const personSchema = z
   .object({
     id,
@@ -142,6 +158,9 @@ export const schema = z
   });
 export type Doc = z.infer<typeof schema>;
 export type Item = z.infer<typeof itemSchema>;
+export const housePaletteKinds: readonly Item["kind"][] = [
+  "room", "wall", "door", "rail", "step", "bed", "toilet", "bathtub", "wheelchair", "furniture",
+];
 export type Person = z.infer<typeof personSchema>;
 export type Relation = z.infer<typeof relationSchema>;
 export type Tab = "house" | "family" | "body";
@@ -169,6 +188,9 @@ export function removePerson(d: Doc, id: string): Doc {
 }
 export const labels: Record<Item["kind"], string> = {
   wall: "壁",
+  door: "出入口",
+  toilet: "便器",
+  bathtub: "浴槽",
   disability: "障害",
   loss: "欠損",
   room: "部屋",
@@ -185,6 +207,9 @@ export const labels: Record<Item["kind"], string> = {
 };
 export const colors: Record<Item["kind"], string> = {
   wall: "#25394a",
+  door: "#d9e3e8",
+  toilet: "#e8f0f7",
+  bathtub: "#d5eae7",
   disability: "#ffffff",
   loss: "#ffffff",
   room: "#dceae6",

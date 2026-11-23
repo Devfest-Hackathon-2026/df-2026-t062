@@ -9,6 +9,7 @@ import ObjectThumbnail from "./ObjectThumbnail.tsx";
 export type PaletteObject = { kind: Item["kind"] } | { sex: Person["sex"] };
 export default function usePaletteDrag(
   onDrop: (object: PaletteObject, point: { x: number; y: number }) => void,
+  house = false,
 ) {
   const gesture = useRef<{
     pointerId: number;
@@ -91,7 +92,7 @@ export default function usePaletteDrag(
         style={{ transform: `translate(${ghost.x + 12}px,${ghost.y + 12}px)` }}
       >
         {"kind" in ghost.object ? (
-          <ObjectThumbnail kind={ghost.object.kind} />
+          <ObjectThumbnail kind={ghost.object.kind} house={house} />
         ) : (
           <ObjectThumbnail sex={ghost.object.sex} />
         )}

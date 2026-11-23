@@ -1,0 +1,121 @@
+{
+  "key": "F1",
+  "scenario": "F",
+  "repeat": 1,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:18:32.186Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 2407,
+    "promptSha256": "c9fb7b85c5a67887d8dee2fbab77fa8a7839d4c15aa3af1ccaf0c47055d41718",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 3832,
+    "responseId": "aNIBa_OGDsyevdAPmaaTgAc",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 580,
+      "candidatesTokenCount": 50,
+      "totalTokenCount": 979,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 580
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 50
+        }
+      ],
+      "thoughtsTokenCount": 349
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\n  \"plan1\": {\n    \"plan.intentionAnalysis\": \"\",\n    \"plan.overallPolicy\": \"\"\n  },\n  \"needs\": [],\n  \"slots\": [],\n  \"conflicts\": []\n}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 3838,
+    "draft": {
+      "id": "798d3b42-6753-416e-beb6-0da7903626dc",
+      "planId": "fb691344-91fe-46fe-bdeb-80099e6a795c",
+      "status": "proposed",
+      "sourceDocumentId": "ab8e21d6-d208-48c3-b62e-f658a920e366",
+      "sourceRevisionId": 11,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:18:36.020Z",
+      "proposal": {
+        "needs": [],
+        "plan1": {
+          "plan.overallPolicy": "",
+          "plan.intentionAnalysis": ""
+        },
+        "slots": [],
+        "conflicts": []
+      },
+      "conflicts": [],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 12,
+    "applied": {
+      "fields": [],
+      "needs": [],
+      "slots": [],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "empty"
+        },
+        {
+          "target": "plan.intentionAnalysis",
+          "reason": "empty"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証F",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）"
+    },
+    "needs": [],
+    "slots": []
+  },
+  "expected": {
+    "focus": [],
+    "services": [],
+    "slots": [],
+    "conflictsRequired": false,
+    "emptyProposalExpected": true
+  }
+}
