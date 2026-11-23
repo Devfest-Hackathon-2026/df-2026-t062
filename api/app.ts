@@ -1,3 +1,11 @@
+import * as fees from '../db/care-fees.ts'
+import { FeeCalculateInput,FeeConfirmInput } from '../core/care-fee-api.ts'
+import * as months from '../db/care-months.ts'
+import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
+import { careRecordDrafter } from './care-record-ai.ts'
+import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate, CareRecordConfirm } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision, confirmCareRecord } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -24,6 +32,7 @@ import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
+import * as officeTopicsDb from '../db/office-topics.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
@@ -37,7 +46,7 @@ import type { Queue } from './queue.ts'
 import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
-import { fakeTopicDrafter, type TopicDrafter } from '../core/topics.ts'
+import { fakeTopicDrafter, fakeTopicTeacher, NOTE_LINE_MAX, NOTE_LINES_MAX, settleTeach, type TopicDrafter, type TopicTeacher } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
 import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
@@ -62,6 +71,8 @@ export interface ApiDeps {
   fieldMatcher?: () => Promise<FieldMatcher>
   /** 事業所が足した書類の拾う内容の案を作る（#153）。省けば試しの案 */
   topicDrafter?: () => Promise<TopicDrafter>
+  /** 責任者のダメ出しを、どの項目に足すか振り分ける（#115 の AI 特訓部屋）。省けば試しの振り分け */
+  topicTeacher?: () => Promise<TopicTeacher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -176,14 +187,19 @@ const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
 const OfficeKindInput = z.object({
   name: z.string().trim().min(1).max(40),
   perClient: z.enum(['one', 'many']),
-  copyFromPrimary: z.boolean(),
-  records: z.boolean(),
   append: z.boolean(),
 })
 const OfficeTopicsInput = z.object({
   topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
 })
-const TopicDraftRequest = z.object({ versionId: z.string().uuid() })
+// 事業所が直せる項目（#115）。全部を置き換える（足した項目・書き足しの行・合格の印）
+const TopicId = z.string().min(1).max(41)
+const OfficeTopicsEditInput = z.object({
+  added: z.array(z.object({ id: TopicId.optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+  notes: z.record(TopicId, z.array(z.string().max(NOTE_LINE_MAX)).max(NOTE_LINES_MAX)),
+  passed: z.array(TopicId).max(200),
+})
+const TeachRequest = z.object({ text: z.string().trim().min(1).max(NOTE_LINE_MAX), current: TopicId.nullable() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -354,6 +370,11 @@ export function createApp(deps: ApiDeps) {
 
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
+  app.get('/api/form-kinds/:kind/published', staffRoute('care.work', async(c,staff,db)=>{
+    const kind=await kinds.visibleKind(db,staff.officeId,c.req.param('kind')!)
+    if(!kind)throw new repo.NotFound()
+    return json(c,{formVersionId:await forms.publishedVersionId(db,staff.officeId,kind.key)})
+  }))
 
   // ---------- ケアプラン（#90）----------
 
@@ -495,7 +516,80 @@ export function createApp(deps: ApiDeps) {
       clientId: document.clientId, documentId: document.id, resourceType: 'document', resourceId: document.id,
       accessMode: 'view', action: 'document.view',
     })
-    return json(c, { document })
+    // 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの（id と名前だけ。#115）
+    return json(c, { document, unheardTopics: await officeTopicsDb.unheardTopics(db, staff.officeId, document.id) })
+  }))
+
+  // 復元した第4〜7表の閲覧にも、既存のアクセス監査を適用する。
+  const careRead = (scope: 'client' | 'record' | 'month' | 'fee', accessMode: 'list' | 'view',
+    handler: (c: Context, staff: repo.Staff, db: Db) => Promise<Response>) => staffRoute('care.work', async (c, staff, db) => {
+    const response = await handler(c, staff, db)
+    const id = c.req.param('id')!
+    let clientId = id, documentId: string | undefined
+    if (scope !== 'client') {
+      const table = { record: 'documents', month: 'care_plan_months', fee: 'care_plan_fees' }[scope]
+      const row = (await db.query(`SELECT client_id, ${scope === 'record' ? 'id' : 'document_id'} AS document_id FROM ${table} WHERE id=$1 AND office_id=$2`, [id, staff.officeId])).rows[0]
+      if (!row) throw new repo.NotFound()
+      clientId = row.client_id; documentId = row.document_id
+    }
+    await accessAudit(c, db, staff, {
+      clientId, documentId, resourceType: `care_${scope}`, resourceId: id,
+      accessMode, action: 'document.view',
+    })
+    return response
+  })
+
+  app.get('/api/care-fee-masters', staffRoute('care.work',async(c,_staff,db)=>json(c,{masters:await fees.careFeeMasters(db)})))
+  app.get('/api/clients/:id/care-plan-fees',careRead('client', 'list',async(c,staff,db)=>json(c,{fees:await fees.listCareFees(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-months/:id/fees',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.calculateCareFee(db,staff,c.req.param('id')!,await body(c,FeeCalculateInput))})))
+  app.get('/api/care-plan-fees/:id',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-fees/:id/confirm',staffRoute('care.work',async(c,staff,db)=>{const input=await body(c,FeeConfirmInput);return json(c,{calculation:await fees.confirmCareFee(db,staff,c.req.param('id')!,input.calculationId,input.baseRevision)})}))
+  app.get('/api/care-plan-fees/:id/history',careRead('fee', 'list',async(c,staff,db)=>json(c,{history:await fees.careFeeHistory(db,staff.officeId,c.req.param('id')!)})))
+  app.get('/api/care-plan-fees/:id/calculations/:calculation',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!,c.req.param('calculation')!)})))
+
+  app.get('/api/clients/:id/care-plan-months', careRead('client', 'list', async (c, staff, db) => json(c, { months: await months.listCareMonths(db,staff.officeId,c.req.param('id')!) })))
+  app.post('/api/clients/:id/care-plan-months/preview', staffRoute('care.work', async (c, staff, db) => {
+    const input=await body(c,MonthPreviewInput)
+    return json(c,await months.previewCareMonth(db,staff.officeId,c.req.param('id')!,input.planId,input.month))
+  }))
+  app.post('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => {
+    const r=await months.createCareMonth(db,staff,c.req.param('id')!,await body(c,MonthCreateInput))
+    return json(c,r,r.created?201:200)
+  }))
+  app.get('/api/care-plan-months/:id', careRead('month', 'view', async(c,staff,db)=>json(c,{month:await months.getCareMonth(db,staff.officeId,c.req.param('id')!)})))
+  app.put('/api/care-plan-months/:id', staffRoute('care.work', async(c,staff,db)=>json(c,{month:await months.saveCareMonth(db,staff,c.req.param('id')!,await body(c,MonthSaveInput))})))
+  app.post('/api/care-plan-months/:id/preview', staffRoute('care.work', async(c,staff,db)=>json(c,await months.previewMonthAction(db,staff.officeId,c.req.param('id')!,await body(c,MonthActionInput)))))
+  app.get('/api/care-plan-months/:id/revisions/:rev', careRead('month', 'view', async(c,staff,db)=>{
+    const rev=z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if(!rev.success)throw new repo.BadRequest('保存版が正しくありません')
+    return json(c,await months.careMonthSaved(db,staff.officeId,c.req.param('id')!,rev.data))
+  }))
+
+  app.get('/api/clients/:id/care-records', careRead('client', 'list', async (c, staff, db) => {
+    const query = CareRecordQuery.safeParse(c.req.query())
+    if (!query.success) throw new repo.BadRequest('検索条件が正しくありません')
+    return json(c, await listCareRecords(db, staff.officeId, c.req.param('id')!, query.data))
+  }))
+  app.post('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
+    const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
+    return json(c, record, record.created ? 201 : 200)
+  }))
+  app.post('/api/care-records/:id/confirm', staffRoute('care.work', async (c, staff, db) => json(c, { confirmation: await confirmCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordConfirm)) })))
+  app.get('/api/care-records/:id/ai-drafts', careRead('record', 'list', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
+  app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CareRecordDraftCreate)
+    const model = deps.chat ? await deps.chat() : fakeModel
+    return json(c, { draft: await createCareRecordDraft(db, staff, c.req.param('id')!, input, careRecordDrafter(model)) }, 201)
+  }))
+  app.post('/api/care-records/:id/ai-drafts/:draft/apply', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const draft = await applyCareRecordDraft(db, staff, id, c.req.param('draft')!)
+    return json(c, { draft, document: await repo.getDocument(db, staff.officeId, id) })
+  }))
+  app.get('/api/care-records/:id/revisions/:rev', careRead('record', 'view', async (c, staff, db) => {
+    const rev = z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if (!rev.success) throw new repo.NotFound()
+    return json(c, { revision: await careRecordRevision(db, staff.officeId, c.req.param('id')!, rev.data) })
   }))
 
   app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
@@ -649,7 +743,12 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id/pdf', staffRoute('care.work', async (c, staff, db) => {
     const doc = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
-    const rev = await repo.latestRevision(db, staff.officeId, doc.id)
+    const requestedRev = c.req.query('rev')
+    const selectedRev = requestedRev === undefined ? undefined : z.coerce.number().int().positive().safeParse(requestedRev)
+    if (selectedRev && !selectedRev.success) throw new repo.BadRequest('保存版の番号が正しくありません')
+    const rev = selectedRev?.success
+      ? await careRecordRevision(db, staff.officeId, doc.id, selectedRev.data)
+      : await repo.latestRevision(db, staff.officeId, doc.id)
     const version = await forms.loadVersion(db, rev.formVersionId)
     const pdf = await makePdf(deps.storage(), version, rev.values)
     await accessAudit(c, db, staff, {
@@ -897,6 +996,7 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
+      if (scope.officeId) await draftTopicsOnStart(db, scope.officeId, v)
       return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
     }))
     // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
@@ -906,9 +1006,31 @@ export function createApp(deps: ApiDeps) {
       return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
+  /**
+   * 事業所が足した種類の書式を使い始めるときに、書式の欄から AI が項目（拾う内容）を決めて、そのまま入れる（#209）。
+   * 決めるのは、録音から書く種類で、項目がまだ全体のまとめだけのときだけ（直した書式を使い始め直しても、今ある項目は変えない）。
+   * AI が失敗しても使い始めは止めない（項目は全体のまとめだけのまま）。ログには中身を出さない
+   */
+  async function draftTopicsOnStart(db: Db, officeId: string, v: Pick<forms.FormVersion, 'id' | 'kind' | 'bindings' | 'localFields'>) {
+    const kindName = await kinds.needsTopicDraft(db, officeId, v.kind)
+    if (!kindName) return
+    const dict = fieldDict(v.localFields)
+    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
+    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
+      const m = slotMeaning(b, dict, v.localFields)
+      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
+    }))]
+    if (!slots.length) return
+    try {
+      const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName, slots })
+      if (drafted.length) await kinds.setDraftedTopics(db, officeId, v.kind, drafted)
+    } catch (e) {
+      console.log(JSON.stringify({ severity: 'WARNING', msg: 'topic draft on start failed', versionId: v.id, error: (e as Error)?.name ?? 'Error' }))
+    }
+  }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
 
-  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容の案を作る・直す、やめる。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
+  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容を直す、やめる（拾う内容は、書式を使い始めるときに AI が決める。#209）。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
   app.post('/api/office/form-kinds', staffRoute('form.manage', async (c, staff, db) => {
     const input = await body(c, OfficeKindInput)
     return json(c, { kind: await kinds.createOfficeKind(db, staff.officeId, input) }, 201)
@@ -917,25 +1039,27 @@ export function createApp(deps: ApiDeps) {
     const { topics } = await body(c, OfficeTopicsInput)
     return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, c.req.param('key')!, topics) })
   }))
-  // 拾う内容の案: 確かめた書式（下書きか公開した版）の欄に入る内容から AI が作り、そのまま保存する（責任者はこのあと直す）
-  app.post('/api/office/form-kinds/:key/topics/draft', staffRoute('form.manage', async (c, staff, db) => {
-    const key = c.req.param('key')!
-    const kind = await kinds.ownKind(db, staff.officeId, key)
-    const { versionId } = await body(c, TopicDraftRequest)
-    const v = await forms.versionForManager(db, { officeId: staff.officeId }, versionId)
-    if (v.kind !== key) throw new repo.BadRequest('別の書類の書式です')
-    const dict = fieldDict(v.localFields)
-    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
-    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
-      const m = slotMeaning(b, dict, v.localFields)
-      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
-    }))]
-    const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName: kind.name, slots })
-    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, key, drafted) })
-  }))
   app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
     await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)
     return json(c, { ok: true })
+  }))
+
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋）: 項目を見る、直す（足す・書き足す・合格の印）、ダメ出しを振り分ける。全体の項目は消せず、名前も変えられない ----------
+  app.get('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!))))
+  app.put('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeTopicsEditInput)
+    return json(c, await officeTopicsDb.putOfficeTopics(db, staff, c.req.param('kind')!, input, repo.auditContextOf(staff)))
+  }))
+  // 振り分けだけ（保存しない）。画面が答えを見せ、そのまま PUT で保存する。AI の答えは一覧と照らしてから返す
+  app.post('/api/office/topics/:kind/teach', staffRoute('form.manage', async (c, staff, db) => {
+    const { text, current } = await body(c, TeachRequest)
+    const view = await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!)
+    // AI には、書き足しを含めた説明を渡す（教えたことと重ねて足さないように）
+    const items = view.items.map((i) => ({ id: i.id, name: i.name, guide: [i.guide, ...i.notes].filter(Boolean).join(' ') }))
+    const teach = await (deps.topicTeacher ?? (async () => fakeTopicTeacher))()
+    const decision = await teach({ kindName: view.kind.name, items, current: current && items.some((i) => i.id === current) ? current : null, text })
+    return json(c, { decision: settleTeach(items, decision, text) })
   }))
 
   // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
@@ -1005,7 +1129,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof repo.Forbidden) return json(c, { error: 'forbidden', message: err.message }, 403)
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
-    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'fee_source_updated' ? '第6表に新しい保存版があります。最新の保存版で再計算してから確定してください。' : err.message === 'fee_workbook_unverified' ? 'この算定はExcel数式との照合前です。再計算してから確定してください。' : err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
     if (err instanceof Error && ['invalid_hold_until', 'invalid_hold_reason_code'].includes(err.message)) {
       return json(c, { error: err.message }, 400)
     }

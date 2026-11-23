@@ -33,6 +33,8 @@ interface Props {
   clientName: string
   review: ReviewItem[]
   topics: ReturnType<typeof availableTopics>
+  /** 事業所が足した項目で、この書類でまだ話に出ていないもの（#115。名前だけ） */
+  unheard?: { id: string, name: string }[]
   onJump: (key: string) => boolean
   onPreview: (preview: SurveyPreview) => number
   onIdentity: (sha256: string, confirmed: boolean) => void
@@ -73,7 +75,7 @@ function PetFillNote({ fill }: { fill: PetFill }) {
   )
 }
 
-export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
+export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, unheard = [], onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
 
   const [menu, setMenu] = useState<Menu | null>(null)
   const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
@@ -166,6 +168,12 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
         {menu === 'interview' && (
           <>
             <PetMessage>空白の項目を埋めるために、<br />面談で確認するとよい話題の例を提案します。</PetMessage>
+            {unheard.length > 0 && (
+              <div className="assistant-card assistant-topic assistant-unheard">
+                <PetIcon name="lightbulb" /><div><h3>まだ聞いていない</h3><small>事業所で足した項目です。録音で話に出ると、AI が書きます。</small>
+                  <ul aria-label="まだ聞いていない項目">{unheard.map((t) => <li key={t.id}>{t.name}</li>)}</ul></div>
+              </div>
+            )}
             <ul className="assistant-stack">
               {topics.map(({ title, icon, description, keys }) => (
                 <li key={title}>
@@ -178,7 +186,7 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
                 </li>
               ))}
             </ul>
-            {!topics.length && <p className="assistant-empty">{available ? '面談のヒントに対応する空欄はありません。' : 'アセスメントを開くと面談のヒントを表示します。'}</p>}
+            {!topics.length && !unheard.length && <p className="assistant-empty">{available ? '面談のヒントに対応する空欄はありません。' : 'アセスメントを開くと面談のヒントを表示します。'}</p>}
           </>
         )}
         {menu === 'inspect' && clientId && <PetInspection clientId={clientId} list={inspections.list} reload={inspections.reload} onJump={jump} />}

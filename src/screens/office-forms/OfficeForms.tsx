@@ -1,6 +1,6 @@
 // 責任者の画面（#102）: 書類の設定（一覧）。
 // #111 で採用した試作（prototypes/111-admin-adopted）の並びと言葉を、本番の部品に合わせたもの。
-// 責任者には、裏側の言葉（様式・版・対応など）を見せない。「AI に事業所のやり方を教える」は #154 で決まるまで出さない。
+// 責任者には、裏側の言葉（様式・版・対応など）を見せない。AI に事業所のやり方を教える入口（AI 特訓部屋）は、書類の画面に置く（#115）。
 import { linkProps } from '../../lib/router.tsx'
 import { OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { day, phaseOf, useOfficeForms } from '../../components/form-status/formStatus.ts'

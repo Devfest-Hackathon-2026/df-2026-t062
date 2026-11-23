@@ -54,7 +54,6 @@ app → screens → components → lib
 | `office-upload/` | `/office/forms/<種類>/upload` | 責任者: 書式を上げる |
 | `office-review/` | `/office/forms/<種類>/review/<版>` | 責任者: 読み取った書式を確かめる・直す |
 | `office-add/` | `/office/add` | 責任者: 事業所の書類を足す 手順 1「書類について」（#153） |
-| `office-topics/` | `/office/forms/<種類>/topics` | 責任者: 事業所の書類を足す 手順 4「聞き取ること」（#153） |
 
 PC と iPad で画面が違うときは、同じフォルダに `Pc〜`・`Pad〜` で並べる。
 

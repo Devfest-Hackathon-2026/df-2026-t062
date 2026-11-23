@@ -64,10 +64,12 @@ run "private_service_with_scoped_deployer" {
   command = plan
 
   variables {
-    project_id                 = "mock-project"
-    github_repository_id       = "1447301909"
-    github_repository_owner_id = "234936919"
-    app_origins                = []
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    recording_cleanup_alerts_enabled    = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
   assert {
@@ -242,9 +244,11 @@ run "private_service_with_scoped_deployer" {
   assert {
     condition = (
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].service_account == "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.deployer_uses_recording_cleanup_runtime.role == "roles/iam.serviceAccountUser" &&
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].timeout == "900s" &&
       google_cloud_run_v2_job.recording_cleanup.template[0].template[0].max_retries == 0 &&
       google_cloud_scheduler_job.recording_cleanup.schedule == "*/15 * * * *" &&
+      google_cloud_scheduler_job.recording_cleanup.paused &&
       google_cloud_scheduler_job.recording_cleanup.http_target[0].oauth_token[0].service_account_email == "tasks-invoker@mock-project.iam.gserviceaccount.com"
     )
     error_message = "The recording cleanup Job must use its dedicated service account and run every 15 minutes through Scheduler."
@@ -257,6 +261,34 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket_iam_member.recording_cleanup_source.condition[0].expression == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-source/objects/recordings/\")"
     )
     error_message = "The source bucket must use three-day Soft Delete and keep Lifecycle disabled until readiness is verified."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_success.name == "recording_cleanup_success_count" &&
+      google_logging_metric.recording_cleanup_failure.name == "recording_cleanup_failure_count" &&
+      google_logging_metric.recording_cleanup_overdue.name == "recording_cleanup_overdue_count" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.name == "recording_cleanup_hold_mismatch_count" &&
+      google_logging_metric.recording_cleanup_final_failure.name == "recording_cleanup_final_failure_count" &&
+      google_logging_metric.recording_cleanup_failure_rate_breach.name == "recording_cleanup_failure_rate_breach_count" &&
+      google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
+      length(google_monitoring_alert_policy.recording_cleanup_overdue.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_final_failure.notification_channels) == 1 &&
+      google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
+    )
+    error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_overdue.value_extractor == "EXTRACT(jsonPayload.overdue_count)" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.value_extractor == "EXTRACT(jsonPayload.hold_alert_count)" &&
+      google_logging_metric.recording_cleanup_stuck.value_extractor == "EXTRACT(jsonPayload.stuck_count)" &&
+      google_monitoring_alert_policy.recording_cleanup_overdue.enabled &&
+      google_monitoring_alert_policy.recording_cleanup_overdue.conditions[0].condition_threshold[0].duration == "900s" &&
+      google_monitoring_alert_policy.recording_cleanup_no_success.conditions[0].condition_absent[0].duration == "7200s"
+    )
+    error_message = "Monitoring must extract aggregate values and preserve the documented alert thresholds."
   }
 
   assert {
@@ -296,6 +328,23 @@ run "private_service_with_scoped_deployer" {
   assert {
     condition     = length(google_billing_budget.monthly) == 0
     error_message = "No budget is created without billing_account_id."
+  }
+}
+
+run "recording_cleanup_scheduler_can_be_enabled_explicitly" {
+  command = plan
+
+  variables {
+    project_id                         = "mock-project"
+    github_repository_id               = "1447301909"
+    github_repository_owner_id         = "234936919"
+    app_origins                        = []
+    recording_cleanup_scheduler_paused = false
+  }
+
+  assert {
+    condition     = !google_cloud_scheduler_job.recording_cleanup.paused
+    error_message = "The recording cleanup Scheduler must be resumable only through an explicit Terraform variable."
   }
 }
 

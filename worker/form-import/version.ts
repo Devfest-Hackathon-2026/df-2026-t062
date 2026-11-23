@@ -3,9 +3,11 @@
 //   bindings     … 印字欄 → 値の対応（core/binding.ts。手で作った版と同じ書き方）
 //   pages        … ページ（core/form.ts の FormPage）
 //   localFields  … 事業所だけの欄の定義（form_template_versions.local_fields）
+//   （図の枠は image の印字欄と diagram@1。手で作った版と同じ）
 //   review       … 責任者に確かめてほしい欄（印字欄の名前と理由。form_imports.review）
 // 推測で決めたところは、確定した対応にせず review に書く（何行目か分からない、印の意味が分からない、ない key など）。
 import { checkBindings, specOf, type Binding, type Bindings, type Ref, type Step, type Test } from '../../core/binding.ts'
+import { diagramKinds } from '../../core/diagram/fields.ts'
 import { BY_KEY, choicesOf } from '../../core/fields.ts'
 import type { FormPage } from '../../core/form.ts'
 import type { PageDraft } from './convert.ts'
@@ -42,6 +44,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 function pdfmeSlot(name: string, s: DraftSlot): PdfmeSlot {
   const at = { name, content: '', position: { x: s.x, y: s.y }, width: s.w, height: s.h }
+  if (s.ui === 'diagram') return { ...at, type: 'image' }
   if (s.ui === 'circle') return { ...at, type: 'circleMark', content: 'false', rotate: 0, opacity: 1, color: FONT.fontColor, borderWidth: 0.3 }
   if (s.ui === 'check') {
     const size = clamp(Math.floor(Math.min(s.w, s.h) * PT_PER_MM * 0.9), 6, 12)
@@ -159,7 +162,8 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
   for (const p of sorted) {
     for (const msg of p.problems) review.push({ slot: '', reason: `${p.page} ページ: ${msg}` })
     const pageSlots: PdfmeSlot[] = []
-    p.slots.forEach((s, i) => {
+    p.slots.forEach((answered, i) => {
+      const s = diagramUi(answered)
       const base = `p${p.page}_${s.label.replace(/\s+/g, '').slice(0, 40) || '欄'}`
       let name = base
       for (let n = 2; used.has(name); n++) name = `${base}_${n}`
@@ -170,6 +174,7 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
         review.push({ slot: name, reason })
         return { key: fallbackKey }
       }
+      if (answered.ui === 'diagram' && s.ui !== 'diagram' && answered.ref) review.push({ slot: name, reason: `図の欄ではない key なので、文字の欄にした（${answered.ref}）` })
       bindings[name] = bindingOf(s, name, locals, toLocal, (reason) => review.push({ slot: name, reason }))
       pageSlots.push(pdfmeSlot(name, s))
     })
@@ -184,10 +189,22 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
   return { schemas, bindings, pages, localFields: [...locals.values()].filter((d) => usedLocal.has(d.key)), review: [...review, ...conflicts] }
 }
 
+/**
+ * 図の欄（#128）。図の key（家族構成図・見取図・人体図）は、AI が文字の欄と答えても図の欄にする。
+ * 図の枠と答えても図の key でなければ、複数行の文字の欄にする（図は決まった key にしか描けない）
+ */
+function diagramUi(s: DraftSlot): DraftSlot {
+  const isDiagramKey = !!s.ref && !!diagramKinds[s.ref]
+  if (isDiagramKey && (s.ui === 'text' || s.ui === 'area')) return { ...s, ui: 'diagram' }
+  if (!isDiagramKey && s.ui === 'diagram') return { ...s, ui: 'area' }
+  return s
+}
+
 function bindingOf(
   s: DraftSlot, name: string, locals: Map<string, LocalField>,
   toLocal: (type: LocalField['type'], reason: string) => Ref, note: (reason: string) => void,
 ): Binding {
+  if (s.ui === 'diagram') return { op: 'diagram@1', ui: 'diagram', ref: { key: s.ref! } }
   const isMark = s.ui === 'check' || s.ui === 'circle'
   let parsed: Parsed | null = null
   if (s.ref?.startsWith('local.')) parsed = { ref: { key: s.ref }, rowUnknown: false }

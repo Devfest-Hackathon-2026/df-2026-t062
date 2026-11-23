@@ -14,6 +14,11 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
   const db = await createPool({ ...process.env, DB_SCHEMA: schema })
   try {
     await migrate(db, undefined, { stopBefore: '0009_document_input_form_version.sql' })
+    // 最新のseedには第5表もある。独自種類として先行登録済みの場合も追加移行が上書きしない。
+    await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_7','サービス利用票別表 第7表','many',false,'assessment','[]','[]','single')")
+    await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_6','サービス利用票 第6表','many',false,'assessment','[]','[]','single')")
+    await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_4','サービス担当者会議の要点 第4表','many',false,'assessment','[]','[]','single')")
+    await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_5','居宅介護支援経過 第5表','many',false,'assessment','[]','[]','single')")
     await seedForms(db)
     const office = (await db.query("INSERT INTO offices (name, phone, fax) VALUES ('migration test', '', '') RETURNING id")).rows[0].id
     const staff = (await db.query("INSERT INTO staff (office_id, auth_uid, name, email) VALUES ($1, 'migration-test', 'テスト', 'migration@test.invalid') RETURNING id", [office])).rows[0].id
@@ -37,7 +42,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
        VALUES ($1,$2,$3,'recordings/backfill.webm','audio/webm','uploaded','2026-01-01T00:00:00Z',$4) RETURNING id`,
       [office, client, document, staff],
     )).rows[0].id
-    assert.deepEqual(await migrate(db, undefined, { stopBefore: '0018_audit_events.sql' }), ['0009_document_input_form_version.sql'])
+    assert.deepEqual(await migrate(db, undefined, { stopBefore: '0018_audit_events.sql' }), ['0009_document_input_form_version.sql', '0010_support_progress.sql', '0011_care_record_creations.sql', '0012_care_record_drafts.sql', '0013_meeting_records.sql', '0014_care_plan_months.sql', '0015_care_fees.sql', '0016_care_fee_confirmations.sql', '0017_care_record_confirmations.sql'])
     const row = (await db.query('SELECT * FROM document_inputs WHERE id=$1', [id])).rows[0]
     assert.equal(row.template_version_id, null)
     assert.equal(row.upload_generation, 1, '既存の /original パスを維持する')
@@ -61,6 +66,8 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0032_recording_upload_cleanup_lease_index.sql',
       '0033_recording_generation_backfill_index.sql',
       '0034_document_fills.sql',
+      '0035_care_plan_shared_services.sql',
+      '0035_office_topics_training.sql',
     ])
     const backfilled = (await db.query(
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',

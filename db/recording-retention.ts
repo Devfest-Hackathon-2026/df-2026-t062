@@ -85,6 +85,23 @@ export interface HoldSyncCandidate {
   attempts: number
 }
 
+export interface RecordingRetentionObservability {
+  overdueCount: number
+  eligibleStuckCount: number
+  deletingStuckCount: number
+  failedPastRetryCount: number
+  finalFailureCount: number
+  unsyncedHoldCount: number
+  escalatedHoldCount: number
+}
+
+export interface RetentionHoldVerificationCandidate {
+  recordingId: string
+  objectPath: string
+  expectedHold: boolean
+  generation: DecimalString
+}
+
 const iso = (value: unknown) => value ? new Date(value as string | Date).toISOString() : null
 
 function state(row: Record<string, unknown>): RecordingRetentionState {
@@ -677,8 +694,80 @@ export async function lifecycleReadiness(db: Db) {
   const row = (await db.query(
     `SELECT
        count(*) FILTER (WHERE retention_hold_sync_status <> 'synced' AND (retention_hold OR retention_hold_target))::int AS unsynced_holds,
-       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds
+       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_expires_at IS NULL)::int AS missing_expiry,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND status = 'uploaded' AND source_generation IS NULL)::int AS missing_generation,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_sync_status = 'legacy')::int AS legacy_hold_sync,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'failed')::int AS failed_deletions,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'deleting'
+         AND source_delete_claimed_at <= now() - interval '15 minutes')::int AS stuck_deletions,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND status IN ('uploading', 'abandoning')
+         AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days')::int AS stale_uploads
      FROM recordings`,
   )).rows[0]
-  return { unsyncedHolds: Number(row.unsynced_holds), escalatedHolds: Number(row.escalated_holds) }
+  return {
+    unsyncedHolds: Number(row.unsynced_holds),
+    escalatedHolds: Number(row.escalated_holds),
+    missingExpiry: Number(row.missing_expiry),
+    missingGeneration: Number(row.missing_generation),
+    legacyHoldSync: Number(row.legacy_hold_sync),
+    failedDeletions: Number(row.failed_deletions),
+    stuckDeletions: Number(row.stuck_deletions),
+    staleUploads: Number(row.stale_uploads),
+  }
+}
+
+export async function getRecordingRetentionObservability(db: Db): Promise<RecordingRetentionObservability> {
+  const row = (await db.query(
+    `SELECT
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_expires_at <= now()
+         AND NOT retention_hold AND NOT retention_hold_target AND retention_hold_sync_status = 'synced'
+         AND source_delete_status IN ('pending', 'eligible', 'requested'))::int AS overdue_count,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status IN ('eligible', 'requested')
+         AND source_expires_at <= now())::int AS eligible_stuck_count,
+       count(*) FILTER (WHERE source_delete_status = 'deleting'
+         AND source_delete_claimed_at <= now() - interval '15 minutes')::int AS deleting_stuck_count,
+       count(*) FILTER (WHERE source_delete_status = 'failed'
+         AND source_delete_next_retry_at IS NOT NULL AND source_delete_next_retry_at <= now())::int AS failed_past_retry_count,
+       count(*) FILTER (WHERE source_delete_status = 'failed'
+         AND source_delete_attempts >= $1)::int AS final_failure_count,
+       count(*) FILTER (WHERE retention_hold_sync_status <> 'synced'
+         AND (retention_hold OR retention_hold_target))::int AS unsynced_hold_count,
+       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_hold_count
+     FROM recordings`,
+    [RECORDING_DELETE_MAX_ATTEMPTS],
+  )).rows[0]
+  return {
+    overdueCount: Number(row.overdue_count),
+    eligibleStuckCount: Number(row.eligible_stuck_count),
+    deletingStuckCount: Number(row.deleting_stuck_count),
+    failedPastRetryCount: Number(row.failed_past_retry_count),
+    finalFailureCount: Number(row.final_failure_count),
+    unsyncedHoldCount: Number(row.unsynced_hold_count),
+    escalatedHoldCount: Number(row.escalated_hold_count),
+  }
+}
+
+export async function listRetentionHoldVerificationCandidates(
+  db: Db,
+  limit = 100,
+  afterId?: string,
+): Promise<{ candidates: RetentionHoldVerificationCandidate[], hasMore: boolean }> {
+  const rows = (await db.query(
+    `SELECT id, object_path, retention_hold, source_generation
+       FROM recordings
+      WHERE source_deleted_at IS NULL AND source_generation IS NOT NULL
+        AND retention_hold_sync_status = 'synced'
+        AND ($2::uuid IS NULL OR id > $2::uuid)
+      ORDER BY id
+      LIMIT $1`,
+    [limit + 1, afterId ?? null],
+  )).rows
+  const candidates = rows.slice(0, limit).map((row) => ({
+    recordingId: row.id as string,
+    objectPath: row.object_path as string,
+    expectedHold: Boolean(row.retention_hold),
+    generation: decimalString(row.source_generation),
+  }))
+  return { candidates, hasMore: rows.length > limit }
 }

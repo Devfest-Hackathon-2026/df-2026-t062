@@ -6,7 +6,7 @@ import { checkProposal, runChat, diagramChatSystem, chatSystem, type ChatDocumen
 import { blank, type Item } from '../core/diagram/model.ts'
 import { nextDiagram, diagramSchema } from '../core/diagram/fields.ts'
 import { anatomySchema, bodyAnchor, normalizeBodyProposal, tapPosition, BODY_VIEWS } from '../core/diagram/body.ts'
-import { familyLayout } from '../core/diagram/family-layout.ts'
+import { familyLayout, familyRelationPaths } from '../core/diagram/family-layout.ts'
 import { diagramSvg } from '../core/diagram/svg.ts'
 import { diagramChanges } from '../core/diagram/changes.ts'
 import { cardAction, pendingDiagramDraft, diagramCardStatus, type ProposalCard } from '../src/components/assistant/petChat.ts'
@@ -140,9 +140,11 @@ test('unknown life status stays unknown; medical negations and numbness cannot b
   const drawing = blank()
   drawing.family.people = [{ id: 'one', name: '一郎', sex: 'unknown', deceased: false, household: '不明', x: 0, y: 0 }]
   const c = context('一郎さんを図に追加してください。生死は未確認です')
-  assert.match(String(prepareDiagramProposal(candidate('family.genogram', null, nextDiagram('family', drawing, 0)), meta(['one'], userSource(c)), c)), /生死/)
-  drawing.family.people[0].deceased = null
-  assert.notEqual(typeof prepareDiagramProposal(candidate('family.genogram', null, nextDiagram('family', drawing, 0)), meta(['one'], userSource(c)), c), 'string')
+  const proposal = prepareDiagramProposal(candidate('family.genogram', null, nextDiagram('family', drawing, 0)), meta(['one'], userSource(c)), c)
+  assert.ok(typeof proposal !== 'string')
+  const value = diagramSchema.parse(proposal.after)
+  assert.equal(value.kind, 'family')
+  assert.equal(value.data.people[0].deceased, null)
   for (const label of ['左手のしびれ', '左手の麻痺']) {
     const d = blank(); d.body.items = [{ ...pain(), label, kind: 'paralysis' }]
     const body = diagramSchema.parse(normalizeBodyProposal(nextDiagram('body', { ...d, body: { items: [] } }, 0)))
@@ -283,4 +285,110 @@ test('chat continues only the latest matching unapplied diagram, keeping edits a
   const family = { ...card, key: 'family.genogram', label: '家族構成図' }
   assert.equal(pendingDiagramDraft([entry(card), entry(family)], {}, 'health.bodyMap'), card)
   assert.equal(pendingDiagramDraft([{ ...entry(card), proposals: [card, family] }], {}), undefined)
+})
+
+test('family proposal uses each person’s own current health, employment and death records', () => {
+  const rows = [
+    { name: '見本 太郎', note: '5年前に死去', livingTogether: '同居' },
+    { name: '※見本 由美', health: '良好', livingTogether: '別居' },
+    { name: '見本 健', employment: '会社員', livingTogether: '別居' },
+    { name: '見本 春', employment: '以前は会社員', livingTogether: '別居' },
+    { name: '見本 冬', deceased: false },
+  ]
+  const document: ChatDocument = { ...doc, fields: { 'family.members': { value: rows, by: 'cm' } }, saved: { 'family.members': { value: rows } } }
+  const c = makeDiagramContext([document], [], [])
+  const read = readDiagramContext(c, 'family.genogram')
+  assert.ok(read.documents)
+  const source = read.documents[0].fields[0].source.id
+  const d = blank()
+  d.family.people = rows.map((row, index) => ({
+    id: String(index), name: row.name.replace(/^※/, ''), sex: 'unknown', household: index === 0 ? '同居' : '別居',
+    deceased: index === 3 ? false : null, x: 0, y: 0,
+  }))
+  const result = prepareDiagramProposal(candidate('family.genogram', null, nextDiagram('family', d, 0)), meta(d.family.people.map((p) => p.id), source), c)
+  assert.ok(typeof result !== 'string')
+  const value = diagramSchema.parse(result.after)
+  assert.equal(value.kind, 'family')
+  assert.deepEqual(value.data.people.map((p) => p.deceased), [true, false, false, null, false])
+  d.family = value.data
+  for (const editing of [false, true]) {
+    const svg = diagramSvg(d, 'family', { editing })
+    assert.doesNotMatch(svg, /stroke-dasharray="8 5"/, 'a deceased person cannot enter the household enclosure')
+    assert.match(svg, />別居・生存</)
+    assert.match(svg, />別居・生死未確認</)
+    assert.doesNotMatch(svg, /見本 太郎<\/text><text[^>]*>[^<]*居/)
+  }
+})
+
+test('family routes never share an orthogonal segment, even with more than ten edges in one gap', () => {
+  const d = blank()
+  const ids = ['a', 'b', ...Array.from({ length: 12 }, (_, i) => `child-${i}`), 'grandchild']
+  d.family.people = ids.map((id) => ({ id, name: id, household: '不明', sex: 'unknown', deceased: null, x: 0, y: 0 }))
+  d.family.relations = [
+    { id: 'spouses', kind: '離婚', source: 'a', target: 'b' },
+    ...ids.slice(2, -1).flatMap((id) => (['a', 'b'].map((parent) => ({ id: parent + id, kind: '親子' as const, source: parent, target: id })))),
+    { id: 'next', kind: '親子', source: 'child-0', target: 'grandchild' },
+    { id: 'skip', kind: '親子', source: 'a', target: 'grandchild' },
+  ]
+  const people = familyLayout(d.family)
+  const right = Math.max(...people.map((p) => p.x + 160))
+  const layout = familyRelationPaths(people, d.family.relations, right)
+  assert.equal(layout.paths.length, d.family.relations.length)
+  assert.ok(layout.paths[0].divorceMark)
+  assert.ok(layout.right > right)
+
+  const segments: { axis: string, fixed: number, from: number, to: number }[] = []
+  for (const { path } of layout.paths) {
+    const [start, ...commands] = path.split(/ (?=[HV])/)
+    let [x, y] = start.slice(1).split(' ').map(Number)
+    for (const command of commands) {
+      const axis = command[0], next = Number(command.slice(1))
+      const [fixed, current] = axis === 'H' ? [y, x] : [x, y]
+      const [from, to] = [Math.min(current, next), Math.max(current, next)]
+      assert.ok(!segments.some((s) => s.axis === axis && s.fixed === fixed && Math.max(s.from, from) < Math.min(s.to, to)), path)
+      segments.push({ axis, fixed, from, to })
+      if (axis === 'H') x = next
+      else y = next
+    }
+  }
+})
+
+test('family life status requires a statement about the named person in chat, recordings and notes', () => {
+  const d = blank()
+  d.family.people = [{ id: 'father', name: '見本 太郎', sex: 'male', household: '別居', deceased: null, x: 0, y: 0 }]
+  const p = candidate('family.genogram', null, nextDiagram('family', d, 0))
+  const life = (c: ReturnType<typeof context>, sourceId: string) => {
+    const r = prepareDiagramProposal(p, meta(['father'], sourceId), c)
+    assert.ok(typeof r !== 'string')
+    const value = diagramSchema.parse(r.after)
+    assert.equal(value.kind, 'family')
+    return value.data.people[0].deceased
+  }
+  for (const text of [
+    '見本太郎を図に追加。母の見本花子は亡くなりました。',
+    '見本太郎の母は亡くなりました。',
+    '見本太郎は亡くなった母のことを話しました。',
+    '見本太郎は亡くなったかもしれません。',
+    '見本太郎子さんは死亡。',
+  ]) {
+    const c = context(text)
+    assert.equal(life(c, userSource(c)), null, text)
+  }
+  const confirmed = context('見本 太郎さんは5年前に亡くなりました。')
+  assert.equal(life(confirmed, userSource(confirmed)), true)
+  const alive = context('見本太郎は今も健在です。')
+  assert.equal(life(alive, userSource(alive)), false)
+
+  const recorded = context('録音を使ってください', [{
+    recordedAt: '2026-11-20', utterances: [{ id: 'event', speaker: '本人', text: '花子が亡くなりました。' }],
+  }])
+  const part = readDiagramRecords(recorded, 0).parts?.[0]
+  assert.ok(part)
+  assert.equal(life(recorded, part.id), null)
+
+  const document = { ...doc, fields: { 'family.members': { value: [{ name: '見本太郎', note: '母の花子が亡くなりました。' }], by: 'cm' as const } } }
+  const listed = makeDiagramContext([document], [], [])
+  const details = readDiagramContext(listed, 'family.genogram')
+  assert.ok(details.documents)
+  assert.equal(life(listed, details.documents[0].fields[0].source.id), null)
 })

@@ -55,11 +55,26 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 |---|---|---|
 | `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー3つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
 | `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`source` はSoft Delete 3日、Lifecycleはreadiness確認後にだけ`recordings/`のlive objectへ14日安全弁を付ける。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。 |
+| `monitoring.tf` | 録音削除のLog-based Metrics、Alert、Dashboard | Cleanup Jobの成功・失敗・再試行・最終失敗・期限超過・DB/GCS保全不一致・滞留を集計する。通知先は `monitoring_notification_channel_ids` で外部から渡し、メールアドレスやWebhookをリポジトリへ保存しない。 |
 | `queue.tf` | Cloud Tasksキュー `t062-jobs`、Schedulerジョブ `t062-reconcile` | 同時配信3、最大5回まで間隔を広げて再試行。Schedulerは5分ごとにworkerの `/tasks/reconcile` をOIDCつきでPOST |
 | `worker.tf` | workerのCloud Runサービス、DB移行Job、録音Cleanup Job | Cleanup Jobは専用サービスアカウント、1 task、900秒、max retries 0で`node worker/recording-cleanup.ts`を実行する。 |
 | `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは、責任者が職員を登録するとき・サイト管理者が最初の責任者を登録するときに api が作る（本人はパスワードを決めるメールから決める） |
 | `budget.tf` | 予算アラート（任意） | `billing_account_id` を指定したときだけ作る |
 | `main.tf` | apiを更新、サービスアカウント追加 | apiは公開（`invoker_iam_disabled=true`。アプリがFirebaseのIDトークンを検証する）、1Gi、タイムアウト900秒、環境変数つき |
+
+録音削除のアラートは、誤って通知先なしで本番適用しないよう、既定では無効です。本番で有効化するときは、Secretやコードへ宛先を保存せず、Cloud Monitoringで通知チャネルを作成してから、`terraform.tfvars` などの環境管理対象へ次を設定します。
+
+```hcl
+recording_cleanup_alerts_enabled      = true
+monitoring_notification_channel_ids   = ["projects/<project-id>/notificationChannels/<channel-id>"]
+monitoring_environment                 = "production"
+recording_cleanup_scheduler_job_name   = "t062-recording-cleanup"
+recording_cleanup_scheduler_paused    = false
+```
+
+通知チャネルIDが空のままアラートを有効化した場合、Terraformのpreconditionで適用を停止します。通知チャネルの作成・変更はTerraformの対象外とし、宛先の変更時はCloud Monitoring側の管理記録と監視Runbookを更新します。
+
+`recording_cleanup_scheduler_paused` の既定値は `true` です。正式イメージのデプロイ、DBマイグレーション、readiness確認、通知確認が完了し、責任者が稼働を承認した後だけ、本番の環境設定で `false` にします。手動の `gcloud scheduler jobs resume` だけで運用せず、Terraformの設定と実リソースを一致させます。
 
 ### サービスアカウントと権限
 
@@ -105,6 +120,8 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
    ```
 
 3. 移行はリリースのワークフローが流します。手元から流す場合は、`app` に所属するユーザー（api・workerのサービスアカウントを借りる、または `GRANT app TO` した自分のIAMユーザー）で `DB_USER=... CLOUD_SQL_INSTANCE=... npm run db:migrate` を実行します。`postgres` で流すとテーブルの持ち主が `postgres` になり、api・workerが使えなくなります。
+
+録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
 
 ## 様式（アセスメント用紙・入院時情報提供書）を入れる
 

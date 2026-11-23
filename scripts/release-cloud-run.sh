@@ -100,14 +100,16 @@ case "${1:-}" in
     image="$IMAGE_BY_DIGEST"
     job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
     assert_main
-    previous_image="$(gcloud run jobs describe "$job" "${target[@]}" --format='value(template.template.containers[0].image)')"
+    previous_image="$(gcloud run jobs describe "$job" "${target[@]}" --format='value(spec.template.spec.template.spec.containers[0].image)')"
     printf 'cleanup_previous_image=%s\n' "$previous_image" >> "$GITHUB_OUTPUT"
     gcloud run jobs update "$job" "${target[@]}" --image "$image" --command node --args worker/recording-cleanup.ts
     ;;
   cleanup-verify)
     job="${CLOUD_RUN_RECORDING_CLEANUP_JOB:?Set CLOUD_RUN_RECORDING_CLEANUP_JOB}"
     previous_image="${CLEANUP_PREVIOUS_IMAGE:?Missing cleanup previous image}"
-    if ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--verify-lifecycle-readiness >/dev/null ||
+    if ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--synchronize-lifecycle-metadata >/dev/null ||
+      ! gcloud run jobs execute "$job" "${target[@]}" --wait ||
+      ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--verify-lifecycle-readiness >/dev/null ||
       ! gcloud run jobs execute "$job" "${target[@]}" --wait; then
       echo "Cleanup Job verification failed. Restoring $previous_image." >&2
       gcloud run jobs update "$job" "${target[@]}" --image "$previous_image" --command node --args worker/recording-cleanup.ts

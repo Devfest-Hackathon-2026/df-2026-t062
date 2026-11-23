@@ -9,8 +9,8 @@ export interface DraftSlot {
   y: number
   w: number
   h: number
-  /** text: 1 行、area: 複数行、check: □ に ✓、circle: 文字を丸で囲む */
-  ui: 'text' | 'area' | 'check' | 'circle'
+  /** text: 1 行、area: 複数行、check: □ に ✓、circle: 文字を丸で囲む、diagram: 図を描く枠（家族構成図・見取図・人体図） */
+  ui: 'text' | 'area' | 'check' | 'circle' | 'diagram'
   /** 入れる値の key（catalog の書き方）。合う key がなければ null（事業所だけの欄） */
   ref: string | null
   /** check・circle のとき、その印が表すもの（値が X・どれでもない・はい・いいえ・空・空でない） */
