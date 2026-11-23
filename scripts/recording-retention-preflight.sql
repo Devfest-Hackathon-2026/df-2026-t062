@@ -18,7 +18,7 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
   AND (
     (table_name = 'audit_events' AND column_name IN ('occurred_at', 'outcome', 'request_id', 'correlation_id', 'trace_id', 'source', 'route', 'schema_version'))
-    OR (table_name = 'recordings' AND column_name IN ('source_expires_at', 'source_generation', 'retention_hold', 'retention_hold_target', 'retention_hold_sync_status', 'source_delete_status'))
+    OR (table_name = 'recordings' AND column_name IN ('source_expires_at', 'intermediate_expires_at', 'intermediate_delete_status', 'intermediate_deleted_at', 'source_generation', 'retention_hold', 'retention_hold_target', 'retention_hold_sync_status', 'source_delete_status'))
   )
 ORDER BY table_name, ordinal_position;
 
@@ -34,7 +34,15 @@ SELECT
   count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'deleting'
     AND source_delete_claimed_at <= now() - interval '15 minutes') AS stuck_deletions,
   count(*) FILTER (WHERE source_deleted_at IS NULL AND status IN ('uploading', 'abandoning')
-    AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days') AS stale_uploads
+    AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days') AS stale_uploads,
+  count(*) FILTER (WHERE intermediate_expires_at IS NULL) AS intermediate_missing_expiry,
+  count(*) FILTER (WHERE intermediate_delete_status = 'failed') AS intermediate_failed_deletions,
+  count(*) FILTER (WHERE intermediate_delete_status = 'deleting'
+    AND intermediate_delete_claimed_at <= now() - interval '15 minutes') AS intermediate_stuck_deletions,
+  count(*) FILTER (WHERE intermediate_deleted_at IS NULL AND intermediate_expires_at <= now()
+    AND NOT retention_hold AND NOT retention_hold_target
+    AND intermediate_delete_status IN ('pending', 'failed')
+    AND NOT EXISTS (SELECT 1 FROM public.jobs j WHERE j.recording_id = recordings.id AND j.status IN ('queued', 'processing'))) AS intermediate_overdue
 FROM public.recordings;
 
 -- Cleanup専用ロールとIAM DBユーザーの所属確認。
@@ -50,6 +58,13 @@ SELECT
   has_schema_privilege('recording_cleanup', 'public', 'USAGE') AS schema_usage,
   has_table_privilege('recording_cleanup', 'public.recordings', 'SELECT') AS recordings_select,
   has_table_privilege('recording_cleanup', 'public.recordings', 'UPDATE') AS recordings_update,
+  has_table_privilege('recording_cleanup', 'public.jobs', 'SELECT') AS jobs_select,
+  has_table_privilege('recording_cleanup', 'public.transcripts', 'SELECT') AS transcripts_select,
+  has_table_privilege('recording_cleanup', 'public.transcripts', 'DELETE') AS transcripts_delete,
+  has_table_privilege('recording_cleanup', 'public.recording_summaries', 'SELECT') AS summaries_select,
+  has_table_privilege('recording_cleanup', 'public.recording_summaries', 'DELETE') AS summaries_delete,
+  has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'SELECT') AS care_record_drafts_select,
+  has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'UPDATE') AS care_record_drafts_update,
   has_table_privilege('recording_cleanup', 'public.audit_events', 'INSERT') AS audit_insert,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'USAGE') AS audit_sequence_usage,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'SELECT') AS audit_sequence_select;

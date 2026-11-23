@@ -1,11 +1,16 @@
 import {
   claimRecordingDeletionCandidates,
+  claimIntermediateDeletionCandidates,
   claimRetentionHoldSyncCandidate,
   completeRetentionHoldSync,
   failRetentionHoldSync,
   markRecordingSourceDeleteFailed,
   markRecordingSourceDeleted,
+  markIntermediateDataDeleted,
+  markIntermediateDataDeleteFailed,
+  RECORDING_DELETE_MAX_ATTEMPTS,
   type ClaimedDeletionCandidate,
+  type ClaimedIntermediateDeletionCandidate,
   type HoldSyncCandidate,
 } from '../db/recording-retention.ts'
 import { listRecordingGenerationBackfillCandidates, storeRecordingSourceMetadata } from '../db/recording-retention.ts'
@@ -37,6 +42,10 @@ export interface CleanupMetrics {
   deletionFailureCount: number
   deletionRetryCount: number
   deletionFinalFailureCount: number
+  intermediateDeletionSuccessCount: number
+  intermediateDeletionFailureCount: number
+  intermediateDeletionRetryCount: number
+  intermediateDeletionFinalFailureCount: number
 }
 
 const emptyMetrics = (): CleanupMetrics => ({
@@ -48,6 +57,10 @@ const emptyMetrics = (): CleanupMetrics => ({
   deletionFailureCount: 0,
   deletionRetryCount: 0,
   deletionFinalFailureCount: 0,
+  intermediateDeletionSuccessCount: 0,
+  intermediateDeletionFailureCount: 0,
+  intermediateDeletionRetryCount: 0,
+  intermediateDeletionFinalFailureCount: 0,
 })
 
 async function metadataFor(storage: SourceObjectControl, path: string): Promise<MetadataResult> {
@@ -145,6 +158,34 @@ export async function deleteExpiredSourceRecordings(deps: WorkerDeps, limit = 10
   return candidates.length
 }
 
+async function deleteIntermediateCandidate(
+  deps: WorkerDeps,
+  candidate: ClaimedIntermediateDeletionCandidate,
+  metrics?: CleanupMetrics,
+) {
+  const db = await deps.db()
+  try {
+    const result = await markIntermediateDataDeleted(db, candidate)
+    if (result && metrics) metrics.intermediateDeletionSuccessCount++
+  } catch {
+    const retryableFailure = candidate.attempts < RECORDING_DELETE_MAX_ATTEMPTS
+    await markIntermediateDataDeleteFailed(db, candidate, 'database_error', retryableFailure)
+    if (metrics) {
+      metrics.failureCount++
+      metrics.intermediateDeletionFailureCount++
+      if (retryableFailure) metrics.intermediateDeletionRetryCount++
+      else metrics.intermediateDeletionFinalFailureCount++
+    }
+  }
+}
+
+export async function deleteExpiredIntermediateRecordings(deps: WorkerDeps, limit = 100, metrics?: CleanupMetrics) {
+  const db = await deps.db()
+  const candidates = await claimIntermediateDeletionCandidates(db, limit)
+  for (const candidate of candidates) await deleteIntermediateCandidate(deps, candidate, metrics)
+  return candidates.length
+}
+
 export async function backfillRecordingSourceMetadata(deps: WorkerDeps, limit = 100) {
   const db = await deps.db()
   const control = deps.storage().sourceObjects()
@@ -193,6 +234,7 @@ export interface CleanupSummary {
   holds: number
   uploads: number
   deletions: number
+  intermediateDeletions: number
   metrics: CleanupMetrics
   overdueCount: number
   holdMismatchCount: number
@@ -203,6 +245,11 @@ export interface CleanupSummary {
   failedPastRetryCount: number
   unsyncedHoldCount: number
   escalatedHoldCount: number
+  intermediateOverdueCount: number
+  intermediateMissingExpiryCount: number
+  intermediateStuckCount: number
+  intermediateFailedPastRetryCount: number
+  intermediateFinalFailureCount: number
 }
 
 const MAX_BATCHES = 10
@@ -228,6 +275,7 @@ export async function runRecordingCleanup(deps: WorkerDeps, limit = 100): Promis
   await runBatched((batchLimit) => backfillRecordingSourceMetadata(deps, batchLimit), limit, startedAt)
   const holds = await runBatched((batchLimit) => synchronizeRetentionHolds(deps, batchLimit, metrics), limit, startedAt)
   const uploads = await runBatched((batchLimit) => cancelStaleUploadSessions(deps, batchLimit), limit, startedAt)
+  const intermediateDeletions = await runBatched((batchLimit) => deleteExpiredIntermediateRecordings(deps, batchLimit, metrics), limit, startedAt)
   const deletions = await runBatched((batchLimit) => deleteExpiredSourceRecordings(deps, batchLimit, metrics), limit, startedAt)
   const dbSummary = await getRecordingRetentionObservability(await deps.db())
   let holdMismatchCount = 0
@@ -253,6 +301,7 @@ export async function runRecordingCleanup(deps: WorkerDeps, limit = 100): Promis
     holds,
     uploads,
     deletions,
+    intermediateDeletions,
     metrics,
     overdueCount: dbSummary.overdueCount,
     holdMismatchCount,
@@ -263,5 +312,10 @@ export async function runRecordingCleanup(deps: WorkerDeps, limit = 100): Promis
     failedPastRetryCount: dbSummary.failedPastRetryCount,
     unsyncedHoldCount: dbSummary.unsyncedHoldCount,
     escalatedHoldCount: dbSummary.escalatedHoldCount,
+    intermediateOverdueCount: dbSummary.intermediateOverdueCount,
+    intermediateMissingExpiryCount: dbSummary.intermediateMissingExpiryCount,
+    intermediateStuckCount: dbSummary.intermediateStuckCount,
+    intermediateFailedPastRetryCount: dbSummary.intermediateFailedPastRetryCount,
+    intermediateFinalFailureCount: dbSummary.intermediateFinalFailureCount,
   }
 }

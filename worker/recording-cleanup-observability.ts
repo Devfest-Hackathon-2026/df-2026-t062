@@ -20,6 +20,15 @@ export interface CleanupSummaryLog {
   failure_count?: number
   retry_count?: number
   final_failure_count?: number
+  intermediate_candidate_count?: number
+  intermediate_success_count?: number
+  intermediate_failure_count?: number
+  intermediate_retry_count?: number
+  intermediate_final_failure_count?: number
+  intermediate_overdue_count?: number
+  intermediate_missing_expiry_count?: number
+  intermediate_stuck_count?: number
+  intermediate_failed_past_retry_count?: number
   overdue_count?: number
   hold_mismatch_count?: number
   hold_alert_count?: number
@@ -69,6 +78,11 @@ export function writeCleanupLog(payload: CleanupSummaryLog) {
     ...(payload.failure_count === undefined ? {} : { failure_count: payload.failure_count }),
     ...(payload.retry_count === undefined ? {} : { retry_count: payload.retry_count }),
     ...(payload.final_failure_count === undefined ? {} : { final_failure_count: payload.final_failure_count }),
+    ...(payload.intermediate_candidate_count === undefined ? {} : { intermediate_candidate_count: payload.intermediate_candidate_count }),
+    ...(payload.intermediate_success_count === undefined ? {} : { intermediate_success_count: payload.intermediate_success_count }),
+    ...(payload.intermediate_failure_count === undefined ? {} : { intermediate_failure_count: payload.intermediate_failure_count }),
+    ...(payload.intermediate_retry_count === undefined ? {} : { intermediate_retry_count: payload.intermediate_retry_count }),
+    ...(payload.intermediate_final_failure_count === undefined ? {} : { intermediate_final_failure_count: payload.intermediate_final_failure_count }),
     ...(payload.overdue_count === undefined ? {} : { overdue_count: payload.overdue_count }),
     ...(payload.hold_mismatch_count === undefined ? {} : { hold_mismatch_count: payload.hold_mismatch_count }),
     ...(payload.hold_alert_count === undefined ? {} : { hold_alert_count: payload.hold_alert_count }),
@@ -86,6 +100,10 @@ export function writeCleanupLog(payload: CleanupSummaryLog) {
     ...(payload.failed_deletion_count === undefined ? {} : { failed_deletion_count: payload.failed_deletion_count }),
     ...(payload.stuck_deletion_count === undefined ? {} : { stuck_deletion_count: payload.stuck_deletion_count }),
     ...(payload.stale_upload_count === undefined ? {} : { stale_upload_count: payload.stale_upload_count }),
+    ...(payload.intermediate_overdue_count === undefined ? {} : { intermediate_overdue_count: payload.intermediate_overdue_count }),
+    ...(payload.intermediate_missing_expiry_count === undefined ? {} : { intermediate_missing_expiry_count: payload.intermediate_missing_expiry_count }),
+    ...(payload.intermediate_stuck_count === undefined ? {} : { intermediate_stuck_count: payload.intermediate_stuck_count }),
+    ...(payload.intermediate_failed_past_retry_count === undefined ? {} : { intermediate_failed_past_retry_count: payload.intermediate_failed_past_retry_count }),
     ...(payload.failure_rate_percent === undefined ? {} : { failure_rate_percent: payload.failure_rate_percent }),
     ...(payload.error_code === undefined ? {} : { error_code: safeErrorCode(payload.error_code) }),
     ...(payload.retryable === undefined ? {} : { retryable: payload.retryable }),

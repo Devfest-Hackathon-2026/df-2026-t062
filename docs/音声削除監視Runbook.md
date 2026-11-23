@@ -2,14 +2,14 @@
 
 ## 目的
 
-録音原本の保持期限・GCS削除・保全状態を安全に確認するための運用手順。録音原本の保持期限はDBで管理し、GCS Soft Deleteは削除後3日間の復旧用安全措置として扱う。Soft Deleteの3日間は法令上の保存期間ではない。GCS Lifecycleは`recordings/`のLIVEオブジェクトに対する30日後の安全弁であり、DBを正とする通常削除の代替ではない。
+録音原本とAI処理中間データの保持期限・削除・保全状態を安全に確認するための運用手順。録音原本の保持期限はDBで管理し、GCS Soft Deleteは削除後3日間の復旧用安全措置として扱う。Soft Deleteの3日間は法令上の保存期間ではない。GCS Lifecycleは`recordings/`のLIVEオブジェクトに対する30日後の安全弁であり、DBを正とする通常削除の代替ではない。
 
 ## 最初に確認すること
 
 1. Cloud Monitoringの録音削除Dashboardで、保持期限超過数、最終失敗数、保全不一致数、最終成功時刻を確認する。
 2. Cloud Run Jobの実行履歴で、Schedulerから起動されたか、Jobが開始・完了したかを確認する。
 3. Cloud Loggingで`recording.retention.*`を検索し、`error_code`と件数だけを確認する。音声内容、利用者情報、GCSの完全なオブジェクトパスをログへ追加しない。
-4. Lifecycle有効化前のreadiness結果で、保持期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
+4. Lifecycle有効化前のreadiness結果で、保持期限・中間データ期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
 5. Lifecycleを有効化する場合は、sourceバケットだけに`recordings/`・LIVE・30日のDelete条件が設定され、output・formsには設定されていないことをTerraform planで確認する。
 
 ## Alert別の対応
@@ -19,6 +19,13 @@
 - Cloud SQLの`source_expires_at`、`source_delete_status`、保全状態の集計を確認する。
 - `retention_hold`または`retention_hold_target`が有効なら、音声を削除しない。
 - Jobが停止していなければ、次回の定期実行を待つ。停止している場合はJobの失敗原因を確認する。
+
+### 中間データ削除滞留
+
+- `intermediate_overdue_count`、`intermediate_stuck_count`、`intermediate_failed_past_retry_count`を確認する。
+- 対象は`transcripts`と`recording_summaries`であり、ケア記録下書きに保存された録音由来の`utterances`も削除時に除去する。正式なケア記録と`audit_events`は削除対象ではない。
+- `retention_hold`または`retention_hold_target`が有効な録音の中間データは削除しない。保全解除後にCleanup Jobが再度対象化する。
+- 削除監査には本文を保存せず、削除件数と時刻だけを記録する。
 
 ### 削除最終失敗
 
@@ -43,6 +50,7 @@
 - `missing_expiry_count` または `missing_generation_count` があれば、対象録音のDB値とGCSメタデータを確認する。
 - `legacy_hold_sync_count`、`unsynced_hold_count`、`escalated_hold_count` があれば、Object Holdの同期完了までLifecycleを有効化しない。
 - `failed_deletion_count`、`stuck_deletion_count`、`stale_upload_count` があれば、Cleanup Jobの失敗原因を解消してから再確認する。
+- `intermediate_missing_expiry_count`、`intermediate_failure_count`、`intermediate_stuck_count`、`intermediate_failed_past_retry_count`があれば、中間データの期限・削除状態・DB権限を確認してから再確認する。
 - LifecycleはDBの`source_expires_at`、保全状態、削除状態を参照しない。30日条件に達しても、通常の削除判定は必ずCleanup JobがDBを確認して行う。
 
 ## 安全な再実行

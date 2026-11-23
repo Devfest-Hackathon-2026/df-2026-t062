@@ -241,7 +241,10 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
 export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ id: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
   const r = await db.query(
     `SELECT r.id, r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
-     WHERE t.office_id = $1 AND t.client_id = $2 ORDER BY r.recorded_at`,
+     WHERE t.office_id = $1 AND t.client_id = $2
+       AND r.intermediate_delete_status NOT IN ('deleted', 'deleting')
+       AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target)
+     ORDER BY r.recorded_at`,
     [officeId, clientId],
   )
   return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))

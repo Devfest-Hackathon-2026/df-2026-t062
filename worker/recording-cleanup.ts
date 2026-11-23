@@ -23,6 +23,8 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
     || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
     || result.stuckDeletions > 0 || result.staleUploads > 0 || failureCount > 0
+    || result.intermediateMissingExpiry > 0 || result.intermediateFailedDeletions > 0
+    || result.intermediateStuckDeletions > 0 || result.intermediateFailedPastRetry > 0
   writeCleanupLog({
     event: CLEANUP_EVENTS.job,
     operation: 'metadata_sync',
@@ -39,6 +41,10 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     failed_deletion_count: result.failedDeletions,
     stuck_deletion_count: result.stuckDeletions,
     stale_upload_count: result.staleUploads,
+    intermediate_missing_expiry_count: result.intermediateMissingExpiry,
+    intermediate_failure_count: result.intermediateFailedDeletions,
+    intermediate_stuck_count: result.intermediateStuckDeletions,
+    intermediate_failed_past_retry_count: result.intermediateFailedPastRetry,
   })
   await closePool(await getDb())
   if (readinessFailed) process.exitCode = 1
@@ -47,6 +53,8 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
     || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
     || result.stuckDeletions > 0 || result.staleUploads > 0
+    || result.intermediateMissingExpiry > 0 || result.intermediateFailedDeletions > 0
+    || result.intermediateStuckDeletions > 0 || result.intermediateFailedPastRetry > 0
   writeCleanupLog({
     event: CLEANUP_EVENTS.job,
     operation: 'readiness',
@@ -59,6 +67,10 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     failed_deletion_count: result.failedDeletions,
     stuck_deletion_count: result.stuckDeletions,
     stale_upload_count: result.staleUploads,
+    intermediate_missing_expiry_count: result.intermediateMissingExpiry,
+    intermediate_failure_count: result.intermediateFailedDeletions,
+    intermediate_stuck_count: result.intermediateStuckDeletions,
+    intermediate_failed_past_retry_count: result.intermediateFailedPastRetry,
   })
   await closePool(await getDb())
   if (readinessFailed) process.exitCode = 1
@@ -68,23 +80,29 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
   try {
     const result = await runRecordingCleanup(deps)
     const duration = Date.now() - startedAt
-    const failureRate = result.deletions === 0 ? 0 : (result.metrics.deletionFailureCount / result.deletions) * 100
+    const totalCandidates = result.deletions + result.intermediateDeletions
+    const totalSuccesses = result.metrics.deletionSuccessCount + result.metrics.intermediateDeletionSuccessCount
+    const totalFailures = result.metrics.deletionFailureCount + result.metrics.intermediateDeletionFailureCount
+    const totalRetries = result.metrics.deletionRetryCount + result.metrics.intermediateDeletionRetryCount
+    const totalFinalFailures = result.metrics.deletionFinalFailureCount + result.metrics.intermediateDeletionFinalFailureCount
+    const failureRate = totalCandidates === 0 ? 0 : (totalFailures / totalCandidates) * 100
     writeCleanupLog({
       event: CLEANUP_EVENTS.cleanup,
       operation: 'delete',
       result: result.metrics.failureCount > 0 ? 'failed' : 'success',
       duration_ms: duration,
-      candidate_count: result.deletions,
-      success_count: result.metrics.deletionSuccessCount,
-      failure_count: result.metrics.deletionFailureCount,
-      retry_count: result.metrics.deletionRetryCount,
-      final_failure_count: result.metrics.deletionFinalFailureCount,
+      candidate_count: totalCandidates,
+      success_count: totalSuccesses,
+      failure_count: totalFailures,
+      retry_count: totalRetries,
+      final_failure_count: totalFinalFailures,
       overdue_count: result.overdueCount,
       hold_mismatch_count: result.holdMismatchCount,
       hold_alert_count: result.holdMismatchCount + result.holdVerificationErrorCount,
       hold_verification_error_count: result.holdVerificationErrorCount,
       hold_verification_truncated: result.holdVerificationTruncated,
-      stuck_count: result.eligibleStuckCount + result.deletingStuckCount + result.failedPastRetryCount,
+      stuck_count: result.eligibleStuckCount + result.deletingStuckCount + result.failedPastRetryCount
+        + result.intermediateOverdueCount + result.intermediateStuckCount + result.intermediateFailedPastRetryCount,
       hold_sync_failure_count: result.unsyncedHoldCount + result.escalatedHoldCount,
       eligible_stuck_count: result.eligibleStuckCount,
       deleting_stuck_count: result.deletingStuckCount,
@@ -92,6 +110,15 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
       unsynced_hold_count: result.unsyncedHoldCount,
       escalated_hold_count: result.escalatedHoldCount,
       failure_rate_percent: Number(failureRate.toFixed(2)),
+      intermediate_candidate_count: result.intermediateDeletions,
+      intermediate_success_count: result.metrics.intermediateDeletionSuccessCount,
+      intermediate_failure_count: result.metrics.intermediateDeletionFailureCount,
+      intermediate_retry_count: result.metrics.intermediateDeletionRetryCount,
+      intermediate_final_failure_count: result.metrics.intermediateDeletionFinalFailureCount,
+      intermediate_overdue_count: result.intermediateOverdueCount,
+      intermediate_missing_expiry_count: result.intermediateMissingExpiryCount,
+      intermediate_stuck_count: result.intermediateStuckCount,
+      intermediate_failed_past_retry_count: result.intermediateFailedPastRetryCount,
     })
     if (result.metrics.deletionRetryCount > 0) writeCleanupLog({
       event: CLEANUP_EVENTS.deletion,
