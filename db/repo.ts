@@ -13,7 +13,7 @@ import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
-import { setRecordingRetentionOnComplete, setRecordingSuccessRetention } from './recording-retention.ts'
+import { setRecordingRetentionOnComplete } from './recording-retention.ts'
 
 type Q = Db | Tx
 
@@ -492,7 +492,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       if (old) {
         const plan: BatchPlan = { changes: old.changes, kept: old.kept, skipped: [] }
         await finishJob(c, input, old.id, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion?.auditContext })
         return { batchId: old.id as string, plan }
       }
     }
@@ -507,7 +506,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     if (!plan.changes.length && !plan.kept.length) {
       if (input.completion) {
         await finishJob(c, input, null, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
       }
       return { batchId: null, plan }
     }
@@ -522,7 +520,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
     if (input.completion) {
       await finishJob(c, input, batch.id, plan)
-      await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
     }
     return { batchId: batch.id as string, plan }
   })
