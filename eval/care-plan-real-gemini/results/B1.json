@@ -1,0 +1,162 @@
+{
+  "key": "B1",
+  "scenario": "B",
+  "repeat": 1,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:17:05.520Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 2839,
+    "promptSha256": "6e2c27475f8c46e589fcf25785e78678396de7e107773e319f4faa3a0a59d3e7",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 8641,
+    "responseId": "EdIBa767I8yWvdAPsszE0Aw",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 671,
+      "candidatesTokenCount": 272,
+      "totalTokenCount": 1788,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 671
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 272
+        }
+      ],
+      "thoughtsTokenCount": 845
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\"plan1\":{\"plan.intentionAnalysis\":\"本人より「台所まで移動すると疲れる。できる範囲で自分で食事を用意したい」との意向がある。台所への移動時に疲労があり途中で休むことがあり、調理に関して困りごとを抱えている。なお、移動時の疲労の原因や診断名、転倒歴、既存サービスや事業所、頻度、支援日時、家族の支援可否については未確認の状態である。\",\"plan.overallPolicy\":\"できる範囲で自分で食事を用意したいという本人の意向を尊重し、台所への移動や調理の負担・疲労の状況および原因の確認を行いつつ、安全に食事の準備が行えるよう支援のあり方を検討していく。\"},\"needs\":[{\"need\":\"台所への移動で疲労が生じ途中で休むことがあり、調理に困りごとがあるため、無理のない範囲で食事を用意できるようになること。\",\"longGoal\":{\"goal\":\"疲労や身体への負担を抑えながら、安全にできる範囲で食事の準備ができる。\",\"periodText\":\"\"},\"shortGoals\":[{\"goal\":\"台所までの移動時の負担や調理の困りごとを把握し、休息をとりながら安全に行動できる。\",\"periodText\":\"\",\"services\":[]}]}],\"slots\":[],\"conflicts\":[]}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 8651,
+    "draft": {
+      "id": "371065de-d6d8-4a57-b9c7-3262c1534459",
+      "planId": "dcdeb627-5d2e-4c35-aa64-767737b53e0c",
+      "status": "proposed",
+      "sourceDocumentId": "8b393342-7087-47c9-a3b1-250b3c9f70ab",
+      "sourceRevisionId": 3,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:17:14.163Z",
+      "proposal": {
+        "needs": [
+          {
+            "need": "台所への移動で疲労が生じ途中で休むことがあり、調理に困りごとがあるため、無理のない範囲で食事を用意できるようになること。",
+            "longGoal": {
+              "goal": "疲労や身体への負担を抑えながら、安全にできる範囲で食事の準備ができる。",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "台所までの移動時の負担や調理の困りごとを把握し、休息をとりながら安全に行動できる。",
+                "services": [],
+                "periodText": ""
+              }
+            ]
+          }
+        ],
+        "plan1": {
+          "plan.overallPolicy": "できる範囲で自分で食事を用意したいという本人の意向を尊重し、台所への移動や調理の負担・疲労の状況および原因の確認を行いつつ、安全に食事の準備が行えるよう支援のあり方を検討していく。",
+          "plan.intentionAnalysis": "本人より「台所まで移動すると疲れる。できる範囲で自分で食事を用意したい」との意向がある。台所への移動時に疲労があり途中で休むことがあり、調理に関して困りごとを抱えている。なお、移動時の疲労の原因や診断名、転倒歴、既存サービスや事業所、頻度、支援日時、家族の支援可否については未確認の状態である。"
+        },
+        "slots": [],
+        "conflicts": []
+      },
+      "conflicts": [],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 23,
+    "applied": {
+      "fields": [
+        "plan.intentionAnalysis"
+      ],
+      "needs": [
+        "7802eb32-5e0e-4e62-8072-42cd612e44bc"
+      ],
+      "slots": [],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "human_value"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証B",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）",
+      "plan.intentionAnalysis": "本人より「台所まで移動すると疲れる。できる範囲で自分で食事を用意したい」との意向がある。台所への移動時に疲労があり途中で休むことがあり、調理に関して困りごとを抱えている。なお、移動時の疲労の原因や診断名、転倒歴、既存サービスや事業所、頻度、支援日時、家族の支援可否については未確認の状態である。"
+    },
+    "needs": [
+      {
+        "id": "7802eb32-5e0e-4e62-8072-42cd612e44bc",
+        "need": "台所への移動で疲労が生じ途中で休むことがあり、調理に困りごとがあるため、無理のない範囲で食事を用意できるようになること。",
+        "longGoal": {
+          "id": "22d04cb9-5c6b-4fe3-9260-0016ba0bc2b7",
+          "goal": "疲労や身体への負担を抑えながら、安全にできる範囲で食事の準備ができる。",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "300498eb-4416-48f3-ad9c-61f06e97d650",
+            "goal": "台所までの移動時の負担や調理の困りごとを把握し、休息をとりながら安全に行動できる。",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": []
+          }
+        ]
+      }
+    ],
+    "slots": []
+  },
+  "expected": {
+    "focus": [
+      "疲労を伴う台所への移動",
+      "本人が食事を用意したい希望",
+      "不足情報の確認"
+    ],
+    "services": [],
+    "slots": [],
+    "conflictsRequired": false
+  }
+}

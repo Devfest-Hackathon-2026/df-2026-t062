@@ -1,0 +1,27 @@
+{
+  "evaluatedCommit": "6a492a65790323ee9a71eacfee91246548476542",
+  "executedOnJst": "2026-11-22",
+  "node": "24.15.0",
+  "googleGenai": "3.0.0",
+  "productionFilesSha256": {
+    "api/care-plan-ai.ts": "1bf7d0e59a0b7483e211996a785fa8f2654fc2c273e05475febd1f48e2aadbc7",
+    "api/server.ts": "2fee003b906d9599c27a16429a5d89cf46d1dbf61107f1a96e17019a2fc72af2",
+    "api/app.ts": "bbc019dd1688469140e74ebffbc24d6c5683868a4420b0c4504048870815a30e",
+    "db/care-plans.ts": "90d776bd8ae08098ba1b8edc3eda3cca3d5730868de0c3791dbb3e7aa67e4a3f",
+    "core/care-plan-slot.ts": "f9948a3bb9fb7d5a2629c240a2678162588782c0ec38d8029ed8c2401be41e8a",
+    "src/components/care-plan/CarePlanWork.tsx": "789d8a859b840da7c1705bc8b44ea7979577f85f651e9abe76c66d8c352885b6"
+  },
+  "verification": {
+    "productionTypecheck": "passed",
+    "evaluationTypecheck": "passed",
+    "offlineSummary": "passed",
+    "carePlanApiRegression": {
+      "pass": 13,
+      "fail": 0,
+      "skip": 0,
+      "model": "fake (separate from live results)"
+    },
+    "ui": "recorded F1 replay, zero additional model calls; manual value persisted after save/reload"
+  },
+  "realModelRequests": 12
+}
