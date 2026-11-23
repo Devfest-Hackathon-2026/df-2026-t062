@@ -11,7 +11,6 @@ import {
   claimExpiredSourceRecordings,
   getRecordingRetention,
   markExpiredSourceRecordingsEligible,
-  RECORDING_MAX_RETENTION_DAYS,
   releaseExpiredRecordingRetentionHolds,
   releaseRecordingRetentionHold,
   setRecordingRetentionHold,
@@ -230,6 +229,10 @@ test('古い実行トークンでは反映できず、引き継いだ実行だ�
 test('変更が0件でも完了し、試行上限に達したリース切れジョブは見回りで終了する', { skip }, async () => {
   const empty = await job()
   await db.query("UPDATE recordings SET recorded_at = now() - interval '6 days', source_expires_at = now() + interval '1 day' WHERE id = $1", [empty.recordingId])
+  const before = (await db.query(
+    'SELECT source_expires_at FROM recordings WHERE id = $1',
+    [empty.recordingId],
+  )).rows[0]
   const token = randomUUID()
   await db.query("UPDATE jobs SET status = 'processing', attempts = 1, run_token = $2, lease_until = now() + interval '30 minutes' WHERE id = $1", [empty.jobId, token])
   const r = await applyBatch(db, {
@@ -239,10 +242,10 @@ test('変更が0件でも完了し、試行上限に達したリース切れジ�
   assert.equal(r.batchId, null)
   assert.equal((await status(empty.jobId)).status, 'succeeded')
   const cap = (await db.query(
-    'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
+    'SELECT source_expires_at FROM recordings WHERE id = $1',
     [empty.recordingId],
   )).rows[0]
-  assert.equal(Number(cap.seconds), RECORDING_MAX_RETENTION_DAYS * 24 * 60 * 60)
+  assert.equal(cap.source_expires_at.toISOString(), before.source_expires_at.toISOString())
 
   const expired = await job()
   await db.query("UPDATE jobs SET status = 'processing', attempts = 3, run_token = $2, lease_until = now() - interval '1 minute' WHERE id = $1", [expired.jobId, randomUUID()])
