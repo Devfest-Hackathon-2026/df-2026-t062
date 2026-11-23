@@ -93,7 +93,10 @@ export function firstPrompt(input: { page: Pick<LayoutPage, 'width' | 'height' |
 - x, y, w, h: 欄の左上と幅・高さ（mm、ページの左上が原点）。座標は下の文字と罫線の数字を使って決める（画像から目で測らない）。
   欄は、印字の文字・□・罫線・ほかの欄のどれとも重ならない、空いた範囲だけにする。
   同じ枠の中に印字（□ のついた行など）があるときは、それを避けた残りにする。上下や左右に並ぶ欄どうしも重ねない。
-- ui: text（1 行の文字）、area（複数行の文章）、check（□ に ✓ を付ける）、circle（印字の選択肢を丸で囲む）
+- ui: text（1 行の文字）、area（複数行の文章）、check（□ に ✓ を付ける）、circle（印字の選択肢を丸で囲む）、diagram（図を描く枠）
+  - 家族構成図・家屋の見取図・人体図など、図を描く枠は、枠の内側全体を 1 欄（ui: diagram）にし、ref は一覧の型が image の key にする。
+    枠の中に印字の人体の絵や記号の説明があっても、枠の内側全体を 1 欄にする（この欄だけは印字と重なってよい）。枠が下の表のマスなら cell に番号を入れる。
+    合う image の key がないときは、図の枠でも ui: area の事業所だけの欄にする。
   - □ のついた選択肢は □ ごとに 1 欄（ui: check）。下の「□ の一覧」の番号を box に入れる（位置はプログラムが □ に合わせる）。一覧の □ は、ほぼすべてが記入欄。
   - □ のない選択肢（「A・B」と並んだ文字）を丸で囲むものは、選択肢ごとに 1 欄（ui: circle）。x, y, w, h は丸で囲む文字の位置。
   - 「年 月 日」の日付は、年・月・日を別の欄にし、part に y・m・d を入れる。元号の選択肢を丸で囲むものは ui: circle、part: era、mark は値がその元号。
@@ -161,7 +164,7 @@ export const FIRST_SCHEMA = {
         type: 'object',
         properties: {
           x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
-          ui: { type: 'string', enum: ['text', 'area', 'check', 'circle'] },
+          ui: { type: 'string', enum: ['text', 'area', 'check', 'circle', 'diagram'] },
           ref: { type: 'string' },
           mark: { type: 'object', properties: { kind: { type: 'string', enum: ['eq', 'none', 'true', 'false', 'empty', 'nonEmpty'] }, value: { type: 'string' } }, required: ['kind'] },
           part: { type: 'string', enum: ['y', 'm', 'd', 'era'] },
