@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CarePaperFlow } from './CarePaperFlow.ts'
 import { toFormDef, type FormAssetsView, type FormDef } from '../../../core/form.ts'
+import { editablePages } from './editablePages.ts'
 import { expandPrintLayout } from '../../../core/print-layout.ts'
 import type { Binding } from '../../../core/binding.ts'
 import { api } from '../../lib/api.ts'
@@ -8,12 +9,12 @@ import { PaperText, type PaperTextField } from './PaperText.tsx'
 import './care-paper.css'
 
 /** PDF出力と同じ原紙・印字座標を使用する。保存版はその版の値と様式を読む。 */
-export function OfficialCareWorkspace({ documentId, formKind, revision, formVersionId, savedRevision, values, title, status, children, disabled=false, readOnly = false, staticFields = false, textField, toolbar, operationsLabel = '入力・修正', operationsAvailable = !!documentId, details }: {
+export function OfficialCareWorkspace({ documentId, formKind, revision, formVersionId, savedRevision, values, title, status, children, disabled=false, readOnly = false, staticFields = false, textField, toolbar, operationsLabel = '入力・修正', operationsAvailable = !!documentId, onStart, details }: {
   documentId?: string, formKind?:string, revision?: number, formVersionId?: string, savedRevision?: number, values: Record<string, unknown>, title: string, status?: ReactNode, children: ReactNode, disabled?:boolean,
   readOnly?: boolean,
   staticFields?: boolean,
   textField?: (slot: string, binding: Binding | undefined, page: number, rowOffset: number) => PaperTextField | undefined,
-  toolbar?: ReactNode, operationsLabel?: string, operationsAvailable?: boolean,
+  toolbar?: ReactNode, operationsLabel?: string, operationsAvailable?: boolean, onStart?: () => void,
   details?: { slot: string, content: ReactNode },
 }) {
   const [loaded, setLoaded] = useState<{ identity: string, form: FormDef, assets: FormAssetsView, base: Record<string, unknown> }>()
@@ -45,11 +46,12 @@ export function OfficialCareWorkspace({ documentId, formKind, revision, formVers
   const rendered = useMemo(() => {
     if (!current) return { pages: [], baseline: [] }
     try {
-      return { pages: expandPrintLayout(current.form, { ...current.base, ...values }, { checkOverflow: false }), baseline: expandPrintLayout(current.form, current.base, { checkOverflow: false }) }
+      return { pages: editablePages(current.form, { ...current.base, ...values }), baseline: expandPrintLayout(current.form, current.base, { checkOverflow: false }) }
     } catch { return { pages: [], baseline: [] } }
   }, [current, values])
   const visibleIndex = Math.min(pageIndex, Math.max(0, rendered.pages.length - 1))
   const openEditor = (slot?: string) => {
+    if (!documentId && onStart) { onStart(); return }
     focusSlot.current=slot
     setEditing(true)
   }
@@ -80,11 +82,13 @@ export function OfficialCareWorkspace({ documentId, formKind, revision, formVers
           <div className="care-paper-page" style={{ aspectRatio: `${page.width}/${page.height}` }}>
             {image ? <img className="care-paper-image" src={image} alt={`${title} 原紙 ${index + 1}`} onError={() => setError('原紙画像を読み込めませんでした。再表示してください。')} /> : <p role="alert">この様式の原紙画像がありません。</p>}
             {image && printed.schemas.filter(s => s.type !== 'image').map(s => {
-              const slot = s.name.replace(/__row\d+|__slot\d+/g, '')
-              const klass = `care-paper-field${printed.input[s.name] !== rendered.baseline[index]?.input[s.name] ? ' care-paper-changed' : ''}`
+              const slot = s.name.replace(/__row\d+|__slot\d+|__empty/g, '')
+              const circle = s.type === 'circleMark'
+              const selected = circle && printed.input[s.name] === 'true'
+              const klass = `care-paper-field${selected ? ' care-paper-mark-selected' : ''}${(printed.input[s.name] ?? '') !== (rendered.baseline[index]?.input[s.name] ?? '') ? ' care-paper-changed' : ''}`
               const style = { left: `${s.position.x / page.width * 100}%`, top: `${s.position.y / page.height * 100}%`, width: `${s.width / page.width * 100}%`, height: `${s.height / page.height * 100}%`, fontSize: `${(s.fontSize ?? 8) * .3528 / page.width * 100}cqw`, lineHeight: s.lineHeight ?? 1.15, textAlign: s.alignment ?? 'left', color: s.color ? `#${s.color.replace('#', '')}` : '#1452a3' } as const
               const rowOffset = page.print?.type === 'sections' ? index * (page.print.list?.rowsPerPage ?? 0) : 0
-              const field = textField?.(slot, current.form.bindings[slot], index, rowOffset)
+              const field = !s.name.endsWith('__empty') && textField?.(slot, current.form.bindings[slot], index, rowOffset)
               if (field) return <PaperText key={s.name} field={field} className={klass} style={style} disabled={disabled || readOnly} />
               if (details?.slot === slot && rendered.pages.findIndex(p => p.sourceIndex === printed.sourceIndex) === index) {
                 return <div key={s.name} className="paper-details" style={style}>
@@ -93,7 +97,7 @@ export function OfficialCareWorkspace({ documentId, formKind, revision, formVers
                 </div>
               }
               if (staticFields) return <span key={s.name} className="care-paper-printed" style={style}>{printed.input[s.name] ?? ''}</span>
-              return <button type="button" disabled={disabled} key={s.name} className={klass} aria-label={`${slot}（入力・修正）`} onClick={() => openEditor(slot)} style={style}>{printed.input[s.name] ?? ''}</button>
+              return <button type="button" disabled={disabled||(!documentId&&!onStart)} key={s.name} className={klass} aria-label={`${slot}（入力・修正）`} onClick={() => openEditor(slot)} style={style}>{circle ? '' : printed.input[s.name] ?? ''}</button>
             })}
           </div>
         </div>

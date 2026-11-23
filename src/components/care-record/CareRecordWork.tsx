@@ -109,7 +109,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
       <section className="care-record-editor" aria-label={config.short + 'の編集'}>
         {(error || state.error) && <p role="alert" className="care-record-error">{error || state.error}</p>}
         {state.notice && <p role="status">{state.notice}</p>}
-        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`}
+        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} onStart={create} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`}
           textField={(slot, binding, page, rowOffset) => recordPaperText(slot, binding, page, rowOffset, values, state.setValue)}
           readOnly={!!past} operationsLabel="記録の操作"
           toolbar={<button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button>} status={past ? `保存版 ${past.rev}（閲覧のみ）` : dirty || !state.doc?.rev ? '未保存' : '保存済み'}>
