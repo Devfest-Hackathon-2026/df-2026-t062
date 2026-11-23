@@ -98,7 +98,7 @@ resource "google_logging_metric" "recording_cleanup_retry" {
 
 resource "google_logging_metric" "recording_cleanup_stuck" {
   name            = "recording_cleanup_stuck_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND (jsonPayload.eligible_stuck_count > 0 OR jsonPayload.deleting_stuck_count > 0 OR jsonPayload.failed_past_retry_count > 0)"
+  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND (jsonPayload.eligible_stuck_count > 0 OR jsonPayload.deleting_stuck_count > 0 OR jsonPayload.failed_past_retry_count > 0 OR jsonPayload.intermediate_overdue_count > 0 OR jsonPayload.intermediate_stuck_count > 0 OR jsonPayload.intermediate_failed_past_retry_count > 0)"
   value_extractor = "EXTRACT(jsonPayload.stuck_count)"
 
   metric_descriptor {

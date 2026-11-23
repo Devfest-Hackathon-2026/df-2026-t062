@@ -31,7 +31,7 @@ export async function createCareRecordDraft(db: Db, staff: Staff, id: string, in
     if (previous) return { row: previous, generate: false }
     const saved = (await c.query(`SELECT v.id::text,d.id AS document_id,d.kind,v.rev,v.saved_at,v.template_version_id,v."values" FROM documents d JOIN LATERAL
       (SELECT * FROM revisions r WHERE r.document_id=d.id AND r.office_id=d.office_id ORDER BY r.rev DESC LIMIT 1) v ON true WHERE d.client_id=$1 AND d.office_id=$2`, [doc.clientId, staff.officeId])).rows
-    const recordings = (await c.query(`SELECT r.id,r.recorded_at,t.utterances FROM recordings r JOIN transcripts t ON t.recording_id=r.id AND t.office_id=r.office_id AND t.client_id=r.client_id WHERE r.office_id=$1 AND r.client_id=$2 ORDER BY r.recorded_at`, [staff.officeId, doc.clientId])).rows
+    const recordings = (await c.query(`SELECT r.id,r.recorded_at,t.utterances FROM recordings r JOIN transcripts t ON t.recording_id=r.id AND t.office_id=r.office_id AND t.client_id=r.client_id WHERE r.office_id=$1 AND r.client_id=$2 AND r.intermediate_delete_status NOT IN ('deleted', 'deleting') AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target) ORDER BY r.recorded_at`, [staff.officeId, doc.clientId])).rows
     const source: CareRecordSources = {
       capturedAt: new Date().toISOString(), instructions: input.instructions,
       documents: saved.map(r => ({ id: r.id, documentId: r.document_id, kind: r.kind, rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString(), formVersionId: r.template_version_id, values: r.values })),
