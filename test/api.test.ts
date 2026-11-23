@@ -335,6 +335,7 @@ test('書類どうしの食い違いを知らせる入口はない', { skip }, a
 
 test('録音を送るとジョブが走り、AI が用紙に書く（ケアマネが直した欄は残す）', { skip }, async () => {
   const { id: docId } = await docOf(ids.sato)
+  assert.equal((await call(`/api/clients/${ids.sato}/recording-consent`, { method: 'POST', body: JSON.stringify({ confirmed: true }) })).status, 201)
   const before = await call(`/api/documents/${docId}/fields`, { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'consulter', value: { name: '自分で書いた', relationship: '子' }, base: null }] }) })
   assert.equal(before.status, 200)
   const start = await call(`/api/clients/${ids.sato}/recordings`, { method: 'POST', body: JSON.stringify({ mime: 'audio/webm' }) })
@@ -364,6 +365,7 @@ test('録音を送るとジョブが走り、AI が用紙に書く（ケアマ�
 test('録音IDで送信を再開し、同時に完了を再試行してもジョブを一度だけ積む', { skip }, async () => {
   const client = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '録音復旧の検証' }) })
   assert.equal(client.status, 201)
+  assert.equal((await call(`/api/clients/${client.body.id}/recording-consent`, { method: 'POST', body: JSON.stringify({ confirmed: true }) })).status, 201)
   const path = `/api/clients/${client.body.id}/recordings/resumable`
   const deviceRecordingId = crypto.randomUUID()
   const start = (expiredUploadUrl?: string, token = TOKEN) => call(path, {

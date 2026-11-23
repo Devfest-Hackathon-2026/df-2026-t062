@@ -262,6 +262,7 @@ test('worker: 録音から書く欄は、録音がつながった書類の版か
   const { LocalStorage } = await import('../api/storage.ts')
   const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-dict-worker-')))
   const staff = ids.staffA as Parameters<typeof repo.createRecording>[1]
+  await repo.grantRecordingConsent(db, staff, ids.clientA)
   const rec = await tx(db, (c) => repo.createRecording(c, staff, ids.clientA, 'audio/webm', randomUUID(), doc.id))
   const bytes = Buffer.alloc(4096)
   await storage.write('source', rec.objectPath, bytes)

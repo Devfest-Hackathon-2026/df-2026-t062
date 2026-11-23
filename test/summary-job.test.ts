@@ -85,6 +85,7 @@ async function upload(clientId: string, documentId: string, recordedAt: string) 
   const { tx } = await import('../db/pool.ts')
   const repo = await import('../db/repo.ts')
   const staff = ids.staff as Parameters<typeof repo.createRecording>[1]
+  await repo.grantRecordingConsent(db, staff, clientId)
   const rec = await tx(db, (c) => repo.createRecording(c, staff, clientId, 'audio/webm', randomUUID(), documentId))
   await db.query('UPDATE recordings SET recorded_at = $2 WHERE id = $1', [rec.id, recordedAt])
   const bytes = Buffer.alloc(2048)

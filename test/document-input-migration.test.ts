@@ -74,6 +74,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0036_recording_retention_14_days.sql',
       '0037_recording_intermediate_retention.sql',
       '0038_document_review.sql',
+      '0039_recording_consent.sql',
     ])
     const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
     assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
@@ -95,6 +96,12 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     assert.equal(migrated.source_delete_status, 'pending')
     assert.equal(migrated.intermediate_delete_status, 'pending')
     assert.equal(Number(migrated.intermediate_seconds), 14 * 24 * 60 * 60)
+    const consentColumn = (await db.query(
+      `SELECT is_nullable FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'recordings' AND column_name = 'consent_event_id'`,
+    )).rows[0]
+    assert.equal(consentColumn.is_nullable, 'YES')
+    assert.equal((await db.query("SELECT to_regclass(current_schema() || '.recording_consent_events') AS table_name")).rows[0].table_name, 'recording_consent_events')
     const oldApiInsert = (await db.query(
       `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by)
        VALUES ($1,$2,$3,'recordings/old-api.webm','audio/webm',$4)

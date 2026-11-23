@@ -156,6 +156,7 @@ test('1 人 1 通の種類は、2 回目は今の書類を返す。種類がな�
 
 test('録音は、録音を始めた書類につなぐ（documentId）。省けば主な書類。ほかの利用者の書類は 404', { skip }, async () => {
   const docs = (await call(`/api/clients/${ids.clientA}`)).body.client.documents
+  assert.equal((await post(`/api/clients/${ids.clientA}/recording-consent`, { confirmed: true })).status, 201)
   const adm = docs.find((d: any) => d.kind === 'admission') ?? (await post(`/api/clients/${ids.clientA}/documents`, { kind: 'admission' })).body
   const primary = docs.find((d: any) => d.kind === 'assessment')
   const start = (body: object) => post(`/api/clients/${ids.clientA}/recordings/resumable`, { mime: 'audio/webm', ...body })

@@ -24,6 +24,7 @@ import type { OfficeTopicsEdit, TeachDecision, TrainingItem } from '../../core/t
 import type { TrainingView } from '../../db/office-topics.ts'
 import type { LocalField } from '../../core/dictionary.ts'
 import type { HoldReasonCode, RecordingRetentionState } from '../../db/recording-retention.ts'
+import type { RecordingConsentView } from '../../core/recording-consent.ts'
 
 export type { ClientSummary, DocumentView, JobView, RecordingRetentionListItem, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
 
@@ -198,6 +199,9 @@ export const api = {
     req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl, documentId }),
   completeRecording: (id: string, durationMs: number, bytes: number) =>
     req<{ jobId: string, status: string }>('POST', `/api/recordings/${id}/complete`, { durationMs, bytes }),
+  recordingConsent: (clientId: string) => req<{ consent: RecordingConsentView, policy: { version: string, scope: string } }>('GET', `/api/clients/${clientId}/recording-consent`),
+  grantRecordingConsent: (clientId: string) => req<{ consent: RecordingConsentView }>('POST', `/api/clients/${clientId}/recording-consent`, { confirmed: true }),
+  withdrawRecordingConsent: (clientId: string) => req<{ consent: RecordingConsentView }>('POST', `/api/clients/${clientId}/recording-consent/withdraw`, {}),
   recordingRetentions: (clientId: string) =>
     req<{ recordings: RecordingRetentionListItem[] }>('GET', `/api/office/clients/${clientId}/recordings/retention`),
   setRecordingRetentionHold: (recordingId: string, holdUntil: string, reasonCode: HoldReasonCode) =>

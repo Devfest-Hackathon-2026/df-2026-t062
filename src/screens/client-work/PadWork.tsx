@@ -15,6 +15,7 @@ import { pickDocument, useFormKinds } from '../../components/document/useFormKin
 import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { countText } from '../../components/document/changes.ts'
 import { isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import type { RecordingConsentView } from '../../../core/recording-consent.ts'
 
 export function PadWork({ clientId }: { clientId: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -27,7 +28,11 @@ export function PadWork({ clientId }: { clientId: string }) {
   const docId = open.docId
   const state = useDocument(docId)
   reloadDoc.current = () => { void state.reload(); void reloadClient() }
-  const recorder = useRecorder(clientId, () => void poll())
+  const [consent, setConsent] = useState<RecordingConsentView | null>(null)
+  const [consentOpen, setConsentOpen] = useState(false)
+  const [consentChecked, setConsentChecked] = useState(false)
+  const [consentError, setConsentError] = useState('')
+  const recorder = useRecorder(clientId, () => void poll(), consent?.active === true)
   const [docOpen, setDocOpen] = useState(false)
   const [tocOpen, setTocOpen] = useState(false)
   const [cur, setCur] = useState(0)
@@ -36,6 +41,18 @@ export function PadWork({ clientId }: { clientId: string }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const scroller = useRef<HTMLDivElement>(null)
   const pageRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  useEffect(() => {
+    let disposed = false
+    setConsent(null)
+    setConsentError('')
+    void api.recordingConsent(clientId).then((result) => {
+      if (!disposed) setConsent(result.consent)
+    }).catch(() => {
+      if (!disposed) setConsentError('録音の説明を読み込めませんでした。通信状態を確認して再読み込みしてください。')
+    })
+    return () => { disposed = true }
+  }, [clientId])
 
   useEffect(() => { setSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount) setSaved(false) }, [state.pendingCount])
@@ -82,6 +99,37 @@ export function PadWork({ clientId }: { clientId: string }) {
   const menuItem = (on: boolean) => `toc${on ? ' toc-on' : ''}`
   const copied = doc?.batches.find((b) => b.kind === 'copy' && b.label.endsWith('から写した'))?.changes ?? 0
   const batchLabel = doc?.batches[0]?.label ?? 'AI 書き込み'
+
+  const openConsent = () => {
+    setConsentChecked(false)
+    setConsentOpen(true)
+  }
+  const startRecording = () => {
+    if (consent?.active) void recorder.start(docId)
+    else openConsent()
+  }
+  const confirmConsent = async () => {
+    if (!consentChecked) return
+    setConsentError('')
+    try {
+      const result = await api.grantRecordingConsent(clientId)
+      setConsent(result.consent)
+      setConsentOpen(false)
+      void recorder.start(docId, true)
+    } catch {
+      setConsentError('説明の確認を保存できませんでした。通信状態を確認して再試行してください。')
+    }
+  }
+  const withdrawConsent = async () => {
+    if (!window.confirm('今後この利用者の録音と AI 処理を停止しますか？すでに始めた録音や正式な記録は削除されません。')) return
+    try {
+      const result = await api.withdrawRecordingConsent(clientId)
+      setConsent(result.consent)
+      setConsentOpen(false)
+    } catch {
+      setConsentError('録音の停止を保存できませんでした。通信状態を確認して再試行してください。')
+    }
+  }
 
 
   if (carePlanOpen) return <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
@@ -180,6 +228,7 @@ export function PadWork({ clientId }: { clientId: string }) {
           <button type="button" onClick={recorder.reset} style={{ font: 'inherit', fontSize: 15, fontWeight: 700, border: 0, background: 'transparent', color: '#A3261C', minHeight: 44 }}>閉じる</button>
         </div>
       )}
+      {consentError && <div role="alert" className="strip" style={{ background: '#FDE8E7', color: '#A3261C' }}>{consentError}</div>}
 
       <FieldConflicts state={state} />
       {state.error && <div role="alert" className="strip" style={{ background: '#FDE8E7', color: '#A3261C' }}>うまく送れませんでした（{state.error}）。</div>}
@@ -233,9 +282,33 @@ export function PadWork({ clientId }: { clientId: string }) {
             <button type="button" onClick={() => void recorder.stop()} className="pill" style={{ pointerEvents: 'auto', border: 0, background: '#D93A2B', color: '#FFFFFF', cursor: 'pointer', boxShadow: '0 8px 24px rgba(217,58,43,0.35)' }}><span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 3, background: '#FFFFFF' }} />止める<span style={{ fontWeight: 500, fontSize: 18, opacity: 0.9 }}>{recorder.elapsed}</span></button>
           </>
         ) : phase === 'idle' || phase === 'done' ? (
-          <button type="button" onClick={() => { void recorder.start(docId) }} disabled={!docId} className="pill" style={{ pointerEvents: 'auto', border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto' }}>
+            <button type="button" onClick={startRecording} disabled={!docId || !consent} className="pill" style={{ border: '1px solid #CBD1DA', background: '#FFFFFF', color: '#1F2430', cursor: 'pointer', boxShadow: '0 8px 24px rgba(20,24,32,0.20)' }}><span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5483A' }} />録音する</button>
+            {consent?.active && <button type="button" onClick={openConsent} className="tb" style={{ minHeight: 44 }}>録音の説明</button>}
+          </div>
         ) : null}
       </div>
+      {consentOpen && (
+        <div role="dialog" aria-modal="true" aria-labelledby="recording-consent-title" style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'rgba(20,24,32,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ width: 520, maxWidth: '100%', background: '#FFFFFF', borderRadius: 18, padding: 24, boxShadow: '0 18px 50px rgba(20,24,32,0.28)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <h2 id="recording-consent-title" style={{ margin: 0, fontSize: 21 }}>録音と AI 処理の説明</h2>
+            <p style={{ margin: 0 }}>面談の音声を録音し、文字起こしと AI によるケア記録の下書き作成に利用します。AI の下書きは職員が確認・修正してから正式な記録にします。</p>
+            <p style={{ margin: 0, fontSize: 14, color: '#5A6270' }}>録音原本は定めた保存期限で削除します。すでに始めた録音や正式な記録は、この設定を停止しても自動削除されません。</p>
+            {consent?.active ? (
+              <>
+                <div role="status" style={{ background: '#EEF5FF', borderRadius: 10, padding: 12 }}>現在、録音と AI 処理は有効です。</div>
+                <button type="button" onClick={() => void withdrawConsent()} style={{ alignSelf: 'flex-start', minHeight: 44, border: 0, background: 'transparent', color: '#A3261C', font: 'inherit', fontWeight: 700, cursor: 'pointer' }}>今後の録音を停止する</button>
+              </>
+            ) : (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontWeight: 700 }}><input type="checkbox" checked={consentChecked} onChange={(e) => setConsentChecked(e.target.checked)} style={{ marginTop: 5, width: 20, height: 20 }} />説明を確認し、録音・文字起こし・AI によるケア記録の下書き作成を開始することを確認しました。</label>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setConsentOpen(false)} className="tb" style={{ minHeight: 44 }}>閉じる</button>
+              {!consent?.active && <button type="button" onClick={() => void confirmConsent()} disabled={!consentChecked} className="pill" style={{ border: 0, background: consentChecked ? '#1C2229' : '#AAB1BC', color: '#FFFFFF', cursor: consentChecked ? 'pointer' : 'default' }}>説明を確認して録音開始</button>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -58,6 +58,7 @@ import {
   requestRecordingRetentionHoldRelease,
   type HoldReasonCode,
 } from '../db/recording-retention.ts'
+import { RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE } from '../core/recording-consent.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -157,6 +158,7 @@ const RecordingInput = z.object({
   deviceRecordingId: z.string().uuid().optional(),
   expiredUploadUrl: z.string().max(4096).optional(),
 })
+const RecordingConsentInput = z.object({ confirmed: z.literal(true) })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
 const InspectionInput = z.object({ checkSet: z.string().min(1).max(100).optional() })
 const ChatInput = z.object({
@@ -804,6 +806,29 @@ export function createApp(deps: ApiDeps) {
   // 新しい画面が古い API に当たっても、再送のたびに別の録音を作らないよう別の道を使う。
   app.post('/api/clients/:id/recordings/resumable', startRecording)
 
+  app.get('/api/clients/:id/recording-consent', staffRoute('care.work', async (c, staff, db) => {
+    const client = await repo.getClient(db, staff.officeId, c.req.param('id')!)
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'recording_consent', resourceId: client.id,
+      accessMode: 'view', action: 'recording.consent.view',
+    })
+    return json(c, {
+      consent: await repo.recordingConsent(db, staff.officeId, client.id),
+      policy: { version: RECORDING_CONSENT_POLICY_VERSION, scope: RECORDING_CONSENT_SCOPE },
+    })
+  }))
+
+  app.post('/api/clients/:id/recording-consent', staffRoute('care.work', async (c, staff, db) => {
+    await body(c, RecordingConsentInput)
+    const consent = await tx(db, (conn) => repo.grantRecordingConsent(conn, staff, c.req.param('id')!))
+    return json(c, { consent }, 201)
+  }))
+
+  app.post('/api/clients/:id/recording-consent/withdraw', staffRoute('care.work', async (c, staff, db) => {
+    const consent = await tx(db, (conn) => repo.withdrawRecordingConsent(conn, staff, c.req.param('id')!))
+    return json(c, { consent })
+  }))
+
   app.post('/api/recordings/:id/complete', staffRoute('care.work', async (c, staff, db) => {
     const { durationMs, bytes } = await body(c, CompleteInput)
     const jobId = await repo.completeRecording(db, staff, c.req.param('id')!, durationMs ?? null, bytes,
@@ -1157,6 +1182,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof Error && ['recording_source_deleted', 'recording_source_deleting', 'retention_hold_not_active'].includes(err.message)) {
       return json(c, { error: err.message }, 409)
     }
+    if (err instanceof repo.RecordingConsentRequired) return json(c, { error: 'recording_consent_required' }, 409)
     if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
     if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
     if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)
