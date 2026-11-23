@@ -1,3 +1,4 @@
+import { DocumentReview } from '../../components/document/DocumentReview.tsx'
 import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // PC ② 作業画面（キャンバス Main）。新しい利用者は ③（PcNew）、2 回目からの書き換えのあとは ④（PcDiff）の印になる。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -308,7 +309,8 @@ export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, sta
         </div>
         {carePlanOpen ? <div className="pc-work-output" ref={setPlanOutputTarget} /> : <DocumentOutput
           status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
-          progress={required} disabled={!docId} onExport={() => void exportPdf()} />}
+          progress={required} disabled={!docId} onExport={() => void exportPdf()}
+          actions={<DocumentReview key={docId} doc={state.doc} dict={fieldDict(state.form?.localFields)} flush={state.flush} reload={state.reload} />} />}
       </div>
 
       {isAdmin && <RecordingRetentionPanel clientId={clientId} />}

@@ -67,3 +67,14 @@ test('句点を含む単行欄: 複数 Hunk の順序と個別保存・復帰', 
   assert.equal(revertHunk(after, hunks[0]), '元の一文。もう一つ追加。')
   assert.equal(saveOneHunk(before, after, 1), '元の一文。もう一つ追加。')
 })
+
+test('人間の確認はbyと別にAIを止める。空欄やシステム値も確認保護を優先する（#16）',()=>{
+ const current={
+  'person.lifeHistory':{value:'確認したAI原案',by:'ai' as const,reviewed:true},
+  'intake.date':{value:'2026-11-23',by:'ai' as const,reviewed:true},
+  'housing.notes':{value:'',by:'ai' as const,reviewed:true},
+ }
+ const result=planBatch(current,{'person.lifeHistory':{value:'新原案'},'intake.date':{value:'2026-11-24'},'housing.notes':{value:'新情報'}},new Set(['intake.date']))
+ assert.deepEqual(result.changes,[])
+ assert.deepEqual(result.kept.map(k=>k.reason),['reviewed','reviewed','reviewed'])
+})

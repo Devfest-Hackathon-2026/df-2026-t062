@@ -180,6 +180,9 @@ export const api = {
   }) => req<{ document: DocumentView }>('POST', `/api/documents/${id}/survey-import`, body),
   edits: (id: string, formVersionId: string, edits: SlotEdit[]) =>
     req<{ results: SlotEditResult[], document: DocumentView }>('POST', `/api/documents/${id}/edits`, { formVersionId, edits }),
+  reviewFields: (id:string,formVersionId:string,fields:{key:string;valueVersion:string;base:unknown}[],reviewed:boolean) =>
+    req<{document:DocumentView}>('POST',`/api/documents/${id}/review`,{formVersionId,fields,reviewed}),
+  confirmDocument: (id:string,baseRev:number) => req<{document:DocumentView}>('POST',`/api/documents/${id}/confirm`,{baseRev}),
   save: (id: string, body: { scope: 'document' } | { scope: 'page', page: number } | { scope: 'hunk', key: string, hunkIndex: number }) =>
     req<{ rev: number, document: DocumentView }>('POST', `/api/documents/${id}/save`, body),
   jobs: (clientId: string) => req<{ jobs: JobView[] }>('GET', `/api/clients/${clientId}/jobs`),
