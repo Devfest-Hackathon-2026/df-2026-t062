@@ -14,6 +14,7 @@ import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
 import { setRecordingRetentionOnComplete } from './recording-retention.ts'
+import { RECORDING_CONSENT_POLICY_VERSION, RECORDING_CONSENT_SCOPE, type RecordingConsentView } from '../core/recording-consent.ts'
 
 type Q = Db | Tx
 
@@ -46,6 +47,7 @@ export class BadRequest extends Error {}
 export class Conflict extends Error {}
 /** 役割では許していても、その相手にはできない操作（403。責任者が自分を止めるなど） */
 export class Forbidden extends Error {}
+export class RecordingConsentRequired extends Error {}
 
 // ---------- 職員 ----------
 
@@ -645,18 +647,96 @@ export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, 
 
 // ---------- 録音とジョブ ----------
 
+export async function recordingConsent(db: Q, officeId: string, clientId: string): Promise<RecordingConsentView> {
+  const row = (await db.query(
+    `SELECT event_type, policy_version, occurred_at
+       FROM recording_consent_events
+      WHERE office_id = $1 AND client_id = $2 AND scope = $3
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1`,
+    [officeId, clientId, RECORDING_CONSENT_SCOPE],
+  )).rows[0]
+  if (!row) return { active: false, policyVersion: null, grantedAt: null, withdrawnAt: null }
+  const active = row.event_type === 'granted' && row.policy_version === RECORDING_CONSENT_POLICY_VERSION
+  return {
+    active,
+    policyVersion: row.policy_version,
+    grantedAt: row.event_type === 'granted' ? new Date(row.occurred_at).toISOString() : null,
+    withdrawnAt: row.event_type === 'withdrawn' ? new Date(row.occurred_at).toISOString() : null,
+  }
+}
+
+export async function grantRecordingConsent(db: Q, staff: Staff, clientId: string) {
+  const client = (await db.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2', [clientId, staff.officeId])).rows[0]
+  if (!client) throw new NotFound()
+  const row = (await db.query(
+    `INSERT INTO recording_consent_events
+       (office_id, client_id, event_type, scope, policy_version, method, actor_staff_id)
+     VALUES ($1,$2,'granted',$3,$4,'staff_confirmed',$5)
+     RETURNING occurred_at`,
+    [staff.officeId, clientId, RECORDING_CONSENT_SCOPE, RECORDING_CONSENT_POLICY_VERSION, staff.id],
+  )).rows[0]
+  await audit(db, staff, staff.officeId, 'recording.consent.granted', { clientId }, { policyVersion: RECORDING_CONSENT_POLICY_VERSION })
+  return { active: true, policyVersion: RECORDING_CONSENT_POLICY_VERSION, grantedAt: new Date(row.occurred_at).toISOString(), withdrawnAt: null } satisfies RecordingConsentView
+}
+
+export async function withdrawRecordingConsent(db: Q, staff: Staff, clientId: string) {
+  const client = (await db.query('SELECT id FROM clients WHERE id = $1 AND office_id = $2', [clientId, staff.officeId])).rows[0]
+  if (!client) throw new NotFound()
+  const current = await recordingConsent(db, staff.officeId, clientId)
+  if (!current.active) return current
+  const row = (await db.query(
+    `INSERT INTO recording_consent_events
+       (office_id, client_id, event_type, scope, policy_version, method, actor_staff_id)
+     VALUES ($1,$2,'withdrawn',$3,$4,'staff_confirmed',$5)
+     RETURNING occurred_at`,
+    [staff.officeId, clientId, RECORDING_CONSENT_SCOPE, RECORDING_CONSENT_POLICY_VERSION, staff.id],
+  )).rows[0]
+  await audit(db, staff, staff.officeId, 'recording.consent.withdrawn', { clientId }, { policyVersion: RECORDING_CONSENT_POLICY_VERSION })
+  return { active: false, policyVersion: RECORDING_CONSENT_POLICY_VERSION, grantedAt: null, withdrawnAt: new Date(row.occurred_at).toISOString() } satisfies RecordingConsentView
+}
+
+async function activeRecordingConsentId(db: Q, officeId: string, clientId: string) {
+  const row = (await db.query(
+    `SELECT id
+       FROM recording_consent_events
+      WHERE office_id = $1 AND client_id = $2 AND scope = $3
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1`,
+    [officeId, clientId, RECORDING_CONSENT_SCOPE],
+  )).rows[0]
+  if (!row) throw new RecordingConsentRequired()
+  const current = await recordingConsent(db, officeId, clientId)
+  if (!current.active) throw new RecordingConsentRequired()
+  return row.id as string
+}
+
 /** 録音を始める。録音は、録音を始めた書類（documentId）につなぐ。省いたときは主な書類 */
 export async function createRecording(db: Tx, staff: Staff, clientId: string, mime: string, deviceRecordingId?: string, documentId?: string) {
   const doc = (documentId
     ? await db.query('SELECT id FROM documents WHERE id = $1 AND client_id = $2 AND office_id = $3', [documentId, clientId, staff.officeId])
     : await db.query('SELECT d.id FROM documents d JOIN form_kinds k ON k.key = d.kind AND k.is_primary WHERE d.client_id = $1 AND d.office_id = $2 ORDER BY d.seq LIMIT 1', [clientId, staff.officeId])).rows[0]
   if (!doc) throw new NotFound()
+  const existing = deviceRecordingId
+    ? (await db.query(
+      `SELECT id, object_path, mime, status, upload_url
+         FROM recordings
+        WHERE office_id = $1 AND client_id = $2 AND device_recording_id = $3
+        FOR UPDATE`,
+      [staff.officeId, clientId, deviceRecordingId],
+    )).rows[0]
+    : null
+  if (existing) {
+    if (existing.mime !== mime) throw new Conflict('同じ録音IDの形式が一致しません')
+    return { id: existing.id as string, objectPath: existing.object_path as string, mime: existing.mime as string, status: existing.status as string, uploadUrl: existing.upload_url as string | null }
+  }
+  const consentEventId = await activeRecordingConsentId(db, staff.officeId, clientId)
   const ext = mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac') ? 'm4a' : mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : mime.includes('wav') ? 'wav' : 'bin'
   const inserted = (await db.query(
-    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by, device_recording_id)
-     VALUES ($1,$2,$3,'',$4,$5,$6)
+    `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by, device_recording_id, consent_event_id)
+     VALUES ($1,$2,$3,'',$4,$5,$6,$7)
      ON CONFLICT (office_id, client_id, device_recording_id) DO NOTHING RETURNING id`,
-    [staff.officeId, clientId, doc.id, mime, staff.id, deviceRecordingId ?? null],
+    [staff.officeId, clientId, doc.id, mime, staff.id, deviceRecordingId ?? null, consentEventId],
   )).rows[0]
   if (inserted) {
     const objectPath = `recordings/${staff.officeId}/${clientId}/${inserted.id}.${ext}`
@@ -669,6 +749,7 @@ export async function createRecording(db: Tx, staff: Staff, clientId: string, mi
      WHERE office_id = $1 AND client_id = $2 AND device_recording_id = $3 FOR UPDATE`,
     [staff.officeId, clientId, deviceRecordingId],
   )).rows[0]
+  if (!r) throw new Conflict('録音を作成できませんでした。もう一度送信してください')
   if (r.mime !== mime) throw new Conflict('同じ録音IDの形式が一致しません')
   return { id: r.id as string, objectPath: r.object_path as string, mime: r.mime as string, status: r.status as string, uploadUrl: r.upload_url as string | null }
 }

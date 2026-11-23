@@ -26,7 +26,7 @@ function withRecordingLock(clientId: string, run: () => Promise<void>) {
   return work.finally(() => { if (localLocks.get(key) === tail) localLocks.delete(key) })
 }
 
-export function useRecorder(clientId: string, onSent: () => void) {
+export function useRecorder(clientId: string, onSent: () => void, consentActive = false) {
   const [phase, setPhase] = useState<RecPhase>('idle')
   const [busy, setBusy] = useState(false)
   const [pct, setPct] = useState(0)
@@ -34,6 +34,8 @@ export function useRecorder(clientId: string, onSent: () => void) {
   const [error, setError] = useState('')
   const [storageWarning, setStorageWarning] = useState(false)
   const scope = useRef<RecorderScope | null>(null)
+  const consentRef = useRef(consentActive)
+  consentRef.current = consentActive
   const sent = useRef(onSent)
   sent.current = onSent
 
@@ -104,7 +106,7 @@ export function useRecorder(clientId: string, onSent: () => void) {
     setStorageWarning(false)
     const stopCapture = () => current.capture?.stop()
     window.addEventListener('pagehide', stopCapture)
-    void run(current, () => sendPending(current))
+    if (consentActive) void run(current, () => sendPending(current))
     return () => {
       current.disposed = true
       window.removeEventListener('pagehide', stopCapture)
@@ -112,10 +114,21 @@ export function useRecorder(clientId: string, onSent: () => void) {
     }
   }, [clientId, run, sendPending])
 
+  useEffect(() => {
+    if (!consentActive) return
+    const current = scope.current
+    if (current) void run(current, () => sendPending(current))
+  }, [consentActive, run, sendPending])
+
   /** documentId: 録音をつなぐ書類（開いている書類） */
-  const start = useCallback(async (documentId?: string) => {
+  const start = useCallback(async (documentId?: string, consentConfirmed = false) => {
     const current = scope.current
     if (!current) return
+    if (!consentRef.current && !consentConfirmed) {
+      setError('録音を始める前に、録音と AI 処理の説明を確認してください。')
+      setPhase('error')
+      return
+    }
     await run(current, async () => {
       let stream: MediaStream | undefined
       try {
@@ -154,7 +167,13 @@ export function useRecorder(clientId: string, onSent: () => void) {
   const stop = () => scope.current?.capture?.stop()
   const retry = () => {
     const current = scope.current
-    if (current) void run(current, () => sendPending(current))
+    if (!current) return
+    if (!consentRef.current) {
+      setError('録音を始める前に、録音と AI 処理の説明を確認してください。')
+      setPhase('error')
+      return
+    }
+    void run(current, () => sendPending(current))
   }
   const mmss = `${String(Math.floor(elapsed / 60000)).padStart(2, '0')}:${String(Math.floor(elapsed / 1000) % 60).padStart(2, '0')}`
   return { phase, busy, pct, elapsed: mmss, error, storageWarning, start, stop, retry, reset: () => setPhase('idle') }
