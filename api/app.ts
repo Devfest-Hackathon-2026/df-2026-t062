@@ -176,14 +176,11 @@ const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
 const OfficeKindInput = z.object({
   name: z.string().trim().min(1).max(40),
   perClient: z.enum(['one', 'many']),
-  copyFromPrimary: z.boolean(),
-  records: z.boolean(),
   append: z.boolean(),
 })
 const OfficeTopicsInput = z.object({
   topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
 })
-const TopicDraftRequest = z.object({ versionId: z.string().uuid() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -897,6 +894,7 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
+      if (scope.officeId) await draftTopicsOnStart(db, scope.officeId, v)
       return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
     }))
     // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
@@ -906,9 +904,31 @@ export function createApp(deps: ApiDeps) {
       return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
+  /**
+   * 事業所が足した種類の書式を使い始めるときに、書式の欄から AI が項目（拾う内容）を決めて、そのまま入れる（#209）。
+   * 決めるのは、録音から書く種類で、項目がまだ全体のまとめだけのときだけ（直した書式を使い始め直しても、今ある項目は変えない）。
+   * AI が失敗しても使い始めは止めない（項目は全体のまとめだけのまま）。ログには中身を出さない
+   */
+  async function draftTopicsOnStart(db: Db, officeId: string, v: Pick<forms.FormVersion, 'id' | 'kind' | 'bindings' | 'localFields'>) {
+    const kindName = await kinds.needsTopicDraft(db, officeId, v.kind)
+    if (!kindName) return
+    const dict = fieldDict(v.localFields)
+    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
+    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
+      const m = slotMeaning(b, dict, v.localFields)
+      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
+    }))]
+    if (!slots.length) return
+    try {
+      const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName, slots })
+      if (drafted.length) await kinds.setDraftedTopics(db, officeId, v.kind, drafted)
+    } catch (e) {
+      console.log(JSON.stringify({ severity: 'WARNING', msg: 'topic draft on start failed', versionId: v.id, error: (e as Error)?.name ?? 'Error' }))
+    }
+  }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
 
-  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容の案を作る・直す、やめる。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
+  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容を直す、やめる（拾う内容は、書式を使い始めるときに AI が決める。#209）。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
   app.post('/api/office/form-kinds', staffRoute('form.manage', async (c, staff, db) => {
     const input = await body(c, OfficeKindInput)
     return json(c, { kind: await kinds.createOfficeKind(db, staff.officeId, input) }, 201)
@@ -916,22 +936,6 @@ export function createApp(deps: ApiDeps) {
   app.put('/api/office/form-kinds/:key/topics', staffRoute('form.manage', async (c, staff, db) => {
     const { topics } = await body(c, OfficeTopicsInput)
     return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, c.req.param('key')!, topics) })
-  }))
-  // 拾う内容の案: 確かめた書式（下書きか公開した版）の欄に入る内容から AI が作り、そのまま保存する（責任者はこのあと直す）
-  app.post('/api/office/form-kinds/:key/topics/draft', staffRoute('form.manage', async (c, staff, db) => {
-    const key = c.req.param('key')!
-    const kind = await kinds.ownKind(db, staff.officeId, key)
-    const { versionId } = await body(c, TopicDraftRequest)
-    const v = await forms.versionForManager(db, { officeId: staff.officeId }, versionId)
-    if (v.kind !== key) throw new repo.BadRequest('別の書類の書式です')
-    const dict = fieldDict(v.localFields)
-    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
-    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
-      const m = slotMeaning(b, dict, v.localFields)
-      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
-    }))]
-    const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName: kind.name, slots })
-    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, key, drafted) })
   }))
   app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
     await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)

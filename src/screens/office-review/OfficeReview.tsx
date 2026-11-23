@@ -8,7 +8,7 @@ import { navigate } from '../../lib/router.tsx'
 import { fsz, pos } from '../../components/document/layout.ts'
 import { BackLink, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { AddPublishDialog, AddSteps } from '../../components/office-add/AddSteps.tsx'
-import { adding } from '../../components/office-add/addFlow.ts'
+import { adding, reviewSlotNames } from '../../components/office-add/addFlow.ts'
 
 interface SlotBox { name: string, x: number, y: number, w: number, h: number, pt: number, mark: boolean, area: boolean }
 
@@ -26,7 +26,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   const [v, setV] = useState<ManagedVersion | null>(null)
   const [images, setImages] = useState<Record<number, string | null>>({})
   const [kindName, setKindName] = useState('')
-  // 事業所の書類を足している途中（#153）の種類。手順 3 として出し、最後は手順 4（聞き取ること）か手順 5（使い始める）へ
+  // 事業所の書類を足している途中（#153）の種類。手順 3 として出し、最後は手順 4（使い始める）へ。録音から書く項目は、使い始めるときにサーバーで AI が決める（#209）
   const [addKind, setAddKind] = useState<KindFormState | null>(null)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
@@ -82,7 +82,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
     return out
   }, [v])
 
-  const reviewSlots = useMemo(() => (fix || !v ? [] : v.review.map((r) => r.slot)), [v, fix])
+  const reviewSlots = useMemo(() => (fix || !v ? [] : reviewSlotNames(v.review)), [v, fix])
   const exists = useCallback((name: string) => !!v && v.formVersion.schemas.some((p) => p.some((s) => s.name === name)), [v])
   const isDone = (name: string) => name in done || unused.includes(name)
   const open = reviewSlots.filter((n) => !isDone(n))
@@ -155,7 +155,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
 
   const head = addKind ? (
     <>
-      <AddSteps step={3} name={kindName} records={addKind.records} />
+      <AddSteps step={3} name={kindName} />
       <header className="of-focus-head" style={{ paddingTop: 8, paddingBottom: 8 }}><BackLink to={`${back}/upload`} label="書式を上げる" /><h1>書式の読み取り結果</h1></header>
     </>
   ) : (
@@ -289,9 +289,7 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
           ))}
           {!finished.length && <div className="of-side-msg">{fix ? 'まだありません。' : '「合っています」にした欄と、自分で直した欄が並びます。'}</div>}
           <div className="of-side-foot">
-            {addKind?.records
-              ? <button type="button" className="btn btn-p" disabled={!ready} onClick={() => navigate(`${back}/topics`)}>次へ（聞き取ること）</button>
-              : <button type="button" className="btn btn-p" disabled={!ready} onClick={() => setPublishing('ask')}>{addKind ? '次へ（使い始める）' : fix ? '直した書式を使い始める' : 'この書式を使い始める'}</button>}
+            <button type="button" className="btn btn-p" disabled={!ready} onClick={() => setPublishing('ask')}>{addKind ? '次へ（使い始める）' : fix ? '直した書式を使い始める' : 'この書式を使い始める'}</button>
           </div>
         </aside>
       </div>

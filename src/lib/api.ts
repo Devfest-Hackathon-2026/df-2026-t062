@@ -169,12 +169,8 @@ export const api = {
   // ---------- 責任者の書類の設定（#102） ----------
   officeForms: () => req<{ kinds: KindFormState[] }>('GET', '/api/office/forms'),
   // ---------- 責任者が書類の種類を足す（#153） ----------
-  createOfficeKind: (input: { name: string, perClient: 'one' | 'many', copyFromPrimary: boolean, records: boolean, append: boolean }) =>
+  createOfficeKind: (input: { name: string, perClient: 'one' | 'many', append: boolean }) =>
     req<{ kind: { key: string } }>('POST', '/api/office/form-kinds', input),
-  setOfficeTopics: (key: string, topics: { id?: string, name: string, guide: string }[]) =>
-    req<{ topics: KindFormState['topics'] }>('PUT', `/api/office/form-kinds/${encodeURIComponent(key)}/topics`, { topics }),
-  draftOfficeTopics: (key: string, versionId: string) =>
-    req<{ topics: KindFormState['topics'] }>('POST', `/api/office/form-kinds/${encodeURIComponent(key)}/topics/draft`, { versionId }),
   retireOfficeKind: (key: string) => req<{ ok: true }>('POST', `/api/office/form-kinds/${encodeURIComponent(key)}/retire`, {}),
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),

@@ -59,7 +59,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
   if (adding(k)) {
     return (
       <OfficeShell staffName={staffName} active={null} wide>
-        <AddSteps step={phase === 'review' || phase === 'reading' || fail ? 3 : 2} name={k.name} records={k.records} />
+        <AddSteps step={phase === 'review' || phase === 'reading' || fail ? 3 : 2} name={k.name} />
         <main className="oa-body">
           {phase === 'reading' ? (
             <div className="oa-wait" role="status">

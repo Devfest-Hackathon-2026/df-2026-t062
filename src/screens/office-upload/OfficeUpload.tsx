@@ -78,7 +78,7 @@ export function OfficeUpload({ staffName, kind }: { staffName: string, kind: str
         <p className="of-muted" style={{ marginTop: 12 }}>{add ? '読み取りには数分かかります。この画面を離れても、読み取りは続きます。' : '読み取りには数分かかります。そのあいだも、今の書式で書類を作れます。'}</p>
       </div>
   )
-  if (add) return <OfficeShell staffName={staffName} active={null} wide><AddSteps step={2} name={name} records={k!.records} /><main className="oa-body">{content}</main></OfficeShell>
+  if (add) return <OfficeShell staffName={staffName} active={null} wide><AddSteps step={2} name={name} /><main className="oa-body">{content}</main></OfficeShell>
   return (
     <OfficeShell staffName={staffName} active="forms">
       <BackLink to={back} label={name || '戻る'} />

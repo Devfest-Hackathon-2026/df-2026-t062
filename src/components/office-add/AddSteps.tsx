@@ -1,9 +1,9 @@
-// 事業所の書類を足す流れ（#153）の上の帯: 「事業所の書類を足す：名前」と 5 つの手順。録音から書かない書類は、手順 4 を「（なし）」で薄く出す。
+// 事業所の書類を足す流れ（#153）の上の帯: 「事業所の書類を足す：名前」と 4 つの手順。
 import { BackLink } from '../office-shell/OfficeShell.tsx'
 import { ADD_STEPS } from './addFlow.ts'
 import './office-add.css'
 
-export function AddSteps({ step, name, records = true }: { step: 1 | 2 | 3 | 4 | 5, name?: string, records?: boolean }) {
+export function AddSteps({ step, name }: { step: 1 | 2 | 3 | 4, name?: string }) {
   return (
     <>
       <header className="oa-head">
@@ -13,10 +13,9 @@ export function AddSteps({ step, name, records = true }: { step: 1 | 2 | 3 | 4 |
       <ol className="oa-steps" aria-label="手順">
         {ADD_STEPS.map((label, i) => {
           const n = i + 1
-          const skip = n === 4 && !records
           return (
-            <li key={label} className={n < step ? 'done' : n === step ? 'now' : ''} style={skip ? { opacity: 0.45 } : undefined} aria-current={n === step ? 'step' : undefined}>
-              <span>{n < step ? '✓' : n}</span><span>{label}{skip ? '（なし）' : ''}</span>
+            <li key={label} className={n < step ? 'done' : n === step ? 'now' : ''} aria-current={n === step ? 'step' : undefined}>
+              <span>{n < step ? '✓' : n}</span><span>{label}</span>
             </li>
           )
         })}
@@ -25,7 +24,7 @@ export function AddSteps({ step, name, records = true }: { step: 1 | 2 | 3 | 4 |
   )
 }
 
-/** 手順 5「使い始める」の確かめ（試作の文のまま） */
+/** 手順 4「使い始める」の確かめ（試作の文のまま） */
 export function AddPublishDialog({ name, busy, error, onCancel, onOk }: { name: string, busy: boolean, error: string, onCancel: () => void, onOk: () => void }) {
   return (
     <>

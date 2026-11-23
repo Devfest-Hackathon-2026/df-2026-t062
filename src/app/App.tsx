@@ -14,7 +14,6 @@ import { OfficeKind } from '../screens/office-kind/OfficeKind.tsx'
 import { OfficeUpload } from '../screens/office-upload/OfficeUpload.tsx'
 import { OfficeReview } from '../screens/office-review/OfficeReview.tsx'
 import { OfficeAdd } from '../screens/office-add/OfficeAdd.tsx'
-import { OfficeTopics } from '../screens/office-topics/OfficeTopics.tsx'
 import { OfficeShell } from '../components/office-shell/OfficeShell.tsx'
 
 function OfficeNotice({ message }: { message: string }) {
@@ -85,7 +84,6 @@ function Shell() {
     if (route.name === 'officeKind') return <OfficeKind key={route.kind} staffName={staff.name} kind={route.kind} />
     if (route.name === 'officeUpload') return <OfficeUpload staffName={staff.name} kind={route.kind} />
     if (route.name === 'officeAdd') return <OfficeAdd staffName={staff.name} />
-    if (route.name === 'officeTopics') return <OfficeTopics key={route.kind} staffName={staff.name} kind={route.kind} />
     if (route.name === 'officeReview') return <OfficeReview key={route.versionId} staffName={staff.name} kind={route.kind} versionId={route.versionId} fix={new URLSearchParams(location.search).get('fix') === '1'} />
     if (route.name === 'list') return <OfficeShell staffName={staff.name} active="clients"><PcList staffName={staff.name} embedded /></OfficeShell>
   }

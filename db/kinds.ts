@@ -78,19 +78,19 @@ export async function kindsForOffice(db: Q, officeId: string): Promise<(FormKind
 export interface NewOfficeKind {
   name: string
   perClient: 'one' | 'many'
-  /** 作るときに主な書類（アセスメント）の同じ欄を写すか */
-  copyFromPrimary: boolean
-  /** 録音から AI に書かせるか（書かせないなら拾う内容は空） */
-  records: boolean
   /** 2 回目からの録音で、前の録音の内容も使うか（要約を足していく） */
   append: boolean
 }
 
-/** 事業所の種類を足す。key は事業所の種類だと分かる形（o_ ＋ 乱数）。主な書類にはせず、必須の欄も持たない */
+/**
+ * 事業所の種類を足す。key は事業所の種類だと分かる形（o_ ＋ 乱数）。主な書類にはせず、必須の欄も持たない。
+ * 元の書類はいつも主な書類（アセスメント）にし、「アセスメントから AI が書く」をどの種類でも出す。
+ * 録音から書く前提で、項目は全体のまとめから始める（ほかの項目は、書式を使い始めるときに AI が決める。#209）
+ */
 export async function createOfficeKind(db: Q, officeId: string, input: NewOfficeKind): Promise<FormKindRow> {
   const key = `o_${randomBytes(6).toString('hex')}`
-  const from = input.copyFromPrimary ? (await primaryKind(db)).key : null
-  const topics: Topic[] = input.records ? [{ ...OFFICE_OVERALL }] : []
+  const from = (await primaryKind(db)).key
+  const topics: Topic[] = [{ ...OFFICE_OVERALL }]
   const r = await db.query(
     `INSERT INTO form_kinds (key, name, per_client, is_primary, create_from, required, topics, summary_mode, office_id)
      VALUES ($1, $2, $3, false, $4, '[]'::jsonb, $5, $6, $7) RETURNING ${COLUMNS}`,
@@ -113,6 +113,27 @@ export async function setOfficeTopics(db: Q, officeId: string, key: string, item
   const topics = officeTopics(items)
   await db.query('UPDATE form_kinds SET topics = $2 WHERE key = $1', [key, JSON.stringify(topics)])
   return topics
+}
+
+/**
+ * 書式を使い始めるときに、AI が項目を決める種類か（#209）: その事業所が足した種類で、録音から書き、項目がまだ全体のまとめだけ。
+ * 決めるなら種類の名前、決めないなら null
+ */
+export async function needsTopicDraft(db: Q, officeId: string, key: string): Promise<string | null> {
+  const r = (await db.query('SELECT name, topics FROM form_kinds WHERE key = $1 AND office_id = $2', [key, officeId])).rows[0]
+  if (!r) return null
+  const topics = r.topics as Topic[]
+  return topics.length > 0 && topics.every((t) => t.last) ? r.name as string : null
+}
+
+/** AI が決めた項目を入れる。AI が考えている間に責任者が項目を直していたら、直したほうを残す（入れなければ null） */
+export async function setDraftedTopics(db: Q, officeId: string, key: string, items: readonly { name: string, guide: string }[]): Promise<Topic[] | null> {
+  const topics = officeTopics(items)
+  const r = await db.query(
+    `UPDATE form_kinds SET topics = $3 WHERE key = $1 AND office_id = $2 AND NOT jsonb_path_exists(topics, '$[*] ? (@.last == false)')`,
+    [key, officeId, JSON.stringify(topics)],
+  )
+  return r.rowCount ? topics : null
 }
 
 /** 事業所の種類をやめる（行は消さない。今ある書類は残る） */

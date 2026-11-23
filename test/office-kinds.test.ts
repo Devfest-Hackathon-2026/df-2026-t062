@@ -1,12 +1,17 @@
 // 事業所の責任者が書類の種類を足す（#153）。足した種類はその事業所だけに出て、書式を使い始めるまでは作れない。
-// やめた種類は新しく作れないが、今ある書類は開ける。api・DB を通しで確かめる。
+// やめた種類は新しく作れないが、今ある書類は開ける。録音から書く種類は、書式を使い始めるときに AI が項目を決める（#209）。api・DB を通しで確かめる。
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { once } from 'node:events'
+import { readFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { AddressInfo } from 'node:net'
+import { generate } from '@pdfme/generator'
+import { text, rectangle } from '@pdfme/schemas'
+import type { Storage } from '../api/storage.ts'
 import type { Db } from '../db/pool.ts'
 import type { TopicDraftInput } from '../core/topics.ts'
 
@@ -14,6 +19,7 @@ const url = process.env.DATABASE_URL
 const skip = url ? false : 'DATABASE_URL がないので飛ばします'
 const schema = `t_okinds_${process.pid}`
 let db: Db
+let storage: Storage
 let origin = ''
 let close = async () => {}
 const ids = { officeA: '', officeB: '' }
@@ -21,8 +27,8 @@ const CARE_A = 'Bearer dev:kato@example.com'
 const CARE_B = 'Bearer dev:other@example.com'
 const ADMIN_A = 'Bearer dev:admin-a@example.com'
 const ADMIN_B = 'Bearer dev:admin-b@example.com'
-/** 拾う内容の案を作る AI（偽物）。渡された欄の言葉を覚え、決めた案を返す */
-const drafter = { calls: [] as TopicDraftInput[] }
+/** 拾う内容の案を作る AI（偽物）。渡された欄の言葉を覚え、決めた案を返す。fail なら失敗する */
+const drafter = { calls: [] as TopicDraftInput[], fail: false }
 
 const call = async (path: string, token: string, init: RequestInit = {}) => {
   const res = await fetch(`${origin}${path}`, { ...init, headers: { Authorization: token, 'Content-Type': 'application/json', ...(init.headers ?? {}) } })
@@ -45,8 +51,39 @@ async function publishOfficeForm(officeId: string, kind: string) {
   }, { publish: true })
 }
 
+const font = { BIZUDPGothic: { data: readFileSync(new URL('../forms/fonts/BIZUDPGothic-Regular.ttf', import.meta.url)), fallback: true, subset: true } }
+const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex')
+let pdfCount = 0
+/** 取り込みのジョブが作るのと同じ下書きの版を作り、元の PDF も様式の場所に置く（呼ぶたびに別の PDF）。欄は「氏名」と、その書式だけの「訪問時の様子」 */
+async function draftOfficeForm(officeId: string, kind: string): Promise<string> {
+  pdfCount++
+  const label = { name: 'label', type: 'text', position: { x: 20, y: 32 }, width: 40, height: 8, fontName: 'BIZUDPGothic', fontSize: 12, alignment: 'left', verticalAlignment: 'top', lineHeight: 1, characterSpacing: 0, fontColor: '#000000', content: '' }
+  const pdf = new Uint8Array(await generate({ template: { basePdf: { width: 210, height: 297, padding: [0, 0, 0, 0] }, schemas: [[label]] } as never, inputs: [{ label: `訪問記録 ${pdfCount}` }], plugins: { text, rectangle }, options: { font } }))
+  const { basePdfAssetPath } = await import('../core/form.ts')
+  await storage.write('forms', basePdfAssetPath(sha(pdf), officeId), pdf, 'application/pdf')
+  const slot = (name: string, y: number) => ({ name, type: 'text', content: '', position: { x: 61, y }, width: 38, height: 8, fontName: 'BIZUDPGothic', fontSize: 10, alignment: 'left', verticalAlignment: 'middle', lineHeight: 1, characterSpacing: 0, fontColor: '#1a3fa0' })
+  const draft = {
+    schemas: [[slot('p1_氏名', 31), slot('p1_様子', 51)]],
+    bindings: { p1_氏名: { op: 'text@1', ui: 'text', ref: { key: 'person.name' } }, p1_様子: { op: 'text@1', ui: 'text', ref: { key: 'local.visitMood' } } },
+    pages: [{ no: 1, pdfIndex: 0, title: '1 ページ', width: 210, height: 297 }],
+    localFields: [{ key: 'local.visitMood', label: '訪問時の様子', type: 'text' }],
+    review: [],
+  }
+  const imports = await import('../db/form-imports.ts')
+  const imp = await imports.createImport(db, { officeId }, kind, null)
+  await db.query('UPDATE form_imports SET uploaded_at = now() WHERE id = $1', [imp.id])
+  const claimed = (await imports.claimImport(db, imp.id, 'test'))!
+  return (await imports.finishWithDraft(db, claimed, 'test', sha(pdf), draft as never))!
+}
+/** 責任者が「使い始める」を押す（手順 3 の最後） */
+async function startUsing(id: string, token = ADMIN_A) {
+  const v = await call(`/api/office/form-versions/${id}`, token)
+  return post(`/api/office/form-versions/${id}/publish`, token, { base: v.body.formVersion.contentSha })
+}
+const topicsOf = async (key: string) => (await db.query('SELECT topics FROM form_kinds WHERE key = $1', [key])).rows[0].topics as any[]
+
 const newKind = async (token = ADMIN_A, body: object = {}) =>
-  post('/api/office/form-kinds', token, { name: '訪問記録', perClient: 'many', copyFromPrimary: true, records: true, append: false, ...body })
+  post('/api/office/form-kinds', token, { name: '訪問記録', perClient: 'many', append: false, ...body })
 const kindsOf = async (token: string) => (await call('/api/form-kinds', token)).body.kinds as any[]
 const newClient = async (token = CARE_A) => (await post('/api/clients', token, { name: `見本 ${Math.random()}` })).body.id as string
 
@@ -65,13 +102,17 @@ before(async () => {
     await db.query("INSERT INTO staff (office_id, auth_uid, name, email, role) VALUES ($1, $2, '責任者', $3, 'admin')", [office, `dev:${email}`, email])
   }
   const { LocalStorage } = await import('../api/storage.ts')
-  const storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-okinds-')))
+  storage = new LocalStorage(await mkdtemp(join(tmpdir(), 'careman-okinds-')))
   const { createApiServer } = await import('../api/server.ts')
   const { DevVerifier } = await import('../api/auth.ts')
   const server = createApiServer({
     db: async () => db, verifier: () => new DevVerifier(), storage: () => storage,
     queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true,
-    topicDrafter: async () => async (input) => { drafter.calls.push(input); return [{ name: '訪問時の様子', guide: '訪問したときの本人の様子と、話したこと' }] },
+    topicDrafter: async () => async (input) => {
+      drafter.calls.push(input)
+      if (drafter.fail) throw new Error('AI が答えなかった')
+      return [{ name: '訪問時の様子', guide: '訪問したときの本人の様子と、話したこと' }]
+    },
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -116,27 +157,64 @@ test('責任者でない職員は、種類を足せない', { skip }, async () =
   assert.equal((await newKind(CARE_A)).status, 403)
 })
 
-test('録音から書かない種類は拾う内容が空。2 回目から前の録音も使うなら要約は足していく', { skip }, async () => {
-  const none = (await newKind(ADMIN_A, { records: false })).body.kind.key
-  const append = (await newKind(ADMIN_A, { records: true, append: true, perClient: 'one', copyFromPrimary: false })).body.kind.key
-  const rows = Object.fromEntries((await db.query('SELECT key, topics, summary_mode, per_client, create_from, required, is_primary FROM form_kinds WHERE key = ANY($1)', [[none, append]])).rows.map((r) => [r.key, r]))
-  assert.deepEqual(rows[none].topics, [])
-  assert.ok(rows[append].topics.length > 0)
-  assert.deepEqual([rows[append].summary_mode, rows[append].per_client, rows[append].create_from, rows[append].required, rows[append].is_primary], ['append', 'one', null, [], false])
+test('足した種類は、いつもアセスメントを元にし、項目は全体のまとめから始まる。2 回目から前の録音も使うなら要約は足していく', { skip }, async () => {
+  const single = (await newKind()).body.kind.key
+  const append = (await newKind(ADMIN_A, { append: true, perClient: 'one' })).body.kind.key
+  const rows = Object.fromEntries((await db.query('SELECT key, topics, summary_mode, per_client, create_from, required, is_primary FROM form_kinds WHERE key = ANY($1)', [[single, append]])).rows.map((r) => [r.key, r]))
+  for (const k of [single, append]) {
+    assert.equal(rows[k].create_from, 'assessment', 'どの種類でも「アセスメントから AI が書く」が出る')
+    assert.deepEqual(rows[k].topics.map((t: any) => [t.name, t.last]), [['全体のまとめ', true]])
+  }
+  assert.deepEqual([rows[single].summary_mode, rows[append].summary_mode], ['single', 'append'])
+  assert.deepEqual([rows[append].per_client, rows[append].required, rows[append].is_primary], ['one', [], false])
 })
 
-test('拾う内容: 足した種類は、責任者が案を作って直せる。全体の種類は直せない', { skip }, async () => {
+test('録音から書く種類は、書式を使い始めると、書式の欄から AI が作った項目がそのまま入る（全体のまとめは最後）', { skip }, async () => {
   const key = (await newKind()).body.kind.key as string
-  const { versionId } = await publishOfficeForm(ids.officeA, key)
-  const drafted = await post(`/api/office/form-kinds/${key}/topics/draft`, ADMIN_A, { versionId })
-  assert.equal(drafted.status, 200)
+  const r = await startUsing(await draftOfficeForm(ids.officeA, key))
+  assert.equal(r.status, 200)
+  assert.equal(drafter.calls.at(-1)!.kindName, '訪問記録')
   assert.ok(drafter.calls.at(-1)!.slots.includes('訪問時の様子'), '書式の欄の言葉を渡す')
-  assert.ok(drafted.body.topics.some((t: any) => t.name === '訪問時の様子' && t.by === 'ai'))
-  const saved = await put(`/api/office/form-kinds/${key}/topics`, ADMIN_A, { topics: [...drafted.body.topics.filter((t: any) => !t.last).map((t: any) => ({ id: t.id, name: t.name, guide: t.guide })), { name: '次回までにすること', guide: '次の訪問までに本人・家族・ケアマネがすること' }] })
+  const topics = await topicsOf(key)
+  assert.deepEqual(topics.map((t) => [t.name, t.by, t.last]), [['訪問時の様子', 'ai', false], ['全体のまとめ', 'ai', true]])
+})
+
+test('項目がもうある種類は、直した書式を使い始めても項目を変えず、AI も呼ばない', { skip }, async () => {
+  const key = (await newKind()).body.kind.key as string
+  await startUsing(await draftOfficeForm(ids.officeA, key))
+  const mine = [{ name: '次回までにすること', guide: '次の訪問までに本人・家族・ケアマネがすること' }]
+  assert.equal((await put(`/api/office/form-kinds/${key}/topics`, ADMIN_A, { topics: mine })).status, 200)
+  const before = drafter.calls.length
+  assert.equal((await startUsing(await draftOfficeForm(ids.officeA, key))).status, 200)
+  assert.equal(drafter.calls.length, before)
+  assert.deepEqual((await topicsOf(key)).map((t) => t.name), ['次回までにすること', '全体のまとめ'])
+})
+
+test('AI が項目を作れなくても使い始められる。項目は全体のまとめだけ', { skip }, async () => {
+  const key = (await newKind()).body.kind.key as string
+  drafter.fail = true
+  try {
+    assert.equal((await startUsing(await draftOfficeForm(ids.officeA, key))).status, 200)
+  } finally { drafter.fail = false }
+  assert.equal((await kindsOf(CARE_A)).find((k) => k.key === key).available, true)
+  assert.deepEqual((await topicsOf(key)).map((t) => t.name), ['全体のまとめ'])
+})
+
+test('全体の種類は、書式を使い始めても AI を呼ばず、これまでの要約の項目のまま', { skip }, async () => {
+  const assessment = await topicsOf('assessment')
+  const before = drafter.calls.length
+  assert.equal((await startUsing(await draftOfficeForm(ids.officeA, 'assessment'))).status, 200)
+  assert.equal(drafter.calls.length, before)
+  assert.deepEqual(await topicsOf('assessment'), assessment)
+})
+
+test('拾う内容: 足した種類は、責任者が直せる。全体の種類は直せない', { skip }, async () => {
+  const key = (await newKind()).body.kind.key as string
+  const saved = await put(`/api/office/form-kinds/${key}/topics`, ADMIN_A, { topics: [{ name: '訪問時の様子', guide: '訪問したときの本人の様子' }, { name: '次回までにすること', guide: '次の訪問までに本人・家族・ケアマネがすること' }] })
   assert.equal(saved.status, 200)
-  const topics = (await db.query('SELECT topics FROM form_kinds WHERE key = $1', [key])).rows[0].topics
-  assert.deepEqual(topics.filter((t: any) => !t.last).map((t: any) => t.name), ['訪問時の様子', '次回までにすること'])
-  assert.equal(new Set(topics.map((t: any) => t.id)).size, topics.length, '項目の id は重ならない')
+  const topics = await topicsOf(key)
+  assert.deepEqual(topics.filter((t) => !t.last).map((t) => t.name), ['訪問時の様子', '次回までにすること'])
+  assert.equal(new Set(topics.map((t) => t.id)).size, topics.length, '項目の id は重ならない')
   assert.equal((await put('/api/office/form-kinds/assessment/topics', ADMIN_A, { topics: [] })).status, 403)
 })
 
