@@ -3,9 +3,8 @@ import { writeBusinessAudit, writeBusinessAuditBatch, type AuditContext } from '
 import { tx, type Db, type Tx } from './pool.ts'
 import { decimalString, type DecimalString, type SourceObjectErrorCode } from '../storage/source-object-control.ts'
 
-export const RECORDING_RETENTION_POLICY_VERSION = 'recording-retention-v1'
-export const RECORDING_MAX_RETENTION_DAYS = 7
-export const RECORDING_SUCCESS_RETENTION_HOURS = 72
+export const RECORDING_RETENTION_POLICY_VERSION = 'recording-retention-v2'
+export const RECORDING_MAX_RETENTION_DAYS = 14
 export const RECORDING_HOLD_MAX_DAYS = 90
 export const RECORDING_DELETE_LEASE_MINUTES = 15
 export const RECORDING_DELETE_MAX_ATTEMPTS = 6
@@ -144,6 +143,7 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
   const updated = (await db.query(
     `UPDATE recordings
         SET source_expires_at = recorded_at + make_interval(days => $3),
+            retention_policy_version = $4,
             source_delete_status = CASE
               WHEN retention_hold OR retention_hold_target OR retention_hold_sync_status <> 'synced' THEN 'pending'
               WHEN recorded_at + make_interval(days => $3) <= now() THEN 'eligible'
@@ -151,39 +151,12 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
             END
       WHERE id = $1 AND office_id = $2 AND source_delete_status IN ('pending', 'eligible')
       RETURNING id, source_delete_status`,
-    [recordingId, context.officeId, RECORDING_MAX_RETENTION_DAYS],
+    [recordingId, context.officeId, RECORDING_MAX_RETENTION_DAYS, RECORDING_RETENTION_POLICY_VERSION],
   )).rows[0]
   if (!updated) return null
   await retentionAudit(db, { ...context, action: 'recording.retention_set', recordingId, detail: {
     previousStatus: before.source_delete_status, nextStatus: updated.source_delete_status, trigger: 'recording_complete',
   } })
-  return updated.source_delete_status as SourceDeleteStatus
-}
-
-export async function setRecordingSuccessRetention(db: Db | Tx, jobId: string, context: RecordingRetentionContext) {
-  const before = (await db.query(
-    `SELECT r.id, r.client_id, r.document_id, r.source_delete_status
-       FROM recordings r JOIN jobs j ON j.recording_id = r.id
-      WHERE j.id = $1 AND r.office_id = $2 FOR UPDATE OF r`,
-    [jobId, context.officeId],
-  )).rows[0]
-  if (!before) throw new Error('recording_not_found')
-  const updated = (await db.query(
-    `UPDATE recordings
-        SET source_expires_at = LEAST(source_expires_at, recorded_at + make_interval(days => $2), now() + make_interval(hours => $3)),
-            source_delete_status = CASE
-              WHEN retention_hold OR retention_hold_target OR retention_hold_sync_status <> 'synced' THEN 'pending'
-              WHEN LEAST(source_expires_at, recorded_at + make_interval(days => $2), now() + make_interval(hours => $3)) <= now() THEN 'eligible'
-              ELSE 'pending'
-            END
-      WHERE id = $1 AND source_delete_status IN ('pending', 'eligible') RETURNING id, source_delete_status`,
-    [before.id, RECORDING_MAX_RETENTION_DAYS, RECORDING_SUCCESS_RETENTION_HOURS],
-  )).rows[0]
-  if (!updated) return null
-  await retentionAudit(db, { ...context, clientId: context.clientId ?? before.client_id, documentId: context.documentId ?? before.document_id,
-    action: 'recording.retention_set', recordingId: before.id,
-    detail: { previousStatus: before.source_delete_status, nextStatus: updated.source_delete_status, trigger: 'ai_complete', jobId },
-  })
   return updated.source_delete_status as SourceDeleteStatus
 }
 

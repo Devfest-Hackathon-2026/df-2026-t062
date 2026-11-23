@@ -12,7 +12,6 @@ import {
   getRecordingRetention,
   markExpiredSourceRecordingsEligible,
   RECORDING_MAX_RETENTION_DAYS,
-  RECORDING_SUCCESS_RETENTION_HOURS,
   releaseExpiredRecordingRetentionHolds,
   releaseRecordingRetentionHold,
   setRecordingRetentionHold,
@@ -64,15 +63,6 @@ const value = { 'intake.method': { value: '電話', cite: [] } }
 const result = { values: value, usage: ZERO_USAGE, failed: [] as string[], incompleteFields: [] as string[] }
 const status = async (id: string) => (await db.query('SELECT status, attempts, run_token FROM jobs WHERE id = $1', [id])).rows[0]
 const batches = async (id: string) => Number((await db.query('SELECT count(*) AS n FROM batches WHERE job_id = $1', [id])).rows[0].n)
-const HOUR_MS = 60 * 60 * 1000
-
-function assertExpiryNear(iso: string, startedAt: number, hours: number) {
-  const expiresAt = new Date(iso).getTime()
-  const toleranceMs = 10_000
-  assert.ok(expiresAt >= startedAt + hours * HOUR_MS - toleranceMs)
-  assert.ok(expiresAt <= Date.now() + hours * HOUR_MS + toleranceMs)
-}
-
 test('一時失敗後に再配信で再開し、同じジョブの二重配信は一度しか反映しない', { skip }, async () => {
   const j = await job()
   const before = await getRecordingRetention(db, j.recordingId, staff.officeId)
@@ -86,13 +76,11 @@ test('一時失敗後に再配信で再開し、同じジョブの二重配信�
   await assert.rejects(runJob(deps(p), j.jobId), /injected transient error/)
   assert.equal((await status(j.jobId)).status, 'queued')
   assert.deepEqual((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceExpiresAt, before.sourceExpiresAt)
-  const successStartedAt = Date.now()
   await Promise.all([runJob(deps(p), j.jobId), runJob(deps(p), j.jobId)])
   assert.equal((await status(j.jobId)).status, 'succeeded')
   const after = await getRecordingRetention(db, j.recordingId, staff.officeId)
   assert.ok(after)
-  assertExpiryNear(after.sourceExpiresAt, successStartedAt, RECORDING_SUCCESS_RETENTION_HOURS)
-  assert.ok(new Date(after.sourceExpiresAt).getTime() < new Date(before.sourceExpiresAt).getTime())
+  assert.equal(after.sourceExpiresAt, before.sourceExpiresAt)
   assert.equal((await status(j.jobId)).attempts, 2)
   assert.equal(await batches(j.jobId), 1)
   await runJob(deps(p), j.jobId)
@@ -101,13 +89,14 @@ test('一時失敗後に再配信で再開し、同じジョブの二重配信�
 
 test('部分失敗を API のジョブ情報で伝え、再配信でも二重反映しない', { skip }, async () => {
   const j = await job()
-  const successStartedAt = Date.now()
+  const before = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.ok(before)
   await runJob(deps(providers(async () => ({ ...result, failed: ['check:3'], incompleteFields: ['assessment.lifeHistory'] }))), j.jobId)
   assert.equal((await status(j.jobId)).status, 'partial')
   const retention = await getRecordingRetention(db, j.recordingId, staff.officeId)
   assert.ok(retention)
   assert.equal(retention.sourceDeleteStatus, 'pending')
-  assertExpiryNear(retention.sourceExpiresAt, successStartedAt, RECORDING_SUCCESS_RETENTION_HOURS)
+  assert.equal(retention.sourceExpiresAt, before.sourceExpiresAt)
   const view = (await activeJobs(db, staff.officeId, j.clientId))[0]
   assert.deepEqual(view.incompleteFields, ['assessment.lifeHistory'])
   assert.equal(view.batch?.changes, 2) // AI の欄と初回面談日
