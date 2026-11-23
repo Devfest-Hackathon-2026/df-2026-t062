@@ -8,7 +8,8 @@ import { FormPage } from '../document/FormPage.tsx'
 import { SheetToolbar } from '../document/SheetToolbar.tsx'
 import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import { useDocument } from '../document/useDocument.ts'
-import { DailyActivities } from './DocumentFields.tsx'
+import { DailyActivities, activityRows } from './DocumentFields.tsx'
+import type { PaperTextField } from '../care-paper/PaperText.tsx'
 import { OfficialPlanSheet, type PaperNeedTarget } from './OfficialPlanSheet.tsx'
 import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { savePlanEdits, documentDirty } from './save.ts'
@@ -21,6 +22,9 @@ const days = ['月', '火', '水', '木', '金', '土', '日']
 const planDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
 const statusText = (status: string) => status === 'draft' ? '下書き' : status === 'confirmed' ? '確定済み' : '旧版'
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+const serviceTextKeys: Record<string, 'content' | 'kind' | 'provider' | 'frequency' | 'periodText' | undefined> = {
+  サービス内容: 'content', サービス種別: 'kind', 提供事業所: 'provider', 頻度: 'frequency', サービス期間: 'periodText',
+}
 const message = (error: unknown) => {
   if (error instanceof ApiError) {
     if (error.code === 'conflict') return '別の画面で更新されています。入力を控えてから「読み直す」を押してください。入力は自動で上書きしません。'
@@ -37,18 +41,13 @@ const message = (error: unknown) => {
   return error instanceof Error ? error.message : '操作を完了できませんでした。入力を残したまま再試行できます。'
 }
 
-function Modal({ title, onClose, focusField, children }: { title: string, onClose: () => void, focusField?: string, children: ReactNode }) {
+function Modal({ title, onClose, children }: { title: string, onClose: () => void, children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const dialog = ref.current!
     dialog.showModal()
-    if (focusField) {
-      const field = dialog.querySelector<HTMLElement>(`[data-cp-field="${focusField}"]`)
-      field?.scrollIntoView({ block: 'center' })
-      field?.focus({ preventScroll: true })
-    }
     return () => dialog.close()
-  }, [focusField])
+  }, [])
   return <dialog ref={ref} aria-label={title} className="cp-dialog" onCancel={(e) => { e.preventDefault(); onClose() }}>
     <header><h2>{title}</h2><button className="btn" onClick={onClose} type="button">閉じる</button></header>{children}
   </dialog>
@@ -205,7 +204,6 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
   const [notice, setNotice] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [needIndex, setNeedIndex] = useState<number | null>(null)
-  const [needFocus, setNeedFocus] = useState<string>()
   const [slotIndex, setSlotIndex] = useState<number | null>(null)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [activitiesOpen, setActivitiesOpen] = useState(false)
@@ -299,13 +297,27 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     }
     setNeeds(next)
   }
-  const openNeed = ({ needIndex, goalIndex, serviceIndex }: PaperNeedTarget, field = 'ニーズ') => {
-    const serviceField = ['サービス内容', '保険給付', 'サービス種別', '提供事業所', '頻度', 'サービス期間'].includes(field)
-    if (serviceField && serviceIndex !== undefined) setNeedFocus(`service-${goalIndex}-${serviceIndex}`)
-    else if ((serviceField || field.startsWith('短期')) && goalIndex !== undefined) setNeedFocus(`goal-${goalIndex}`)
-    else setNeedFocus(field.startsWith('長期') ? 'long-goal' : 'need')
-    setNeedIndex(needIndex)
+  const needText = ({ needIndex, goalIndex, serviceIndex }: PaperNeedTarget, slot: string): PaperTextField | undefined => {
+    const need = needs[needIndex]
+    const goal = goalIndex === undefined ? undefined : need.shortGoals?.[goalIndex]
+    const service = serviceIndex === undefined ? undefined : goal?.services?.[serviceIndex]
+    const changeNeed = (change: (n: NeedInput) => void) => updateNeed(needIndex, change)
+    if (slot === 'ニーズ') return { label: '生活全般の解決すべき課題（ニーズ）', value: need.need, multiline: true, onChange: value => changeNeed(n => { n.need = value }) }
+    if (slot === '長期目標') return { label: '長期目標', value: need.longGoal.goal, multiline: true, onChange: value => changeNeed(n => { n.longGoal.goal = value }) }
+    if (slot === '長期期間') return { label: '長期目標の期間', value: need.longGoal.periodText ?? '', onChange: value => changeNeed(n => { n.longGoal.periodText = value || null }) }
+    if (goal && goalIndex !== undefined) {
+      if (slot === '短期目標') return { label: '短期目標 ' + (goalIndex + 1), value: goal.goal, multiline: true, onChange: value => changeNeed(n => { n.shortGoals![goalIndex].goal = value }) }
+      if (slot === '短期期間') return { label: '短期目標の期間', value: goal.periodText ?? '', onChange: value => changeNeed(n => { n.shortGoals![goalIndex].periodText = value || null }) }
+    }
+    if (!service || goalIndex === undefined || serviceIndex === undefined) return
+    const key = serviceTextKeys[slot]
+    if (key) return {
+      label: slot === '提供事業所' ? 'サービス提供を行う事業所（※2）' : slot,
+      value: service[key] ?? '', multiline: key === 'content',
+      onChange: value => updateService(needIndex, goalIndex, serviceIndex, { [key]: value }),
+    }
   }
+  const openNeed = ({ needIndex }: PaperNeedTarget) => setNeedIndex(needIndex)
   const updateSlot = (index: number, change: Partial<SlotInput>) => {
     setNotice(''); setSlots((old) => old.map((s, i) => i === index ? { ...s, ...change } : s))
   }
@@ -353,7 +365,17 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
           <OfficialPlanSheet state={i === 1 ? second : third} needs={needs} slots={slots} touch={touch}
             busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={i === 1 && aiNeeds.size > 0}
             onNeed={openNeed} onNeeds={() => setNeedsOpen(true)}
-            onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)} />
+            onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)}
+            needText={needText}
+            activityText={hour => {
+              const rows = activityRows(third)
+              const activity = rows.find(row => String(row.time) === hour)
+              if (activity) return { label: `${hour}:00 本人の生活リズム`, value: String(activity.rhythm ?? ''), onChange: value =>
+                third.setValue('dailySchedule', rows.map(row => row === activity ? { ...row, rhythm: value } : row)) }
+            }}
+            otherNotes={slots.flatMap((slot, index) => slot.scheduleType === 'other'
+              ? [{ label: `週単位以外の内容 ${index + 1}`, value: slot.note ?? '', onChange: (note: string) => updateSlot(index, { note }) }]
+              : [])} />
         </section>)}
         </div>
       </main>
@@ -384,8 +406,8 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     {activitiesOpen && <Modal title="第3表・主な日常生活上の活動" onClose={() => setActivitiesOpen(false)}>
       <DailyActivities state={third} disabled={busy || readOnly} />
     </Modal>}
-    {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)} focusField={needFocus}>
-      <p>入力はこの画面に保持します。各表の「保存」で第1〜3表をまとめて保存してください。</p>
+    {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
+      <p>目標やサービスを追加したら、用紙の欄に直接入力できます。</p>
       {!readOnly && <button className="btn" type="button" disabled={busy} onClick={() => { setNeedIndex(null); setNeedsOpen(true) }}>ニーズ一覧</button>}
       <fieldset disabled={readOnly || busy}>
         <NeedFields need={needs[needIndex]} linkChoices={linkChoices} update={(change) => updateNeed(needIndex, change)}
@@ -405,8 +427,8 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
           <div className="cp-fields"><label>開始<input type="time" value={slots[slotIndex].start ?? ''} onChange={(e) => updateSlot(slotIndex, { start: e.target.value })} /></label>
             <label>終了<input type="time" value={slots[slotIndex].end ?? ''} onChange={(e) => updateSlot(slotIndex, { end: e.target.value })} /></label></div>
           <label className="cp-check"><input type="checkbox" checked={slots[slotIndex].endsNextDay ?? false} onChange={(e) => updateSlot(slotIndex, { endsNextDay: e.target.checked })} />終了は翌日</label>
-        </> : <label>週単位以外の内容<textarea value={slots[slotIndex].note ?? ''} onChange={(e) => updateSlot(slotIndex, { note: e.target.value })} /></label>}
-        <PeriodFields value={slots[slotIndex]} update={(change) => updateSlot(slotIndex, change)} text={false} />
+        </> : <p>内容は用紙の「週単位以外」欄に入力できます。</p>}
+        <PeriodFields value={slots[slotIndex]} update={(change) => updateSlot(slotIndex, change)} />
         <button className="btn cp-danger" onClick={() => { setSlots(slots.filter((_, i) => i !== slotIndex)); setSlotIndex(null) }}>この予定を削除</button>
       </fieldset>
       <p>各表の「保存」で、第1〜3表をまとめて保存します。</p>
@@ -486,10 +508,9 @@ function AiDraftPanel({ clientId, draft, busy, onGenerate, onApply }: {
   </>
 }
 
-type Period = { periodText?: string | null, periodFrom?: string | null, periodTo?: string | null }
-function PeriodFields({ value, update, text = true }: { value: Period, update: (change: Partial<Period>) => void, text?: boolean }) {
+type Period = { periodFrom?: string | null, periodTo?: string | null }
+function PeriodFields({ value, update }: { value: Period, update: (change: Partial<Period>) => void }) {
   return <div className="cp-fields">
-    {text && <label>期間の表示<input value={value.periodText ?? ''} onChange={(e) => update({ periodText: e.target.value })} placeholder="例：2026年4月〜9月" /></label>}
     <label>開始日（任意）<input type="date" value={value.periodFrom ?? ''} onChange={(e) => update({ periodFrom: e.target.value || null })} /></label>
     <label>終了日（任意）<input type="date" value={value.periodTo ?? ''} onChange={(e) => update({ periodTo: e.target.value || null })} /></label>
   </div>
@@ -502,22 +523,20 @@ function NeedFields({ need, update, updateService, linkChoices }: {
   linkChoices: ReturnType<typeof serviceChoices>,
 }) {
   return <>
-    <label>生活全般の解決すべき課題（ニーズ）<textarea data-cp-field="need" value={need.need} onChange={(e) => update((n) => { n.need = e.target.value })} /></label>
-    <label>長期目標<textarea data-cp-field="long-goal" value={need.longGoal.goal} onChange={(e) => update((n) => { n.longGoal.goal = e.target.value })} /></label>
+    <strong>{need.need || 'ニーズ未入力'}</strong>
     <PeriodFields value={need.longGoal} update={(p) => update((n) => Object.assign(n.longGoal, p))} />
     {need.shortGoals?.map((goal, j) => {
       const linkedIds = new Set(goal.services?.map((service) => service.id))
       const available = linkChoices.filter((choice) => !linkedIds.has(choice.id))
       return <section className="cp-goal" key={goal.id ?? j}>
-        <label>短期目標 {j + 1}<textarea data-cp-field={`goal-${j}`} value={goal.goal} onChange={(e) => update((n) => { n.shortGoals![j].goal = e.target.value })} /></label>
+        <strong>{goal.goal || `短期目標 ${j + 1}`}</strong>
         <PeriodFields value={goal} update={(p) => update((n) => Object.assign(n.shortGoals![j], p))} />
         {goal.services?.map((s, k) => {
           const shared = linkChoices.some((choice) => choice.id === s.id && choice.goals.length > 1)
           return <section className="cp-service" key={s.id ?? k}>
-            <label>サービス内容<input data-cp-field={`service-${j}-${k}`} value={s.content} onChange={(e) => updateService(j, k, { content: e.target.value })} /></label>
+            <strong>{s.content || 'サービス内容未入力'}</strong>
             {shared && <small>他の目標にも紐づいています。サービス内容の変更はすべての紐づけに反映されます。</small>}
             <label className="cp-check"><input type="checkbox" checked={s.insured ?? false} onChange={(e) => updateService(j, k, { insured: e.target.checked })} />保険給付の対象（※1 対象内は○）</label>
-            <div className="cp-fields">{(['kind', 'provider', 'frequency'] as const).map((key, i) => <label key={key}>{['サービス種別', 'サービス提供を行う事業所（※2）', '頻度'][i]}<input value={s[key] ?? ''} onChange={(e) => updateService(j, k, { [key]: e.target.value })} /></label>)}</div>
             <PeriodFields value={s} update={(p) => updateService(j, k, p)} />
             <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals![j].services!.splice(k, 1) })}>{shared ? 'この目標との紐づけを外す' : 'サービスを削除'}</button>
           </section>

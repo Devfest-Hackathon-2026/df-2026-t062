@@ -1,5 +1,6 @@
 import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
 import { CareRecordConfirmationPanel } from './CareRecordConfirmationPanel.tsx'
+import { recordPaperText } from './recordPaperText.ts'
 import { MeetingFields } from './MeetingFields.tsx'
 import { careRecordConfig, type CareRecordKind } from '../../../core/care-record.ts'
 import { CareRecordDraftPanel } from './CareRecordDraftPanel.tsx'
@@ -100,8 +101,11 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
       <section className="care-record-editor" aria-label={config.short + 'の編集'}>
         {(error || state.error) && <p role="alert" className="care-record-error">{error || state.error}</p>}
         {state.notice && <p role="status">{state.notice}</p>}
-        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`} status={past ? `保存版 ${past.rev}（閲覧のみ）` : dirty || !state.doc?.rev ? '未保存' : '保存済み'}>
-          <div className="care-record-toolbar"><span role="status">{past ? '保存版 ' + past.rev + 'を表示中（閲覧のみ）' : dirty ? '保存していない変更があります' : state.doc?.rev ? '保存済み（最終確定とは異なります）' : '未保存'}</span><button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button><button className="btn" disabled={busy || (!past && (dirty || !state.doc?.rev)) || !state.hasPdf} onClick={exportPdf}>{past ? 'この保存版のPDF' : '第' + config.number + '表PDF'}</button></div>
+        {!id ? loading ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} formKind={kind} values={{}} title={`第${config.number}表・${config.short}`} status="未作成"><p>空の用紙を表示しています。「{config.short}を追加」で入力を開始できます。</p></OfficialCareWorkspace> : !ready ? <p role="status">記録を読み込んでいます…</p> : <OfficialCareWorkspace disabled={busy} documentId={id} savedRevision={state.doc?.rev} revision={past?.rev} formVersionId={past?.formVersionId} values={values} title={`第${config.number}表・${config.short}`}
+          textField={(slot, binding, page, rowOffset) => recordPaperText(slot, binding, page, rowOffset, values, state.setValue)}
+          readOnly={!!past} operationsLabel="記録の操作"
+          toolbar={<button className="savebtn" disabled={!editable} onClick={save}>記録を保存</button>} status={past ? `保存版 ${past.rev}（閲覧のみ）` : dirty || !state.doc?.rev ? '未保存' : '保存済み'}>
+          <div className="care-record-toolbar"><span role="status">{past ? '保存版 ' + past.rev + 'を表示中（閲覧のみ）' : dirty ? '保存していない変更があります' : state.doc?.rev ? '保存済み（最終確定とは異なります）' : '未保存'}</span><button className="btn" disabled={busy || (!past && (dirty || !state.doc?.rev)) || !state.hasPdf} onClick={exportPdf}>{past ? 'この保存版のPDF' : '第' + config.number + '表PDF'}</button></div>
           <label>修正履歴<select aria-label="修正履歴" value={past?.rev ?? ''} disabled={busy} onChange={e => showRevision(e.target.value)}><option value="">現在の記録</option>{revisions.map(r => <option key={r.rev} value={r.rev}>保存版 {r.rev} ・ {new Date(r.savedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</option>)}</select></label>
           <CareRecordConfirmationPanel key={'confirmation-'+id} documentId={id} clientId={clientId} kind={kind} revision={past?.rev ?? state.doc?.rev ?? 0} dirty={!past && !!dirty} readOnly={!!past} busy={busy} onWorkingChange={value => { busyRef.current=value;setBusy(value) }} />
           <FieldConflicts state={state} />
@@ -109,9 +113,6 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
             <legend>{config.short}</legend>
             {kind === 'care_plan_4' ? <MeetingFields values={values} setValue={state.setValue} /> : <>
             <div className="care-record-dates"><label>記録年月日<input type="date" value={text('progress.date')} onChange={e => state.setValue('progress.date', e.target.value || null)} /></label><label>記録時刻<input type="time" value={text('progress.time')} onChange={e => state.setValue('progress.time', e.target.value || null)} /></label><label>作成年月日<input type="date" value={text('plan.createdDate')} onChange={e => state.setValue('plan.createdDate', e.target.value || null)} /></label></div>
-            <label>項目・連絡方法<input value={text('progress.category')} onChange={e => state.setValue('progress.category', e.target.value || null)} maxLength={300} placeholder="例：訪問（自宅）、電話（受信）" /></label>
-            <label>記録内容<textarea aria-label="記録内容" value={text('progress.content')} onChange={e => state.setValue('progress.content', e.target.value || null)} rows={17} maxLength={100000} /></label>
-            <label>記載者<input value={text('office.careManagerName')} onChange={e => state.setValue('office.careManagerName', e.target.value || null)} /></label>
             </>}
           </fieldset>
           {!past && id && <CareRecordDraftPanel key={id} documentId={id} beforeAdopt={state.flush} onApplied={async () => { await state.reload(); setReload(n => n + 1) }} />}

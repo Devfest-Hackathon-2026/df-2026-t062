@@ -10,6 +10,7 @@ import { api } from '../../lib/api.ts'
 import { downloadBlob } from '../../lib/download.ts'
 import type { CarePlanSummary } from '../../../db/care-plans.ts'
 import { CareMonthEntry } from './CareMonthEntry.tsx'
+import { CareMonthNotes } from './CareMonthNotes.tsx'
 import '../care-record/CareRecordWork.css'
 import './CareMonthWork.css'
 import type { CareFeeSourceSelection } from '../../../core/care-fee-api.ts'
@@ -67,6 +68,9 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
   setPreview({type:'change',entries:p.entries,added:p.added.length,removed:p.removed.length,skipped:p.skipped.length})
  })
  const showRevision=(rev:string)=>void run(async()=>{if(!current||await preserve()===false)return;if(!rev){setPast(undefined);return}const r=await api.careMonthRevision(current.id,Number(rev));setPast(r.month)})
+ const updateEntry=(updated:MonthEntry)=>setEntries(rows=>rows.map(row=>row.id===updated.id?updated:row))
+ const shownHeaders=past?past.headers??MonthHeaders.parse({}):headers
+ const saveButton=<button className="savebtn" disabled={busy||!!past} onClick={()=>void run(async()=>{await saveCurrent()})}>第6表を保存</button>
  const add=()=>{if(!current)return;const service=current.services.find(s=>s.id===serviceId);if(!service)return;setEntries(rows=>[...rows,{id:crypto.randomUUID(),sourceKey:null,serviceId:service.id,slotId:null,content:service.content,provider:service.provider,serviceKind:service.serviceKind,insured:service.insured,plan:{date:current.month+'-01',start:'09:00',end:'10:00',endDate:current.month+'-01',status:'scheduled',note:''},actual:null}])}
  return <main className="care-record-work care-month-work">
   <header className="care-record-header"><button className="btn" disabled={busy} onClick={()=>void run(async()=>{if(await preserve()!==false)onBack()})}>ケアプランに戻る</button><h1>{clientName} さんのサービス利用票</h1>{onOpenFee&&view&&<div role="group" aria-label="第7表へ引き継ぐ"><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'planned'})}>この保存版で第7表（予定）</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>onOpenFee({monthId:view.id,revision:view.revision,basis:'actual'})}>この保存版で第7表（実績）</button></div>}</header>
@@ -76,15 +80,23 @@ export function CareMonthWork({clientId,clientName,onBack,onDirtyChange,onBusyCh
    <h2>保存済みの月間予定</h2>{!list.length?<p>月間予定はまだありません。</p>:<ol>{list.map(m=><li key={m.id}><button type="button" disabled={busy} aria-pressed={current?.id===m.id} onClick={()=>select(m.id)}>{m.month} ・ 計画版 {m.planVersion}<small>{m.revision?'保存版 '+m.revision:'未保存'}</small></button></li>)}</ol>}
   </aside><section className="care-record-editor" aria-label="第6表の編集">
    {error&&!preview&&<p role="alert" className="care-record-error">{error}</p>}{notice&&<p role="status">{notice}</p>}
-   {!view?<OfficialCareWorkspace disabled={busy} formKind="care_plan_6" values={{}} title="第6表・サービス利用票" status="未作成"><p>確定した週間計画と対象年月から予定を確認してください。閲覧だけでは記録は作成されません。</p></OfficialCareWorkspace>:<OfficialCareWorkspace disabled={busy} documentId={view.documentId} savedRevision={view.revision} revision={past?.revision} values={careMonthPrint({...view,entries:shown,headers:past?.headers??(past?undefined:headers)})} title="第6表・サービス利用票" status={past ? `保存版 ${past.revision}（閲覧のみ）` : dirty || !current?.revision ? '未保存' : '保存済み'}>
-    <h2>{view.month} ・ 計画版 {view.planVersion}</h2><div className="care-record-toolbar"><span role="status">{past?'保存版 '+past.revision+'（閲覧のみ）':dirty?'保存していない変更があります':current?.revision?'保存済み':'未保存'}</span><button className="savebtn" disabled={busy||!!past} onClick={()=>void run(async()=>{await saveCurrent()})}>第6表を保存</button><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>void run(async()=>downloadBlob(await api.pdf(view.documentId,view.revision),'サービス利用票_'+view.month+'_'+clientName+'.pdf'))}>第6表PDF</button></div>
+   {!view?<OfficialCareWorkspace disabled={busy} formKind="care_plan_6" values={{}} title="第6表・サービス利用票" status="未作成"><p>確定した週間計画と対象年月から予定を確認してください。閲覧だけでは記録は作成されません。</p></OfficialCareWorkspace>:<OfficialCareWorkspace disabled={busy} readOnly={!!past} documentId={view.documentId} savedRevision={view.revision} revision={past?.revision} values={careMonthPrint({...view,entries:shown,headers:past?.headers??(past?undefined:headers)})} title="第6表・サービス利用票" status={past ? `保存版 ${past.revision}（閲覧のみ）` : dirty || !current?.revision ? '未保存' : '保存済み'}
+     toolbar={saveButton}
+     textField={(slot, binding, page)=>{
+       const key=binding?.ref.key==='monthly.header'?binding.ref.path?.[0]:undefined
+       if(page!==0||(key!=='insurerNumber'&&key!=='insurerName'&&key!=='insuredNumber'))return
+       return {label:slot,value:shownHeaders[key],inputMode:key==='insurerName'?undefined:'numeric',maxLength:key==='insurerName'?200:12,
+         onChange:value=>setHeaders(old=>({...old,[key]:value}))}
+     }}
+     details={shown.length?{slot:'明細',content:<CareMonthNotes entries={shown} disabled={busy||!!past} onChange={updateEntry}/>} : undefined}>
+    <h2>{view.month} ・ 計画版 {view.planVersion}</h2><div className="care-record-toolbar"><span role="status">{past?'保存版 '+past.revision+'（閲覧のみ）':dirty?'保存していない変更があります':current?.revision?'保存済み':'未保存'}</span><button className="btn" disabled={busy||!view.revision||(!past&&dirty)} onClick={()=>void run(async()=>downloadBlob(await api.pdf(view.documentId,view.revision),'サービス利用票_'+view.month+'_'+clientName+'.pdf'))}>第6表PDF</button></div>
     <label>修正履歴<select aria-label="修正履歴" disabled={busy} value={past?.revision??''} onChange={e=>showRevision(e.target.value)}><option value="">現在の月間予定</option>{revisions.map(r=><option key={r.rev} value={r.rev}>保存版 {r.rev}</option>)}</select></label>
     <CareMonthHeaderFields value={past?.headers??(past?MonthHeaders.parse({}):headers)} disabled={busy||!!past} onChange={setHeaders} />
     <p>予定 {counts.planned}件 ／ 実施 {counts.actual}件 ／ 未実施 {counts.notProvided}件 ／ 実績未入力 {counts.unentered}件</p>
     {overlaps.size>0&&<p role="status">同じサービスの予定に重複があるため、{overlaps.size}件の日時を確認してください。</p>}
     {view.unexpanded.length>0&&<p role="status">週単位以外の予定 {view.unexpanded.length}件は日付を確定できないため未展開です。確認後、予定を追加してください。</p>}
     {!past&&<fieldset disabled={busy}><legend>予定の追加・見直し</legend><div className="care-month-actions"><label>追加するサービス<select aria-label="追加するサービス" value={serviceId} onChange={e=>setServiceId(e.target.value)}><option value="">選択してください</option>{current?.services.map(s=><option key={s.id} value={s.id}>{s.content} ・ {s.provider??''}</option>)}</select></label><button className="btn" disabled={!serviceId} onClick={add}>予定を追加</button><button className="btn" onClick={()=>propose('regenerate')}>再生成の差分を確認</button></div><div className="care-month-actions"><label>コピー元の前月<select aria-label="コピー元の前月" value={sourceId} onChange={e=>setSourceId(e.target.value)}><option value="">選択してください</option>{list.filter(m=>m.id!==current?.id&&m.planId===current?.planId&&m.month===monthBefore(current.month)&&m.revision>0).map(m=><option key={m.id} value={m.id}>{m.month} ・ 計画版 {m.planVersion}</option>)}</select></label><button className="btn" disabled={!sourceId} onClick={()=>propose('copy')}>前月コピーの差分を確認</button></div></fieldset>}
-    {!shown.length?<p>予定はありません。</p>:shown.map((e,i)=><CareMonthEntry key={e.id} entry={e} index={i} disabled={busy||!!past} onChange={updated=>setEntries(rows=>rows.map(row=>row.id===updated.id?updated:row))} />)}
+    {!shown.length?<p>予定はありません。</p>:shown.map((e,i)=><CareMonthEntry key={e.id} entry={e} index={i} disabled={busy||!!past} onChange={updateEntry} />)}
    </OfficialCareWorkspace>}
   </section></div>
   {preview&&<PreviewDialog title={preview.type==='create'?'月間予定の生成を確認':'月間予定の差分を確認'} onCancel={()=>{if(!busy){setPreview(undefined);createRequest.current=undefined}}}>
