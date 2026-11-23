@@ -24,6 +24,7 @@ import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
+import * as officeTopicsDb from '../db/office-topics.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
@@ -37,7 +38,7 @@ import type { Queue } from './queue.ts'
 import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
-import { fakeTopicDrafter, type TopicDrafter } from '../core/topics.ts'
+import { fakeTopicDrafter, fakeTopicTeacher, NOTE_LINE_MAX, NOTE_LINES_MAX, settleTeach, type TopicDrafter, type TopicTeacher } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
 import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
@@ -62,6 +63,8 @@ export interface ApiDeps {
   fieldMatcher?: () => Promise<FieldMatcher>
   /** 事業所が足した書類の拾う内容の案を作る（#153）。省けば試しの案 */
   topicDrafter?: () => Promise<TopicDrafter>
+  /** 責任者のダメ出しを、どの項目に足すか振り分ける（#115 の AI 特訓部屋）。省けば試しの振り分け */
+  topicTeacher?: () => Promise<TopicTeacher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -181,6 +184,14 @@ const OfficeKindInput = z.object({
 const OfficeTopicsInput = z.object({
   topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
 })
+// 事業所が直せる項目（#115）。全部を置き換える（足した項目・書き足しの行・合格の印）
+const TopicId = z.string().min(1).max(41)
+const OfficeTopicsEditInput = z.object({
+  added: z.array(z.object({ id: TopicId.optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+  notes: z.record(TopicId, z.array(z.string().max(NOTE_LINE_MAX)).max(NOTE_LINES_MAX)),
+  passed: z.array(TopicId).max(200),
+})
+const TeachRequest = z.object({ text: z.string().trim().min(1).max(NOTE_LINE_MAX), current: TopicId.nullable() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -492,7 +503,8 @@ export function createApp(deps: ApiDeps) {
       clientId: document.clientId, documentId: document.id, resourceType: 'document', resourceId: document.id,
       accessMode: 'view', action: 'document.view',
     })
-    return json(c, { document })
+    // 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの（id と名前だけ。#115）
+    return json(c, { document, unheardTopics: await officeTopicsDb.unheardTopics(db, staff.officeId, document.id) })
   }))
 
   app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
@@ -940,6 +952,24 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
     await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)
     return json(c, { ok: true })
+  }))
+
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋）: 項目を見る、直す（足す・書き足す・合格の印）、ダメ出しを振り分ける。全体の項目は消せず、名前も変えられない ----------
+  app.get('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!))))
+  app.put('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeTopicsEditInput)
+    return json(c, await officeTopicsDb.putOfficeTopics(db, staff, c.req.param('kind')!, input, repo.auditContextOf(staff)))
+  }))
+  // 振り分けだけ（保存しない）。画面が答えを見せ、そのまま PUT で保存する。AI の答えは一覧と照らしてから返す
+  app.post('/api/office/topics/:kind/teach', staffRoute('form.manage', async (c, staff, db) => {
+    const { text, current } = await body(c, TeachRequest)
+    const view = await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!)
+    // AI には、書き足しを含めた説明を渡す（教えたことと重ねて足さないように）
+    const items = view.items.map((i) => ({ id: i.id, name: i.name, guide: [i.guide, ...i.notes].filter(Boolean).join(' ') }))
+    const teach = await (deps.topicTeacher ?? (async () => fakeTopicTeacher))()
+    const decision = await teach({ kindName: view.kind.name, items, current: current && items.some((i) => i.id === current) ? current : null, text })
+    return json(c, { decision: settleTeach(items, decision, text) })
   }))
 
   // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------

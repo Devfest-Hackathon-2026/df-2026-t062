@@ -15,9 +15,11 @@ import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail
 import type { KindFormState } from '../../db/forms.ts'
 import type { FormImportView } from '../../db/form-imports.ts'
 import type { SlotMeaning } from '../../core/slot-meaning.ts'
+import type { OfficeTopicsEdit, TeachDecision, TrainingItem } from '../../core/topics.ts'
+import type { TrainingView } from '../../db/office-topics.ts'
 import type { LocalField } from '../../core/dictionary.ts'
 
-export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning }
+export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
 
 /** 責任者が見る様式の版（GET /api/office/form-versions/:id）。slots は印字欄ごとの入る内容の言葉、review は取り込みが迷った欄 */
 export interface ManagedVersion {
@@ -130,7 +132,8 @@ export const api = {
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
-  document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
+  /** unheardTopics: 面談のヒント。事業所が足した項目で、この書類でまだ話に出ていないもの（#115） */
+  document: (id: string) => req<{ document: DocumentView, unheardTopics?: { id: string, name: string }[] }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
     req<{ document: DocumentView }>('PATCH', `/api/documents/${id}/fields`, { changes }),
@@ -171,6 +174,14 @@ export const api = {
   // ---------- 責任者が書類の種類を足す（#153） ----------
   createOfficeKind: (input: { name: string, perClient: 'one' | 'many', append: boolean }) =>
     req<{ kind: { key: string } }>('POST', '/api/office/form-kinds', input),
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋） ----------
+  // 事業所が足した書類の項目を置き換える（AI 特訓部屋の「この項目はいらない」が使う）
+  setOfficeTopics: (key: string, topics: { id?: string, name: string, guide: string }[]) =>
+    req<{ topics: KindFormState['topics'] }>('PUT', `/api/office/form-kinds/${encodeURIComponent(key)}/topics`, { topics }),
+  officeTraining: (key: string) => req<TrainingView>('GET', `/api/office/topics/${encodeURIComponent(key)}`),
+  saveOfficeTraining: (key: string, edit: OfficeTopicsEdit) => req<TrainingView>('PUT', `/api/office/topics/${encodeURIComponent(key)}`, edit),
+  teachOfficeTopic: (key: string, text: string, current: string | null) =>
+    req<{ decision: TeachDecision }>('POST', `/api/office/topics/${encodeURIComponent(key)}/teach`, { text, current }),
   retireOfficeKind: (key: string) => req<{ ok: true }>('POST', `/api/office/form-kinds/${encodeURIComponent(key)}/retire`, {}),
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),

@@ -223,3 +223,6 @@ strong.assistant-chat-field { color: var(--pet-ink); }
 .assistant-fill { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--pet-line); border-radius: 12px; background: var(--pet-card); }
 .assistant-fill p { margin: 0; line-height: 1.7; }
 .assistant-fill .assistant-primary { align-self: stretch; }
+
+/* 面談のヒント: 事業所で足した項目で、まだ話に出ていないもの（#115） */
+.assistant-unheard ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
