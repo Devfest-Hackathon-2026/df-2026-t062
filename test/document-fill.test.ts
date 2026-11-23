@@ -56,12 +56,12 @@ before(async () => {
   const { readSeed } = await import('../forms/admin/files.ts')
   await forms.registerVersion(db, readSeed('assessment'), { publish: true })
   await forms.registerVersion(db, readSeed('admission'), { publish: true })
-  // 何通も作れる種類にして、テストごとに新しい書類を作る
-  await db.query("INSERT INTO form_kinds (key, name, per_client, create_from) VALUES ('fill_admission', '入院時情報提供書', 'many', 'assessment')")
-  await forms.registerVersion(db, { ...readSeed('admission'), kind: 'fill_admission' }, { publish: true })
   const { seed } = await import('../db/seed.ts')
   const a = await seed(db)
   const b = await seed(db, { email: 'other@example.com', officeName: 'ほかの事業所' })
+  // 事業所専用の種類でも同じ AI 依頼経路と転記条件になる。
+  await db.query("INSERT INTO form_kinds (key, name, per_client, create_from, office_id) VALUES ('fill_admission', '入院時情報提供書', 'many', 'assessment', $1)", [a.officeId])
+  await forms.registerVersion(db, { ...readSeed('admission'), kind: 'fill_admission', officeId: a.officeId }, { publish: true })
   ids.kai = a.clients.kai
   ids.otherClient = b.clients.kai
 
@@ -89,9 +89,9 @@ after(async () => close())
 
 beforeEach(() => { writes = {}; during = null; asked = [] })
 
-/** 入院時情報提供書（の様式で、何通も作れる試しの種類）を新しく作る。アセスメントから同じキーを写す */
-async function newAdmission() {
-  const r = await call(`/api/clients/${ids.kai}/documents`, A, { method: 'POST', body: JSON.stringify({ kind: 'fill_admission' }) })
+/** 入院時情報提供書（の様式で、何通も作れる試しの種類）を新しく作る */
+async function newAdmission(kind = 'fill_admission') {
+  const r = await call(`/api/clients/${ids.kai}/documents`, A, { method: 'POST', body: JSON.stringify({ kind }) })
   assert.equal(r.status, 201, JSON.stringify(r.body))
   return r.body.id as string
 }
@@ -122,6 +122,32 @@ test('書く: AI が書いた値が、AI の値として書類に入る（書き
   assert.deepEqual(asked.filter((s) => s === '最後の確かめ').length, 1)
 })
 
+test('標準と事業所の書類とも、AI 依頼時にだけ空欄に元の値を写す', { skip }, async () => {
+  const assess = (await db.query("SELECT id FROM documents WHERE client_id = $1 AND kind = 'assessment'", [ids.kai])).rows[0].id
+  const patch = async (documentId: string, key: string, value: string) => {
+    const r = await call(`/api/documents/${documentId}/fields`, A, {
+      method: 'PATCH', body: JSON.stringify({ changes: [{ key, value, base: (await field(documentId, key))?.value ?? null }] }),
+    })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+  }
+  for (const kind of ['admission', 'fill_admission']) {
+    const doc = await newAdmission(kind)
+    assert.equal(await field(doc, 'person.address'), undefined)
+    assert.equal(await field(doc, 'person.name'), undefined)
+    assert.equal((await field(doc, 'office.name')).kind, 'copy')
+
+    await patch(doc, 'person.name', '手入力の氏名')
+    await patch(assess, 'person.address', `依頼時の見本住所 ${kind}`)
+    assert.equal((await fill(doc)).status, 'succeeded')
+    assert.deepEqual(await field(doc, 'person.address'), { value: `依頼時の見本住所 ${kind}`, by: 'ai', kind: 'copy' })
+    assert.equal((await field(doc, 'person.name')).value, '手入力の氏名')
+
+    await patch(assess, 'person.address', '後で変更した見本住所')
+    assert.equal((await fill(doc)).status, 'succeeded')
+    assert.equal((await field(doc, 'person.address')).value, `依頼時の見本住所 ${kind}`)
+  }
+})
+
 test('書く: AI が書いている間にケアマネが直した欄は、上書きしない', { skip }, async () => {
   const doc = await newAdmission()
   writes = { 'person.lifeHistory': 'AI の文。' }
@@ -140,11 +166,20 @@ test('始める: 動いている間にもう一度押しても、仕事は 1 つ
   let release = () => {}
   during = () => new Promise<void>((r) => { release = r })
   writes = { 'housing.notes': '段差あり。' }
-  const a = await call(`/api/documents/${doc}/fill`, A, { method: 'POST', body: '{}' })
-  const b = await call(`/api/documents/${doc}/fill`, A, { method: 'POST', body: '{}' })
+  const start = () => call(`/api/documents/${doc}/fill`, A, { method: 'POST', body: '{}' })
+  const [a, b] = await Promise.all([start(), start()])
+  assert.deepEqual([a.status, b.status], [202, 202])
   assert.equal(a.body.fillId, b.body.fillId)
   for (let i = 0; i < 100 && !asked.length; i++) await new Promise((res) => setTimeout(res, 20))
-  release()
+  try {
+    assert.equal((await field(doc, 'person.name'))?.kind, 'copy', 'AI の応答前に、依頼時の転記が確定する')
+    const { rows: [batches] } = await db.query(
+      "SELECT count(*)::int AS n FROM batches WHERE document_id = $1 AND kind = 'copy' AND label LIKE '%から写した'", [doc],
+    )
+    assert.equal(batches.n, 1)
+  } finally {
+    release()
+  }
   for (let i = 0; i < 200; i++) {
     const r = await call(`/api/documents/${doc}/fill`, A)
     if (!['queued', 'processing'].includes(r.body.fill.status)) break

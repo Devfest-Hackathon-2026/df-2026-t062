@@ -1,7 +1,8 @@
 // 書類を作るときに AI が書く（#195）の仕事（document_fills）の読み書き。api（care.work）と worker が使う。
 // 状態は queued → processing → succeeded／partial／failed。値を書類に入れるのは applyBatch（書き込みの記録は fill）。
-import type { Db } from './pool.ts'
-import { Conflict, NotFound, audit, type Staff } from './repo.ts'
+import { loadFormDef } from './forms.ts'
+import { tx, type Db } from './pool.ts'
+import { Conflict, NotFound, audit, insertCopyBatch, lockDocument, readFields, type Staff } from './repo.ts'
 
 type Q = Pick<Db, 'query'>
 export type FillStatus = 'queued' | 'processing' | 'succeeded' | 'partial' | 'failed'
@@ -42,24 +43,36 @@ async function documentAndSource(db: Q, officeId: string, documentId: string) {
  * 同じ書類の仕事が待っているか動いていれば、それを返す（2 つ走らない）
  */
 export async function startFill(db: Db, staff: Staff, documentId: string): Promise<{ id: string, created: boolean }> {
-  const d = await documentAndSource(db, staff.officeId, documentId)
-  if (!d.create_from || d.plan) throw new Conflict('この書類は、ほかの書類を元に AI が書くことはできません')
-  const src = (await db.query(
-    'SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1',
-    [d.client_id, d.create_from],
-  )).rows[0]
-  if (!src) throw new Conflict(`元にする${d.source_name ?? '書類'}がありません`)
-  const r = (await db.query(
-    `INSERT INTO document_fills (office_id, client_id, document_id, source_document_id, created_by) VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (document_id) WHERE status IN ('queued', 'processing') DO NOTHING RETURNING id`,
-    [staff.officeId, d.client_id, d.id, src.id, staff.id],
-  )).rows[0]
-  if (!r) {
-    const active = (await db.query("SELECT id FROM document_fills WHERE document_id = $1 AND status IN ('queued', 'processing')", [d.id])).rows[0]
-    return { id: active.id, created: false }
-  }
-  await audit(db, staff, staff.officeId, 'document.fill', { clientId: d.client_id, documentId: d.id }, { sourceDocumentId: src.id })
-  return { id: r.id, created: true }
+  if (!UUID.test(documentId)) throw new NotFound(documentId)
+  return tx(db, async (c) => {
+    const target = await lockDocument(c, staff.officeId, documentId)
+    const d = await documentAndSource(c, staff.officeId, documentId)
+    if (!d.create_from || d.plan) throw new Conflict('この書類は、ほかの書類を元に AI が書くことはできません')
+
+    const active = (await c.query(
+      "SELECT id FROM document_fills WHERE document_id = $1 AND status IN ('queued', 'processing')", [d.id],
+    )).rows[0]
+    if (active) return { id: active.id, created: false }
+
+    const src = (await c.query(
+      'SELECT id FROM documents WHERE client_id = $1 AND kind = $2 AND office_id = $3 ORDER BY seq DESC, created_at DESC LIMIT 1',
+      [d.client_id, d.create_from, staff.officeId],
+    )).rows[0]
+    if (!src) throw new Conflict(`元にする${d.source_name ?? '書類'}がありません`)
+    const { keys } = await loadFormDef(c, target.versionId)
+    const current = await readFields(c, target.id)
+    const source = await readFields(c, src.id)
+    const values = Object.fromEntries(keys
+      .filter((key) => !key.startsWith('local.') && !Object.hasOwn(current, key) && Object.hasOwn(source, key))
+      .map((key) => [key, source[key].value]))
+    const copied = await insertCopyBatch(c, staff, target, values, `AI 書き込み・${d.source_name ?? d.create_from}から写した`)
+    const r = (await c.query(
+      'INSERT INTO document_fills (office_id, client_id, document_id, source_document_id, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [staff.officeId, d.client_id, d.id, src.id, staff.id],
+    )).rows[0]
+    await audit(c, staff, staff.officeId, 'document.fill', { clientId: d.client_id, documentId: d.id }, { sourceDocumentId: src.id, copied })
+    return { id: r.id, created: true }
+  })
 }
 
 /** 書類のいちばん新しい仕事。まだ頼んでいなければ null */

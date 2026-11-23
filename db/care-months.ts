@@ -45,7 +45,7 @@ export async function createCareMonth(db:Db,staff:Staff,clientId:string,input:z.
   if(previous && (previous.plan_id!==input.planId || previous.target_month!==input.month))throw new Conflict('month_request')
   const old=previous??(await c.query('SELECT id FROM care_plan_months WHERE plan_id=$1 AND target_month=$2',[input.planId,input.month])).rows[0]
   if(old)return {month:await getCareMonth(c,staff.officeId,old.id),created:false}
-  const doc=await createDocumentInTx(c,staff,clientId,'care_plan_6')
+  const doc=await createDocumentInTx(c,staff,clientId,'care_plan_6', { copySourceOnCreate: true })
   const r=(await c.query(`INSERT INTO care_plan_months (office_id,client_id,plan_id,confirmation_id,document_id,target_month,request_id,source_hash,entries,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,[staff.officeId,clientId,input.planId,s.confirmationId,doc.id,input.month,input.requestId,s.sourceHash,JSON.stringify(s.entries),staff.id])).rows[0]
   await audit(c,staff,staff.officeId,'care_month.create',{clientId,documentId:doc.id},{monthId:r.id,confirmationId:s.confirmationId,month:input.month})
   return {month:await getCareMonth(c,staff.officeId,r.id),created:true}

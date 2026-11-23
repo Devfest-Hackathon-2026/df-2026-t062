@@ -190,7 +190,7 @@ export async function getClient(db: Q, officeId: string, clientId: string) {
 
 // ---------- 書類 ----------
 
-async function lockDocument(c: Tx, officeId: string, documentId: string) {
+export async function lockDocument(c: Tx, officeId: string, documentId: string) {
   const d = (await c.query('SELECT id, client_id, kind, template_version_id FROM documents WHERE id = $1 AND office_id = $2 FOR UPDATE', [documentId, officeId])).rows[0]
   if (!d) throw new NotFound()
   return { id: d.id as string, clientId: d.client_id as string, kind: d.kind as FormKind, versionId: d.template_version_id as string }
@@ -540,20 +540,29 @@ async function finishJob(c: Tx, input: ApplyInput, batchId: string | null, plan:
 const settingsOf = (office: { name?: string, phone?: string | null, fax?: string | null } | undefined, staff: Staff): Record<string, unknown> =>
   ({ 'office.name': office?.name, 'office.careManagerName': staff.name, 'office.phone': office?.phone, 'office.fax': office?.fax })
 
-/**
- * 書類を作る（docs/再設計/16 の「書類を作る」。どの種類も同じ流れ。AI は使わない）。
- *   1. 様式を選ぶ: 事業所の様式があればそれ、なければ全体の様式の、公開した版
- *   2. 同じ key を写す: create_from の種類の書類（何通もあるなら一番新しいもの）から、新しい書類の版が読む key の値をそのまま写す。
- *      その様式だけの欄（local.*）は写さない。写したあとはつながない
- *   3. 設定を入れる: 事業所名・電話・FAX・担当ケアマネの氏名（版が読むものだけ）
- * 写した値と設定は AI の値として入る（書き込みの記録は copy）。1 人 1 通の種類で、もう書類があれば作らずに返す（created: false）
- */
+/** 転記または事業所設定を、書き込みの履歴とともに入れる。呼び出し元が書類をロックする。 */
+export async function insertCopyBatch(c: Tx, staff: Staff, document: { id: string, clientId: string }, values: Record<string, unknown>, label: string) {
+  const changes = Object.entries(values)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, after]) => ({ key, op: 'add', before: null, after }))
+  if (!changes.length) return 0
+  const batch = (await c.query(
+    "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
+    [staff.officeId, document.clientId, document.id, label, JSON.stringify(changes)],
+  )).rows[0]
+  for (const { key, after } of changes) {
+    await writeField(c, staff.officeId, document.clientId, document.id, key, after, 'ai', staff.id, { aiValue: after, batchId: batch.id })
+  }
+  return changes.length
+}
+
+/** 公開様式を選び、事業所設定を入れて書類を作る。元の書類を写すのは AI への依頼時（#213）。 */
 export async function createDocument(db: Db, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
   return tx(db, (c) => createDocumentInTx(c, staff, clientId, kindKey))
 }
 
 /** 計画版の作成など、ほかの書き込みと同じトランザクションで書類を作るとき（createDocument の中身） */
-export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
+export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string, options?: { copySourceOnCreate: boolean }): Promise<{ id: string, kind: string, created: boolean }> {
   // ほかの事業所の種類は「無い」。やめた種類は新しく作れない（#153）
   const kind = await visibleKind(c, staff.officeId, kindKey)
   if (!kind) throw new BadRequest('書類の種類がありません')
@@ -572,8 +581,8 @@ export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, 
   const keys = new Set((await loadFormDef(c, version)).keys.filter((k) => !k.startsWith('local.')))
   const values: Record<string, unknown> = {}
   let from: string | null = null
-  if (kind.createFrom) {
-    const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom])).rows[0]
+  if (options?.copySourceOnCreate && kind.createFrom) {
+    const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 AND office_id = $3 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom, staff.officeId])).rows[0]
     if (src) {
       from = (await kindOf(c, kind.createFrom))?.name ?? kind.createFrom
       for (const [key, f] of Object.entries(await readFields(c, src.id))) if (keys.has(key)) values[key] = f.value
@@ -581,15 +590,9 @@ export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, 
   }
   const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
   for (const [key, value] of Object.entries(settingsOf(office, staff))) if (keys.has(key)) values[key] = value
-  const changes = Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== '')
-  if (changes.length) {
-    const batch = (await c.query(
-      "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
-      [staff.officeId, clientId, doc.id, from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
-    )).rows[0]
-    for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
-  }
-  await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied: changes.length })
+  const copied = await insertCopyBatch(c, staff, { id: doc.id, clientId }, values,
+    from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定')
+  await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied })
   return { id: doc.id as string, kind: kind.key, created: true }
 }
 

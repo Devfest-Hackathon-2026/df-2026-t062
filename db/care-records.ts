@@ -11,7 +11,7 @@ export async function createCareRecord(db: Db, staff: Staff, clientId: string, i
     await client(c, staff.officeId, clientId, true)
     const old = (await c.query('SELECT c.document_id,d.kind FROM care_record_creations c JOIN documents d ON d.id=c.document_id WHERE c.office_id=$1 AND c.client_id=$2 AND c.request_id=$3', [staff.officeId, clientId, input.requestId])).rows[0]
     if (old) { if (old.kind !== input.kind) throw new Conflict('record_kind'); return { id: old.document_id as string, created: false } }
-    const doc = await createDocumentInTx(c, staff, clientId, input.kind)
+    const doc = await createDocumentInTx(c, staff, clientId, input.kind, { copySourceOnCreate: true })
     await c.query('INSERT INTO care_record_creations (office_id,client_id,request_id,document_id) VALUES ($1,$2,$3,$4)', [staff.officeId, clientId, input.requestId, doc.id])
     return { id: doc.id, created: true }
   })
