@@ -347,13 +347,14 @@ test('録音を送るとジョブが走り、AI が用紙に書く（ケアマ�
   assert.equal(up.status, 200)
   const done = await call(`/api/recordings/${recordingId}/complete`, { method: 'POST', body: JSON.stringify({ durationMs: 60000 }) })
   assert.equal(done.status, 202)
-  let job: { status: string, batch: { changes: number, kept: number } | null } | undefined
+  let job: { documentId: string, status: string, batch: { changes: number, kept: number } | null } | undefined
   for (let i = 0; i < 50; i++) {
     job = ((await call(`/api/clients/${ids.sato}/jobs`)).body as { jobs: typeof job[] }).jobs[0]
     if (job && ['succeeded', 'failed', 'partial'].includes(job.status)) break
     await new Promise((r) => setTimeout(r, 100))
   }
   assert.equal(job?.status, 'succeeded')
+  assert.equal(job?.documentId, docId)
   assert.ok((job?.batch?.changes ?? 0) > 30)
   // 氏名・性別（利用者を作るときにケアマネが入れた）と、先に書いた相談者の 3 欄は書き換えない
   assert.equal(job?.batch?.kept, 3)

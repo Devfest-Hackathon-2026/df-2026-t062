@@ -10,6 +10,9 @@ import { PetIcon, PetMessage } from '../pet/PetVisuals.tsx'
 import type { ChatEntry } from './petChat.ts'
 import type { availableTopics, ReviewItem } from './topics.ts'
 import { fieldLabel } from '../document/fields.ts'
+import type { JobView } from '../../lib/api.ts'
+import { useWorkActivity } from './useWorkActivity.ts'
+import { workGuidance } from './workGuidance.ts'
 import './PetHelper.css'
 
 const menus = [
@@ -22,12 +25,42 @@ const menus = [
 
 type Menu = typeof menus[number]['id']
 
+interface WorkStatus {
+  job?: JobView
+  conflict: boolean
+  saveFailure?: 'page' | 'document'
+  pageSaved: boolean
+  onSave: () => void
+  onSavePage: () => void
+}
+
+function useObservedCompletion(scope: string | undefined, item?: { id: string, status: string }) {
+  const id = item?.id
+  const status = item?.status
+  const previous = useRef<{ scope?: string, id?: string, active: boolean } | undefined>(undefined)
+  const [completed, setCompleted] = useState<{ scope?: string, id: string }>()
+  useEffect(() => {
+    const last = previous.current
+    const active = status === 'queued' || status === 'processing'
+    previous.current = { scope, id, active }
+    if (id && scope === last?.scope && id === last?.id && last.active && !active) {
+      setCompleted({ scope, id })
+      const timer = setTimeout(() => setCompleted(undefined), 60_000)
+      return () => clearTimeout(timer)
+    }
+    setCompleted(undefined)
+  }, [scope, id, status])
+  return completed?.id === id && completed?.scope === scope && !!id
+}
+
 interface Props {
+  work?: WorkStatus
   diagramRequest?: { key: string, id: number }
   /** 点検（AI 点検）の相手。なければ「点検する」を出さない */
   clientId?: string
 
   available: boolean
+  hasUnsavedChanges: boolean
   beforeDocumentAdopt: () => Promise<boolean>
   onDocumentApplied: () => void
   clientName: string
@@ -75,7 +108,7 @@ function PetFillNote({ fill }: { fill: PetFill }) {
   )
 }
 
-export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, clientName, review, topics, unheard = [], onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
+export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, hasUnsavedChanges, work, clientName, review, topics, unheard = [], onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
 
   const [menu, setMenu] = useState<Menu | null>(null)
   const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
@@ -91,6 +124,15 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
   const previousMenu = useRef<Menu | null>(null)
   const menuButtons = useRef<Partial<Record<Menu, HTMLButtonElement | null>>>({})
   const pending = review.filter((item) => !item.confirmed).length
+  const reviewDocumentId = available ? chat.documentId : undefined
+  const previousPending = useRef<{ clientId?: string, documentId: string, keys: string[] } | undefined>(undefined)
+  const [completedReview, setCompletedReview] = useState<{ clientId?: string, documentId: string }>()
+  const reviewComplete = pending === 0 && completedReview?.documentId === reviewDocumentId &&
+    completedReview?.clientId === clientId && !!reviewDocumentId
+  const [reviewChange, setReviewChange] = useState(0)
+  const activity = useWorkActivity(!!work)
+  const [handledReturn, setHandledReturn] = useState(0)
+  const returned = activity.returned !== handledReturn
   const inspections = useInspections(clientId)
   const inspectStatus = menuStatus(inspections.list)
   const intake = useDocumentInputs(chat.documentId)
@@ -103,6 +145,48 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
   const inputStatus = [inputReview ? `確認待ち ${inputReview}件` : '', intake.working ? '読み取り中' : '',
     inputApplied ? `反映済み ${inputApplied}件` : '',
     intake.inputs.some((input) => input.status === 'failed') ? '読み取りに失敗した書類があります' : ''].filter(Boolean).join('・')
+
+  const inspection = inspections.list?.[0]
+  const jobFinished = useObservedCompletion(chat.documentId, work?.job)
+  const inspectionFinished = useObservedCompletion(clientId, inspection)
+
+  useEffect(() => {
+    if (!returned) return
+    const timer = setTimeout(() => setHandledReturn(activity.returned), 60_000)
+    return () => clearTimeout(timer)
+  }, [returned, activity.returned])
+
+  useEffect(() => {
+    const previous = previousPending.current
+    if (!reviewDocumentId || previous?.documentId !== reviewDocumentId || previous.clientId !== clientId || pending) {
+      setCompletedReview(undefined)
+    } else if (previous.keys.length) {
+      const confirmedKeys = new Set(review.filter((item) => item.confirmed).map((item) => item.key))
+      if (previous.keys.every((key) => confirmedKeys.has(key))) {
+        setCompletedReview({ clientId, documentId: reviewDocumentId })
+      }
+    }
+    if (!previous || previous.documentId !== reviewDocumentId || previous.clientId !== clientId) {
+      setReviewChange(0)
+    } else if (previous.keys.length !== pending) {
+      setReviewChange(previous.keys.length ? pending - previous.keys.length : 0)
+    }
+    previousPending.current = reviewDocumentId
+      ? { clientId, documentId: reviewDocumentId, keys: review.filter((item) => !item.confirmed).map((item) => item.key) }
+      : undefined
+  }, [clientId, reviewDocumentId, pending, review])
+
+  useEffect(() => {
+    if (!reviewChange) return
+    const timer = setTimeout(() => setReviewChange(0), 60_000)
+    return () => clearTimeout(timer)
+  }, [reviewChange])
+
+  useEffect(() => {
+    // 書類を切り替えたら、前の書類の復帰案内やサブメニューを引き継がない。
+    setHandledReturn(activity.returned)
+    setMenu(null)
+  }, [clientId, chat.documentId])
 
   useEffect(() => {
     body.current?.scrollTo(0, 0)
@@ -121,8 +205,33 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
     setChatTopic(undefined)
     setError('')
     setConfirmed(false)
+    setReviewChange(0)
   }
   const jump = (key: string) => setError(onJump(key) ? '' : '用紙に対応する入力欄が見つかりませんでした。')
+  const completionMessage = hasUnsavedChanges
+    ? 'すべての確認が終わりました。用紙の変更を保存しましょう。'
+    : 'すべての確認が終わりました。'
+
+  const guidance = workGuidance({
+    conflict: !!work?.conflict,
+    saveFailure: work?.saveFailure,
+    pageSaved: !!work?.pageSaved,
+    unsaved: hasUnsavedChanges,
+    returned,
+    pending,
+    reviewChange,
+    reviewComplete,
+    inputs: intake.inputs,
+    job: work?.job,
+    jobFinished,
+    inspection,
+    inspectionFinished,
+    breakLevel: work ? activity.breakLevel : 0,
+    interview: available && topics.length > 0,
+  })
+  const action = guidance.action
+  const saveAction = action === 'save' || action === 'page-save'
+  const actionText = action === 'save' ? '用紙を保存' : 'このページを再保存'
 
   return (
     <aside className="assistant-panel" aria-labelledby="assistant-title">
@@ -135,11 +244,24 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
         )}
         {!menu && (
           <>
-            <PetMessage home>今日は何から<br />一緒に進めましょうか？</PetMessage>
+            <PetMessage home><span aria-live="polite">{guidance.text}</span></PetMessage>
+            {(saveAction && work || guidance.kind === 'break' || guidance.kind === 'return') && <div className="assistant-guidance-actions">
+              {saveAction && work && <button type="button" className="assistant-primary" onClick={() => {
+                if (guidance.kind === 'return') setHandledReturn(activity.returned)
+                if (guidance.kind === 'break') activity.dismissBreak()
+                if (action === 'save') work?.onSave()
+                else if (action === 'page-save') work?.onSavePage()
+              }}>{actionText}</button>}
+              {guidance.kind === 'break' && <>
+                <button type="button" onClick={activity.dismissBreak}>閉じる</button>
+                <button type="button" onClick={activity.hideBreaksToday}>今日は表示しない</button>
+              </>}
+              {guidance.kind === 'return' && <button type="button" onClick={() => setHandledReturn(activity.returned)}>閉じる</button>}
+            </div>}
             {fill && <PetFillNote fill={fill} />}
             <div className="assistant-stack assistant-menu">
               {menus.filter(({ id }) => id !== 'inspect' || clientId).map(({ id, icon, title }) => (
-                <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className="assistant-card" onClick={() => open(id)}>
+                <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className={id === action ? "assistant-card assistant-card-suggested" : "assistant-card"} onClick={() => open(id)}>
                   <PetIcon name={icon} />
                   <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}
                     {id === 'documents' && inputStatus && <small role="status">{inputStatus}</small>}
@@ -155,7 +277,10 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
         </>}
         {menu === 'review' && (
           <>
-            <PetMessage>未確認の項目が{pending}件あります。<br />項目を選ぶと、用紙の該当欄に移動します。</PetMessage>
+            <div aria-live="polite">
+              {pending > 0 && <PetMessage>未確認の項目が{pending}件あります。<br />項目を選ぶと、用紙の該当欄に移動します。</PetMessage>}
+              {reviewComplete && <PetMessage>{completionMessage}</PetMessage>}
+            </div>
             <div className="assistant-review-tabs" role="group" aria-label="確認状態">
               <button type="button" aria-pressed={!confirmed} onClick={() => { setConfirmed(false); setError('') }}>未確認（{pending}件）</button>
               <button type="button" aria-pressed={confirmed} onClick={() => { setConfirmed(true); setError('') }}><PetIcon name="check2" />確認済み（{review.length - pending}件）</button>

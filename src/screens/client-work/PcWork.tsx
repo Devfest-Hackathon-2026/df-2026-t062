@@ -47,6 +47,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const [cur, setCur] = useState(0)
   const [newOpen, setNewOpen] = useState(false)
   const [docSaved, setDocSaved] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<{ documentId: string, page?: number, ok: boolean }>()
+  const saveRequest = useRef(0)
   const [savedPages, setSavedPages] = useState<Set<number>>(new Set())
   const scroller = useRef<HTMLDivElement>(null)
   const pageRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -61,7 +63,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const [fillAsk, setFillAsk] = useState('')
   const [fillShown, setFillShown] = useState(false)
 
-  useEffect(() => { setDiagramChatRequest(undefined); setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
+  useEffect(() => { saveRequest.current++; setSaveFeedback(undefined); setDiagramChatRequest(undefined); setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount || state.total.ai || state.total.hand) setDocSaved(false) }, [state.pendingCount, state.total.ai, state.total.hand])
 
   /** 元の書類（create_from の種類）があり、AI が書ける種類か（ケアプランは対象外） */
@@ -201,7 +203,27 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const empty = !!doc && !doc.batches.length && Object.keys(doc.fields).every((k) => k === 'person.name' || k === 'person.sex')
   const hasUpdates = state.updates.size > 0
   const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
-  const incomplete = isPrimary && (jobs[0]?.status === 'partial' || jobs[0]?.status === 'failed') ? jobs[0] : null
+  const job = docId ? jobs.find((entry) => entry.documentId === docId) : undefined
+  const incomplete = job?.status === 'partial' || job?.status === 'failed' ? job : null
+  const currentSave = saveFeedback?.documentId === docId ? saveFeedback : undefined
+
+  useEffect(() => {
+    if (!currentSave?.ok || currentSave.page === undefined) return
+    const timer = setTimeout(() => setSaveFeedback(undefined), 60_000)
+    return () => clearTimeout(timer)
+  }, [currentSave])
+
+  const save = async (page?: number) => {
+    if (!docId) return
+    const request = ++saveRequest.current
+    const ok = await canSave() && await (page === undefined ? state.saveDocument() : state.savePage(page))
+    if (request !== saveRequest.current) return
+    setSaveFeedback({ documentId: docId, page, ok })
+    if (page === undefined) {
+      setDocSaved(ok)
+      if (ok) setSavedPages(new Set(pages.map((p) => p.no)))
+    } else if (ok) setSavedPages((previous) => new Set(previous).add(page))
+  }
 
   const onScroll = () => {
     const el = scroller.current
@@ -230,7 +252,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         <span>{paged ? `${no} ・ ${title}` : title}</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: '#5B6672' }}>{dirty ? countText(c) : savedPages.has(no) ? '保存しました' : i === 0 && empty ? 'まだ何も書かれていません' : ''}</span>
-          <button type="button" className="pgsave" disabled={!dirty} onClick={async () => { if (!await canSave() || !await state.savePage(no)) return; setSavedPages((s) => new Set(s).add(no)) }} style={dirty ? undefined : { opacity: 0.35, cursor: 'default' }}>このページを保存</button>
+          <button type="button" className="pgsave" disabled={!dirty} onClick={() => void save(no)} style={dirty ? undefined : { opacity: 0.35, cursor: 'default' }}>このページを保存</button>
         </span>
       </div>
     )
@@ -300,7 +322,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             page={paged ? `${cur + 1} / ${pages.length || 11} ページ` : '1 / 1 ページ'}
             zoom={zoom} onZoom={setZoom} hasUpdates={hasUpdates}
             status={empty ? 'まだ何も書かれていません' : countText(state.total) || 'すべて保存済み'} saved={docSaved}
-            onSave={() => void (async () => { const ok = await canSave() && await state.saveDocument(); setDocSaved(ok); if (ok) setSavedPages(new Set(pages.map((p) => p.no))) })()} />
+            onSave={() => void save()} />
 
           <FieldConflicts state={state} />
           <div ref={scroller} onScroll={onScroll} style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', background: '#E9EBEF', padding: '10px 21px 20px' }}>
@@ -336,6 +358,15 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </>}
 
         <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics} unheard={doc?.id === docId ? state.unheard : []}
+          hasUnsavedChanges={hasUpdates || state.hasLocalEdits || !!state.total.ai || !!state.total.hand}
+          work={carePlanOpen || !docId || doc?.id !== docId ? undefined : {
+            job, conflict: state.conflicts.size > 0,
+            saveFailure: currentSave?.ok === false ? currentSave.page === undefined ? 'document' : 'page' : undefined,
+            pageSaved: currentSave?.ok === true && currentSave.page !== undefined &&
+              [...state.counts].some(([page, counts]) => page !== currentSave.page && (counts.ai > 0 || counts.hand > 0)),
+            onSave: () => void save(),
+            onSavePage: () => { if (currentSave?.page !== undefined) void save(currentSave.page) },
+          }}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram, dict: fieldDict(state.form?.localFields) }}
 

@@ -219,6 +219,26 @@ strong.assistant-chat-field { color: var(--pet-ink); }
 .assistant-chat-steps li { display: flex; align-items: baseline; gap: 6px; font-size: 13px; line-height: 1.5; color: #5a4f6e; overflow-wrap: anywhere; }
 .assistant-chat-steps .assistant-icon { flex: none; color: #17633a; font-size: 12px; transform: translateY(1px); }
 
+.assistant-guidance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.assistant-guidance-actions button {
+  padding: 6px 12px;
+  border: 1px solid #d2d5de;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.assistant-menu .assistant-card-suggested {
+  border-color: var(--pet-purple);
+}
+
 /* 書類を作るときに AI が書く（#195）の知らせ */
 .assistant-fill { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; padding: 14px 16px; border: 1px solid var(--pet-line); border-radius: 12px; background: var(--pet-card); }
 .assistant-fill p { margin: 0; line-height: 1.7; }
