@@ -89,7 +89,7 @@ function Shell() {
     if (route.name === 'officeReview') return <OfficeReview key={route.versionId} staffName={staff.name} kind={route.kind} versionId={route.versionId} fix={new URLSearchParams(location.search).get('fix') === '1'} />
     if (route.name === 'list') return <OfficeShell staffName={staff.name} active="clients"><PcList staffName={staff.name} embedded /></OfficeShell>
   }
-  if (route.name === 'client') return device === 'pad' ? <PadWork clientId={route.id} /> : <PcWork key={route.id} clientId={route.id} staffName={staff.name} />
+  if (route.name === 'client') return device === 'pad' ? <PadWork clientId={route.id} /> : <PcWork key={route.id} clientId={route.id} staffName={staff.name} isAdmin={staff.role === 'admin'} />
   return device === 'pad' ? <PadList staffName={staff.name} /> : <PcList staffName={staff.name} />
 }
 

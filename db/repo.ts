@@ -250,6 +250,53 @@ export async function clientTranscripts(db: Q, officeId: string, clientId: strin
   return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
 }
 
+/** 管理者が保持期限と保全状態を確認するための録音一覧。音声の中身や保存先は返さない。 */
+export interface RecordingRetentionListItem {
+  id: string
+  recordedAt: string
+  sourceExpiresAt: string
+  sourcePurgeExpectedAt: string | null
+  sourceDeleteStatus: string
+  sourceDeletedAt: string | null
+  intermediateExpiresAt: string
+  intermediateDeleteStatus: string
+  intermediateDeletedAt: string | null
+  retentionHold: boolean
+  retentionHoldTarget: boolean
+  retentionHoldSyncStatus: string
+  retentionHoldUntil: string | null
+  retentionHoldReasonCode: string | null
+}
+
+export async function listRecordingRetentions(db: Q, officeId: string, clientId: string): Promise<RecordingRetentionListItem[]> {
+  const r = await db.query(
+    `SELECT id, recorded_at, source_expires_at, source_purge_expected_at, source_delete_status, source_deleted_at,
+            intermediate_expires_at, intermediate_delete_status, intermediate_deleted_at,
+            retention_hold, retention_hold_target, retention_hold_sync_status,
+            retention_hold_until, retention_hold_reason_code
+       FROM recordings
+      WHERE office_id = $1 AND client_id = $2
+      ORDER BY recorded_at DESC, id DESC`,
+    [officeId, clientId],
+  )
+  return r.rows.map((row) => ({
+    id: String(row.id),
+    recordedAt: new Date(row.recorded_at).toISOString(),
+    sourceExpiresAt: new Date(row.source_expires_at).toISOString(),
+    sourcePurgeExpectedAt: row.source_purge_expected_at ? new Date(row.source_purge_expected_at).toISOString() : null,
+    sourceDeleteStatus: String(row.source_delete_status),
+    sourceDeletedAt: row.source_deleted_at ? new Date(row.source_deleted_at).toISOString() : null,
+    intermediateExpiresAt: new Date(row.intermediate_expires_at).toISOString(),
+    intermediateDeleteStatus: String(row.intermediate_delete_status),
+    intermediateDeletedAt: row.intermediate_deleted_at ? new Date(row.intermediate_deleted_at).toISOString() : null,
+    retentionHold: Boolean(row.retention_hold),
+    retentionHoldTarget: Boolean(row.retention_hold_target),
+    retentionHoldSyncStatus: String(row.retention_hold_sync_status),
+    retentionHoldUntil: row.retention_hold_until ? new Date(row.retention_hold_until).toISOString() : null,
+    retentionHoldReasonCode: row.retention_hold_reason_code ? String(row.retention_hold_reason_code) : null,
+  }))
+}
+
 /** 同じ利用者のほかの書類（書き方の相談で AI が読む）。同じ事業所の、同じ利用者のものだけ */
 export async function otherDocuments(db: Q, officeId: string, clientId: string, exceptId: string): Promise<DocumentView[]> {
   const r = await db.query('SELECT id FROM documents WHERE office_id = $1 AND client_id = $2 AND id <> $3 ORDER BY created_at', [officeId, clientId, exceptId])

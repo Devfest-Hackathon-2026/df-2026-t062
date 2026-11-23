@@ -25,8 +25,9 @@ import { PlanHistoryButton, isPlanKind } from '../../components/care-plan/CarePl
 import { FillDialog, fillStepIndex, fillStepLabel } from '../../components/document/FillDialog.tsx'
 import { useDocumentFill } from '../../components/document/useDocumentFill.ts'
 import type { PetFill } from '../../components/assistant/PetHelper.tsx'
+import { RecordingRetentionPanel } from '../../components/recording/RecordingRetentionPanel.tsx'
 
-export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
+export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, staffName: string, isAdmin: boolean }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
   const [carePlanOpen, setCarePlanOpen] = useState(false)
@@ -309,6 +310,8 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
           status={<>必須 {required.total} 欄のうち {required.filled} 欄が入っています</>}
           progress={required} disabled={!docId} onExport={() => void exportPdf()} />}
       </div>
+
+      {isAdmin && <RecordingRetentionPanel clientId={clientId} />}
 
       <div className="pc-work-layout">
         {carePlanOpen ? <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} embedded historyRequest={planHistoryRequest} outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
