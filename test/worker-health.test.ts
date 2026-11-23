@@ -8,4 +8,5 @@ test('worker health check uses a Cloud Run compatible path', async () => {
   const response = await app.request('/health')
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), { status: 'ok', source: 'worker' })
+  assert.match(response.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/)
 })

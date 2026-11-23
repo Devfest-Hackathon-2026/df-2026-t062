@@ -1,3 +1,11 @@
+import * as fees from '../db/care-fees.ts'
+import { FeeCalculateInput,FeeConfirmInput } from '../core/care-fee-api.ts'
+import * as months from '../db/care-months.ts'
+import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
+import { careRecordDrafter } from './care-record-ai.ts'
+import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate, CareRecordConfirm } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision, confirmCareRecord } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -16,6 +24,7 @@ import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
 import * as importsDb from '../db/form-imports.ts'
 import * as inspections from '../db/inspections.ts'
+import * as fills from '../db/document-fills.ts'
 import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
 import * as carePlans from '../db/care-plans.ts'
@@ -23,6 +32,7 @@ import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
+import * as officeTopicsDb from '../db/office-topics.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
@@ -36,7 +46,17 @@ import type { Queue } from './queue.ts'
 import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
+import { fakeTopicDrafter, fakeTopicTeacher, NOTE_LINE_MAX, NOTE_LINES_MAX, settleTeach, type TopicDrafter, type TopicTeacher } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
+import { randomUUID } from 'node:crypto'
+import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
+import {
+  HOLD_REASON_CODES,
+  getRecordingRetention,
+  requestRecordingRetentionHold,
+  requestRecordingRetentionHoldRelease,
+  type HoldReasonCode,
+} from '../db/recording-retention.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -49,6 +69,10 @@ export interface ApiDeps {
   carePlanAi?: () => Promise<carePlans.CarePlanDrafter>
   /** 責任者の言葉を欄に当てはめる（様式の下書きを直す）。なければ試しの当てはめ（fake） */
   fieldMatcher?: () => Promise<FieldMatcher>
+  /** 事業所が足した書類の拾う内容の案を作る（#153）。省けば試しの案 */
+  topicDrafter?: () => Promise<TopicDrafter>
+  /** 責任者のダメ出しを、どの項目に足すか振り分ける（#115 の AI 特訓部屋）。省けば試しの振り分け */
+  topicTeacher?: () => Promise<TopicTeacher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -141,6 +165,10 @@ const ChatInput = z.object({
     .refine((m) => m.at(-1)?.role === 'user'),
 })
 const CompleteInput = z.object({ durationMs: z.number().int().min(0).nullish(), bytes: z.number().int().positive().optional() })
+const RecordingRetentionHoldInput = z.object({
+  holdUntil: z.iso.datetime({ offset: true }),
+  reasonCode: z.enum(HOLD_REASON_CODES),
+}).strict()
 // 職員・最初の責任者を登録する。メールは小文字にそろえる（Identity Platform のメールは大文字・小文字を区別しない）
 const Email = z.string().trim().toLowerCase().max(254).pipe(z.email())
 const Name = z.string().trim().min(1).max(60)
@@ -155,6 +183,23 @@ const StaffPatchInput = z.object({ role: z.enum(STAFF_ROLES).optional(), disable
 
 // 様式の取り込み: 何の書類の用紙か
 const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
+// 事業所の書類を足す（#153）。手順 1「書類について」の答え
+const OfficeKindInput = z.object({
+  name: z.string().trim().min(1).max(40),
+  perClient: z.enum(['one', 'many']),
+  append: z.boolean(),
+})
+const OfficeTopicsInput = z.object({
+  topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+})
+// 事業所が直せる項目（#115）。全部を置き換える（足した項目・書き足しの行・合格の印）
+const TopicId = z.string().min(1).max(41)
+const OfficeTopicsEditInput = z.object({
+  added: z.array(z.object({ id: TopicId.optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+  notes: z.record(TopicId, z.array(z.string().max(NOTE_LINE_MAX)).max(NOTE_LINES_MAX)),
+  passed: z.array(TopicId).max(200),
+})
+const TeachRequest = z.object({ text: z.string().trim().min(1).max(NOTE_LINE_MAX), current: TopicId.nullable() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -185,6 +230,16 @@ export function routeDeclarations(app: Hono): { method: string, path: string, de
 
 const json = (c: Context, body: unknown, status = 200) => c.json(body as object, status as 200)
 
+const accessAudit = async (c: Context, db: Db, staff: repo.Staff, input: Omit<AccessAuditInput, 'officeId' | 'actorStaffId' | 'context'>) => {
+  const context = repo.auditContextOf(staff)
+  await writeAccessAudit(db, {
+    ...input,
+    officeId: staff.officeId,
+    actorStaffId: staff.id,
+    context: { ...context, source: 'api', route: c.req.routePath },
+  })
+}
+
 /** 置き場にあるかの覚え（様式の置き場は上書きも削除もしないので、あったものはずっとある。ないものは毎回見る） */
 const present = new Set<string>()
 async function exists(storage: Storage, path: string): Promise<boolean> {
@@ -197,8 +252,27 @@ async function exists(storage: Storage, path: string): Promise<boolean> {
 export function createApp(deps: ApiDeps) {
   const app = new Hono()
   const accounts = deps.accounts ?? (() => defaultAccounts())
+  const auditContexts = new WeakMap<object, AuditContext>()
+  const securityScopes = new WeakMap<object, { db: Db, staff: repo.Staff, operation: Operation }>()
+
+  const auditContextOf = (c: Context): AuditContext => auditContexts.get(c) ?? {
+    requestId: randomUUID(),
+    correlationId: randomUUID(),
+    traceId: c.req.header('x-cloud-trace-context')?.split('/')[0],
+    route: c.req.path,
+    source: 'api',
+  }
 
   app.use('*', async (c, next) => {
+    const auditContext: AuditContext = {
+      requestId: randomUUID(),
+      correlationId: randomUUID(),
+      traceId: c.req.header('x-cloud-trace-context')?.split('/')[0],
+      route: c.req.path,
+      source: 'api',
+    }
+    auditContexts.set(c, auditContext)
+    c.header('X-Request-Id', auditContext.requestId!)
     await next()
     // 様式の版のように、ブラウザが覚えてよいものは道の中で決める。それ以外は覚えさせない
     if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-store')
@@ -233,9 +307,21 @@ export function createApp(deps: ApiDeps) {
       const user = await login(c)
       if (!user) return unauthorized(c)
       const db = await deps.db()
-      const staff = await repo.staffByAuth(db, user.uid, user.email, deps.devAuth)
+      const staff = await repo.staffByAuth(db, user.uid, user.email, deps.devAuth, auditContextOf(c))
       if (!staff) return unauthorized(c)
-      if (!allows(staff.role, op)) return forbidden(c)
+      securityScopes.set(c, { db, staff, operation: op })
+      if (!allows(staff.role, op)) {
+        await writeSecurityAudit(db, {
+          officeId: staff.officeId,
+          actorStaffId: staff.id,
+          action: 'auth.denied',
+          outcome: 'denied',
+          reasonCode: 'permission_denied',
+          permission: op,
+          context: { ...auditContextOf(c), route: c.req.routePath },
+        })
+        return forbidden(c)
+      }
       return handler(c, staff, db)
     })
 
@@ -260,23 +346,46 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/clients', staffRoute('care.work', async (c, staff, db) => {
     const sort = c.req.query('sort') === 'name' ? 'name' : 'updated'
-    return json(c, { clients: await repo.listClients(db, staff.officeId, { q: c.req.query('q'), sort }) })
+    const clients = await repo.listClients(db, staff.officeId, { q: c.req.query('q'), sort })
+    await accessAudit(c, db, staff, {
+      resourceType: 'client', accessMode: 'list', action: 'client.list',
+      resultCount: clients.length, displayedClientIds: clients.map((client) => client.id),
+    })
+    return json(c, { clients })
   }))
 
   app.post('/api/clients', staffRoute('care.work', async (c, staff, db) => json(c, await repo.createClient(db, staff, await body(c, ClientInput)), 201)))
 
-  app.get('/api/clients/:id', staffRoute('care.work', async (c, staff, db) => json(c, {
-    client: await repo.getClient(db, staff.officeId, c.req.param('id')!),
-    jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!),
-  })))
+  app.get('/api/clients/:id', staffRoute('care.work', async (c, staff, db) => {
+    const client = await repo.getClient(db, staff.officeId, c.req.param('id')!)
+    const jobs = await repo.activeJobs(db, staff.officeId, c.req.param('id')!)
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'client', resourceId: client.id, accessMode: 'view', action: 'client.view',
+    })
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'job', accessMode: 'list', action: 'job.view', resultCount: jobs.length,
+    })
+    return json(c, { client, jobs })
+  }))
 
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
+  app.get('/api/form-kinds/:kind/published', staffRoute('care.work', async(c,staff,db)=>{
+    const kind=await kinds.visibleKind(db,staff.officeId,c.req.param('kind')!)
+    if(!kind)throw new repo.NotFound()
+    return json(c,{formVersionId:await forms.publishedVersionId(db,staff.officeId,kind.key)})
+  }))
 
   // ---------- ケアプラン（#90）----------
 
-  app.get('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { plans: await carePlans.listClientCarePlans(db, staff.officeId, c.req.param('clientId')!) })))
+  app.get('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) => {
+    const clientId = c.req.param('clientId')!
+    const plans = await carePlans.listClientCarePlans(db, staff.officeId, clientId)
+    await accessAudit(c, db, staff, {
+      clientId, resourceType: 'care_plan', accessMode: 'list', action: 'care_plan.view', resultCount: plans.length,
+    })
+    return json(c, { plans })
+  }))
 
   app.post('/api/clients/:clientId/care-plans', staffRoute('care.work', async (c, staff, db) => {
     const input = await body(c, CarePlanInput)
@@ -288,8 +397,13 @@ export function createApp(deps: ApiDeps) {
     return json(c, { plan }, 201)
   }))
 
-  app.get('/api/care-plans/:planId', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { plan: await carePlans.getCarePlan(db, staff.officeId, c.req.param('planId')!) })))
+  app.get('/api/care-plans/:planId', staffRoute('care.work', async (c, staff, db) => {
+    const plan = await carePlans.getCarePlan(db, staff.officeId, c.req.param('planId')!)
+    await accessAudit(c, db, staff, {
+      clientId: plan.clientId, resourceType: 'care_plan', resourceId: plan.id, accessMode: 'view', action: 'care_plan.view',
+    })
+    return json(c, { plan })
+  }))
 
   app.put('/api/care-plans/:planId/needs', staffRoute('care.work', async (c, staff, db) => {
     const input = await body(c, PlanNeedsInput)
@@ -324,6 +438,9 @@ export function createApp(deps: ApiDeps) {
       for (const page of await combined.copyPages(pdf, pdf.getPageIndices())) combined.addPage(page)
     }
     const bytes = new Uint8Array(await combined.save())
+    await accessAudit(c, db, staff, {
+      clientId, resourceType: 'care_plan', resourceId: c.req.param('planId')!, accessMode: 'export', action: 'document.export',
+    })
     await repo.audit(db, staff, staff.officeId, 'care_plan.pdf', { clientId }, {
       planId: c.req.param('planId'), form: selection, revisions: selected.map((s) => ({ formNo: s.formNo, rev: s.rev })),
     })
@@ -348,8 +465,14 @@ export function createApp(deps: ApiDeps) {
     return json(c, { draft }, 201)
   }))
 
-  app.get('/api/care-plans/:planId/ai-drafts/:draftId', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { draft: await carePlans.getCarePlanAiDraft(db, staff.officeId, c.req.param('planId')!, c.req.param('draftId')!) })))
+  app.get('/api/care-plans/:planId/ai-drafts/:draftId', staffRoute('care.work', async (c, staff, db) => {
+    const plan = await carePlans.getCarePlan(db, staff.officeId, c.req.param('planId')!)
+    const draft = await carePlans.getCarePlanAiDraft(db, staff.officeId, c.req.param('planId')!, c.req.param('draftId')!)
+    await accessAudit(c, db, staff, {
+      clientId: plan.clientId, resourceType: 'care_plan_draft', resourceId: draft.id, accessMode: 'view', action: 'care_plan.view',
+    })
+    return json(c, { draft })
+  }))
 
   app.post('/api/care-plans/:planId/ai-drafts/:draftId/apply', staffRoute('care.work', async (c, staff, db) => {
     const { baseVersion } = await body(c, PlanAiApplyInput)
@@ -387,11 +510,95 @@ export function createApp(deps: ApiDeps) {
   app.get('/api/form-versions/:id/assets', staffRoute('care.work', async (c, staff, db) =>
     json(c, await assetsOf(await forms.versionForOffice(db, staff.officeId, c.req.param('id')!)))))
 
-  app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => json(c, { document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/documents/:id', staffRoute('care.work', async (c, staff, db) => {
+    const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
+    await accessAudit(c, db, staff, {
+      clientId: document.clientId, documentId: document.id, resourceType: 'document', resourceId: document.id,
+      accessMode: 'view', action: 'document.view',
+    })
+    // 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの（id と名前だけ。#115）
+    return json(c, { document, unheardTopics: await officeTopicsDb.unheardTopics(db, staff.officeId, document.id) })
+  }))
+
+  // 復元した第4〜7表の閲覧にも、既存のアクセス監査を適用する。
+  const careRead = (scope: 'client' | 'record' | 'month' | 'fee', accessMode: 'list' | 'view',
+    handler: (c: Context, staff: repo.Staff, db: Db) => Promise<Response>) => staffRoute('care.work', async (c, staff, db) => {
+    const response = await handler(c, staff, db)
+    const id = c.req.param('id')!
+    let clientId = id, documentId: string | undefined
+    if (scope !== 'client') {
+      const table = { record: 'documents', month: 'care_plan_months', fee: 'care_plan_fees' }[scope]
+      const row = (await db.query(`SELECT client_id, ${scope === 'record' ? 'id' : 'document_id'} AS document_id FROM ${table} WHERE id=$1 AND office_id=$2`, [id, staff.officeId])).rows[0]
+      if (!row) throw new repo.NotFound()
+      clientId = row.client_id; documentId = row.document_id
+    }
+    await accessAudit(c, db, staff, {
+      clientId, documentId, resourceType: `care_${scope}`, resourceId: id,
+      accessMode, action: 'document.view',
+    })
+    return response
+  })
+
+  app.get('/api/care-fee-masters', staffRoute('care.work',async(c,_staff,db)=>json(c,{masters:await fees.careFeeMasters(db)})))
+  app.get('/api/clients/:id/care-plan-fees',careRead('client', 'list',async(c,staff,db)=>json(c,{fees:await fees.listCareFees(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-months/:id/fees',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.calculateCareFee(db,staff,c.req.param('id')!,await body(c,FeeCalculateInput))})))
+  app.get('/api/care-plan-fees/:id',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-fees/:id/confirm',staffRoute('care.work',async(c,staff,db)=>{const input=await body(c,FeeConfirmInput);return json(c,{calculation:await fees.confirmCareFee(db,staff,c.req.param('id')!,input.calculationId,input.baseRevision)})}))
+  app.get('/api/care-plan-fees/:id/history',careRead('fee', 'list',async(c,staff,db)=>json(c,{history:await fees.careFeeHistory(db,staff.officeId,c.req.param('id')!)})))
+  app.get('/api/care-plan-fees/:id/calculations/:calculation',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!,c.req.param('calculation')!)})))
+
+  app.get('/api/clients/:id/care-plan-months', careRead('client', 'list', async (c, staff, db) => json(c, { months: await months.listCareMonths(db,staff.officeId,c.req.param('id')!) })))
+  app.post('/api/clients/:id/care-plan-months/preview', staffRoute('care.work', async (c, staff, db) => {
+    const input=await body(c,MonthPreviewInput)
+    return json(c,await months.previewCareMonth(db,staff.officeId,c.req.param('id')!,input.planId,input.month))
+  }))
+  app.post('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => {
+    const r=await months.createCareMonth(db,staff,c.req.param('id')!,await body(c,MonthCreateInput))
+    return json(c,r,r.created?201:200)
+  }))
+  app.get('/api/care-plan-months/:id', careRead('month', 'view', async(c,staff,db)=>json(c,{month:await months.getCareMonth(db,staff.officeId,c.req.param('id')!)})))
+  app.put('/api/care-plan-months/:id', staffRoute('care.work', async(c,staff,db)=>json(c,{month:await months.saveCareMonth(db,staff,c.req.param('id')!,await body(c,MonthSaveInput))})))
+  app.post('/api/care-plan-months/:id/preview', staffRoute('care.work', async(c,staff,db)=>json(c,await months.previewMonthAction(db,staff.officeId,c.req.param('id')!,await body(c,MonthActionInput)))))
+  app.get('/api/care-plan-months/:id/revisions/:rev', careRead('month', 'view', async(c,staff,db)=>{
+    const rev=z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if(!rev.success)throw new repo.BadRequest('保存版が正しくありません')
+    return json(c,await months.careMonthSaved(db,staff.officeId,c.req.param('id')!,rev.data))
+  }))
+
+  app.get('/api/clients/:id/care-records', careRead('client', 'list', async (c, staff, db) => {
+    const query = CareRecordQuery.safeParse(c.req.query())
+    if (!query.success) throw new repo.BadRequest('検索条件が正しくありません')
+    return json(c, await listCareRecords(db, staff.officeId, c.req.param('id')!, query.data))
+  }))
+  app.post('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
+    const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
+    return json(c, record, record.created ? 201 : 200)
+  }))
+  app.post('/api/care-records/:id/confirm', staffRoute('care.work', async (c, staff, db) => json(c, { confirmation: await confirmCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordConfirm)) })))
+  app.get('/api/care-records/:id/ai-drafts', careRead('record', 'list', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
+  app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CareRecordDraftCreate)
+    const model = deps.chat ? await deps.chat() : fakeModel
+    return json(c, { draft: await createCareRecordDraft(db, staff, c.req.param('id')!, input, careRecordDrafter(model)) }, 201)
+  }))
+  app.post('/api/care-records/:id/ai-drafts/:draft/apply', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const draft = await applyCareRecordDraft(db, staff, id, c.req.param('draft')!)
+    return json(c, { draft, document: await repo.getDocument(db, staff.officeId, id) })
+  }))
+  app.get('/api/care-records/:id/revisions/:rev', careRead('record', 'view', async (c, staff, db) => {
+    const rev = z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if (!rev.success) throw new repo.NotFound()
+    return json(c, { revision: await careRecordRevision(db, staff.officeId, c.req.param('id')!, rev.data) })
+  }))
 
   app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
     const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
     const rows = await db.query('SELECT id, rev, saved_at FROM revisions WHERE document_id = $1 ORDER BY rev DESC', [document.id])
+    await accessAudit(c, db, staff, {
+      clientId: document.clientId, documentId: document.id, resourceType: 'document_revision', resourceId: document.id,
+      accessMode: 'list', action: 'document.view', resultCount: rows.rows.length,
+    })
     return json(c, { revisions: rows.rows.map((r) => ({ id: Number(r.id), rev: Number(r.rev), savedAt: new Date(r.saved_at).toISOString() })) })
   }))
 
@@ -419,6 +626,16 @@ export function createApp(deps: ApiDeps) {
 
     const recordings = await repo.clientTranscripts(db, staff.officeId, document.clientId)
     const others = await Promise.all((await repo.otherDocuments(db, staff.officeId, document.clientId, document.id)).map(asChat))
+    for (const viewed of [document, ...others]) {
+      await accessAudit(c, db, staff, {
+        clientId: document.clientId, documentId: viewed.id, resourceType: 'document', resourceId: viewed.id,
+        accessMode: 'view', action: 'document.view',
+      })
+    }
+    await accessAudit(c, db, staff, {
+      clientId: document.clientId, documentId: document.id, resourceType: 'transcript',
+      accessMode: 'view', action: 'transcript.view', resultCount: recordings.length,
+    })
     const model = deps.chat ? await deps.chat() : fakeModel
     // 答えは 1 行 1 つの JSON（NDJSON）。道具を使うたびに {type:'step'} を流し、最後に {type:'done', reply, steps, proposals}。
     // 途中で失敗したら {type:'error'}（状態はもう 200 なので）。間の置き場がまとめて返しても、画面は最後に全部出すだけで壊れない
@@ -430,7 +647,7 @@ export function createApp(deps: ApiDeps) {
           const r = await runChat({ model, document, others, recordings, messages, draft, diagramField, onStep: (text) => send({ type: 'step', text }) })
           send({ type: 'done', ...r })
         } catch (e) {
-          console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: (e as Error)?.name ?? 'Error' }))
+          console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, request_id: auditContextOf(c).requestId, error: (e as Error)?.name ?? 'Error' }))
           send({ type: 'error', code: chatError(e).code })
         }
         ctl.close()
@@ -443,10 +660,24 @@ export function createApp(deps: ApiDeps) {
     const r = await documentInputs.startInput(db, staff, c.req.param('id')!, await body(c, documentInputs.DocumentUploadInput), deps.storage(), c.req.header('Origin'))
     return json(c, r, 201)
   }))
-  app.get('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { inputs: await documentInputs.listInputs(db, staff, c.req.param('id')!) })))
-  app.get('/api/document-inputs/:id', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { input: await documentInputs.inputView(db, staff, c.req.param('id')!) })))
+  app.get('/api/documents/:id/inputs', staffRoute('care.work', async (c, staff, db) => {
+    const document = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
+    const inputs = await documentInputs.listInputs(db, staff, document.id)
+    await accessAudit(c, db, staff, {
+      clientId: document.clientId, documentId: document.id, resourceType: 'document_input', accessMode: 'list', action: 'input.view', resultCount: inputs.length,
+    })
+    return json(c, { inputs })
+  }))
+  app.get('/api/document-inputs/:id', staffRoute('care.work', async (c, staff, db) => {
+    const raw = await documentInputs.getInput(db, staff.officeId, c.req.param('id')!)
+    const input = await documentInputs.inputView(db, staff, raw.id)
+    const document = await repo.getDocument(db, staff.officeId, raw.document_id)
+    await accessAudit(c, db, staff, {
+      clientId: document.clientId, documentId: document.id, resourceType: 'document_input', resourceId: input.id,
+      accessMode: 'view', action: 'input.view',
+    })
+    return json(c, { input })
+  }))
   app.post('/api/document-inputs/:id/complete', staffRoute('care.work', async (c, staff, db) => {
     const id = c.req.param('id')!
     const queue = deps.queue()
@@ -467,6 +698,10 @@ export function createApp(deps: ApiDeps) {
   app.get('/api/document-inputs/:id/original', staffRoute('care.work', async (c, staff, db) => {
     const r = await documentInputs.getInput(db, staff.officeId, c.req.param('id')!)
     const data = await deps.storage().read('source', documentInputPath(staff.officeId, r.client_id, r.id, r.upload_generation))
+    await accessAudit(c, db, staff, {
+      clientId: r.client_id, documentId: r.document_id, resourceType: 'document_input_original', resourceId: r.id,
+      accessMode: 'download', action: 'input.view',
+    })
     return new Response(new Blob([new Uint8Array(data)], { type: r.mime }), { headers: {
       'Content-Type': r.mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(r.file_name)}`,
       'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox",
@@ -508,9 +743,18 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id/pdf', staffRoute('care.work', async (c, staff, db) => {
     const doc = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
-    const rev = await repo.latestRevision(db, staff.officeId, doc.id)
+    const requestedRev = c.req.query('rev')
+    const selectedRev = requestedRev === undefined ? undefined : z.coerce.number().int().positive().safeParse(requestedRev)
+    if (selectedRev && !selectedRev.success) throw new repo.BadRequest('保存版の番号が正しくありません')
+    const rev = selectedRev?.success
+      ? await careRecordRevision(db, staff.officeId, doc.id, selectedRev.data)
+      : await repo.latestRevision(db, staff.officeId, doc.id)
     const version = await forms.loadVersion(db, rev.formVersionId)
     const pdf = await makePdf(deps.storage(), version, rev.values)
+    await accessAudit(c, db, staff, {
+      clientId: doc.clientId, documentId: doc.id, resourceType: 'document', resourceId: doc.id,
+      accessMode: 'export', action: 'document.export',
+    })
     const path = `exports/${staff.officeId}/${doc.id}/rev${rev.rev}-${Date.now()}.pdf`
     let stored: string | null = path
     try {
@@ -551,10 +795,70 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/recordings/:id/complete', staffRoute('care.work', async (c, staff, db) => {
     const { durationMs, bytes } = await body(c, CompleteInput)
     const jobId = await repo.completeRecording(db, staff, c.req.param('id')!, durationMs ?? null, bytes,
-      (path) => deps.storage().size('source', path))
+      async (path) => {
+        const result = await deps.storage().sourceObjects().getLiveObjectMetadata(path)
+        if (result.kind === 'not_found') return null
+        if (result.kind === 'error') throw new Error(`source_metadata_${result.code}`)
+        return {
+          size: result.metadata.size,
+          generation: result.metadata.generation,
+          metageneration: result.metadata.metageneration,
+        }
+      })
     if (!jobId) return json(c, { error: 'not_uploaded' }, 409)
     const job = await repo.dispatchRecordingJob(db, jobId, () => deps.queue().enqueue(jobId, { initial: true }))
     return json(c, job, 202)
+  }))
+
+  app.get('/api/office/recordings/:id/retention', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const recordingId = c.req.param('id')!
+    const retention = await getRecordingRetention(db, recordingId, staff.officeId)
+    if (!retention) throw new repo.NotFound()
+    await accessAudit(c, db, staff, {
+      resourceType: 'recording_retention', resourceId: recordingId, accessMode: 'view', action: 'recording.retention.view',
+    })
+    return json(c, { retention })
+  }))
+
+  app.put('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const input = await body(c, RecordingRetentionHoldInput)
+    const holdUntil = new Date(input.holdUntil)
+    const retention = await requestRecordingRetentionHold(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    }, holdUntil, input.reasonCode as HoldReasonCode)
+    if (!retention) throw new repo.NotFound()
+    const version = retention.retentionHoldOperationVersion
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, version)
+    return json(c, { retention }, 202)
+  }))
+
+  app.delete('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const retention = await requestRecordingRetentionHoldRelease(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    })
+    if (!retention) throw new repo.NotFound()
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, retention.retentionHoldOperationVersion)
+    return json(c, { retention }, 202)
+  }))
+
+  // 書類を作るときに AI が書く（#195）。元の書類（create_from の種類）の値を読み、この書類の欄を書き直す・空の欄を書く。裏の仕事（worker）
+  app.post('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const r = await fills.startFill(db, staff, c.req.param('id')!)
+    if (r.created) {
+      if (!deps.queue().enqueueDocumentFill) throw new Error('書類を書く仕事を積めません')
+      await deps.queue().enqueueDocumentFill!(r.id, { initial: true })
+    }
+    return json(c, { fillId: r.id }, 202)
+  }))
+  app.get('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const r = await fills.latestFill(db, staff.officeId, id)
+    await accessAudit(c, db, staff, { clientId: r.clientId, documentId: id, resourceType: 'document_fill', resourceId: r.fill?.id ?? id, accessMode: 'view', action: 'document.view' })
+    return json(c, { fill: r.fill })
   }))
 
   // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
@@ -564,12 +868,33 @@ export function createApp(deps: ApiDeps) {
     if (r.created) await deps.queue().enqueueInspection(r.id, { initial: true })
     return json(c, { inspectionId: r.id }, 202)
   }))
-  app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { inspections: await inspections.listInspections(db, staff.officeId, c.req.param('id')!) })))
-  app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) =>
-    json(c, { inspection: await inspections.getInspection(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
+    const clientId = c.req.param('id')!
+    const result = await inspections.listInspections(db, staff.officeId, clientId)
+    await accessAudit(c, db, staff, {
+      clientId, resourceType: 'inspection', accessMode: 'list', action: 'inspection.view', resultCount: result.length,
+    })
+    return json(c, { inspections: result })
+  }))
+  app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const inspection = await inspections.getInspection(db, staff.officeId, id)
+    const owner = (await db.query<{ client_id: string }>('SELECT client_id FROM inspections WHERE id = $1 AND office_id = $2', [id, staff.officeId])).rows[0]
+    await accessAudit(c, db, staff, {
+      clientId: owner.client_id, resourceType: 'inspection', resourceId: id, accessMode: 'view', action: 'inspection.view',
+    })
+    return json(c, { inspection })
+  }))
 
-  app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => json(c, { jobs: await repo.activeJobs(db, staff.officeId, c.req.param('id')!) })))
+  app.get('/api/clients/:id/jobs', staffRoute('care.work', async (c, staff, db) => {
+    const clientId = c.req.param('id')!
+    await repo.getClient(db, staff.officeId, clientId)
+    const jobs = await repo.activeJobs(db, staff.officeId, clientId)
+    await accessAudit(c, db, staff, {
+      clientId, resourceType: 'job', accessMode: 'list', action: 'job.view', resultCount: jobs.length,
+    })
+    return json(c, { jobs })
+  }))
 
   // ---------- 職員の管理（責任者） ----------
 
@@ -596,7 +921,7 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/admin/offices', siteRoute(async (c, _admin, db) => {
     const input = await body(c, OfficeInput)
     const account = await accounts().ensureUser(input.admin.email, input.admin.name)
-    const r = await staffDb.createOffice(db, { ...input, admin: { ...input.admin, authUid: account.uid } })
+    const r = await staffDb.createOffice(db, { ...input, admin: { ...input.admin, authUid: account.uid } }, auditContextOf(c))
     return json(c, { ...r, accountCreated: account.created }, 201)
   }))
 
@@ -671,6 +996,7 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
+      if (scope.officeId) await draftTopicsOnStart(db, scope.officeId, v)
       return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
     }))
     // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
@@ -680,7 +1006,61 @@ export function createApp(deps: ApiDeps) {
       return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
+  /**
+   * 事業所が足した種類の書式を使い始めるときに、書式の欄から AI が項目（拾う内容）を決めて、そのまま入れる（#209）。
+   * 決めるのは、録音から書く種類で、項目がまだ全体のまとめだけのときだけ（直した書式を使い始め直しても、今ある項目は変えない）。
+   * AI が失敗しても使い始めは止めない（項目は全体のまとめだけのまま）。ログには中身を出さない
+   */
+  async function draftTopicsOnStart(db: Db, officeId: string, v: Pick<forms.FormVersion, 'id' | 'kind' | 'bindings' | 'localFields'>) {
+    const kindName = await kinds.needsTopicDraft(db, officeId, v.kind)
+    if (!kindName) return
+    const dict = fieldDict(v.localFields)
+    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
+    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
+      const m = slotMeaning(b, dict, v.localFields)
+      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
+    }))]
+    if (!slots.length) return
+    try {
+      const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName, slots })
+      if (drafted.length) await kinds.setDraftedTopics(db, officeId, v.kind, drafted)
+    } catch (e) {
+      console.log(JSON.stringify({ severity: 'WARNING', msg: 'topic draft on start failed', versionId: v.id, error: (e as Error)?.name ?? 'Error' }))
+    }
+  }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
+
+  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容を直す、やめる（拾う内容は、書式を使い始めるときに AI が決める。#209）。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
+  app.post('/api/office/form-kinds', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeKindInput)
+    return json(c, { kind: await kinds.createOfficeKind(db, staff.officeId, input) }, 201)
+  }))
+  app.put('/api/office/form-kinds/:key/topics', staffRoute('form.manage', async (c, staff, db) => {
+    const { topics } = await body(c, OfficeTopicsInput)
+    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, c.req.param('key')!, topics) })
+  }))
+  app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
+    await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)
+    return json(c, { ok: true })
+  }))
+
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋）: 項目を見る、直す（足す・書き足す・合格の印）、ダメ出しを振り分ける。全体の項目は消せず、名前も変えられない ----------
+  app.get('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!))))
+  app.put('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeTopicsEditInput)
+    return json(c, await officeTopicsDb.putOfficeTopics(db, staff, c.req.param('kind')!, input, repo.auditContextOf(staff)))
+  }))
+  // 振り分けだけ（保存しない）。画面が答えを見せ、そのまま PUT で保存する。AI の答えは一覧と照らしてから返す
+  app.post('/api/office/topics/:kind/teach', staffRoute('form.manage', async (c, staff, db) => {
+    const { text, current } = await body(c, TeachRequest)
+    const view = await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!)
+    // AI には、書き足しを含めた説明を渡す（教えたことと重ねて足さないように）
+    const items = view.items.map((i) => ({ id: i.id, name: i.name, guide: [i.guide, ...i.notes].filter(Boolean).join(' ') }))
+    const teach = await (deps.topicTeacher ?? (async () => fakeTopicTeacher))()
+    const decision = await teach({ kindName: view.kind.name, items, current: current && items.some((i) => i.id === current) ? current : null, text })
+    return json(c, { decision: settleTeach(items, decision, text) })
+  }))
 
   // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
   app.get('/api/office/forms', staffRoute('form.manage', async (c, staff, db) => json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })))
@@ -689,11 +1069,13 @@ export function createApp(deps: ApiDeps) {
     return json(c, await managerView(db, r.version), r.created ? 201 : 200)
   }))
   app.post('/api/office/forms/:kind/revert', staffRoute('form.manage', async (c, staff, db) => {
-    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!)
+    await forms.revertToGlobal(db, staff.officeId, staff.id, c.req.param('kind')!, repo.auditContextOf(staff))
     return json(c, { kinds: await forms.officeFormStates(db, staff.officeId) })
   }))
-  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) =>
-    json(c, await managerView(db, await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!)))))
+  app.post('/api/office/form-versions/:id/reuse', staffRoute('form.manage', async (c, staff, db) => {
+    const version = await forms.reuseVersion(db, { officeId: staff.officeId }, staff.id, c.req.param('id')!, repo.auditContextOf(staff))
+    return json(c, await managerView(db, version))
+  }))
   versionRoutes('/api/admin', (h) => siteRoute((c, _admin, db) => h(c, { officeId: null }, db)))
 
   // ---------- 開発用（ローカルの置き場だけ。ログインの代わりに、置き場が出した期限つきの署名で確かめる。本番の置き場では 404） ----------
@@ -724,13 +1106,36 @@ export function createApp(deps: ApiDeps) {
   app.notFound((c) => json(c, { error: 'not_found' }, 404))
 
   app.onError((err, c) => {
-    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound) return json(c, { error: 'not_found' }, 404)
+    const scope = securityScopes.get(c)
+    const recordNotFound = async () => {
+      if (!scope) return
+      await writeSecurityAudit(scope.db, {
+        officeId: scope.staff.officeId,
+        actorStaffId: scope.staff.id,
+        action: 'auth.denied',
+        outcome: 'not_found',
+        reasonCode: 'resource_not_found_or_out_of_scope',
+        permission: scope.operation,
+        context: { ...auditContextOf(c), route: c.req.routePath },
+      }).catch(() => {})
+    }
+    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound || (err instanceof Error && err.message === 'recording_not_found')) {
+      return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
+    }
     // ID の形でないもの（PostgreSQL の invalid_text_representation）も「無い」
-    if ((err as { code?: string }).code === '22P02') return json(c, { error: 'not_found' }, 404)
+    if ((err as { code?: string }).code === '22P02') {
+      return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
+    }
     if (err instanceof repo.Forbidden) return json(c, { error: 'forbidden', message: err.message }, 403)
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
-    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'fee_source_updated' ? '第6表に新しい保存版があります。最新の保存版で再計算してから確定してください。' : err.message === 'fee_workbook_unverified' ? 'この算定はExcel数式との照合前です。再計算してから確定してください。' : err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof Error && ['invalid_hold_until', 'invalid_hold_reason_code'].includes(err.message)) {
+      return json(c, { error: err.message }, 400)
+    }
+    if (err instanceof Error && ['recording_source_deleted', 'recording_source_deleting', 'retention_hold_not_active'].includes(err.message)) {
+      return json(c, { error: err.message }, 409)
+    }
     if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
     if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
     if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)
@@ -739,7 +1144,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof FormUnavailable) return json(c, { error: 'form_unavailable', message: 'この様式の元の PDF がまだ用意されていません' }, 503)
     if (err instanceof PdfOverflow) return json(c, { error: 'overflow', slots: err.slots, message: err.message }, 422)
     // ログには中身を出さない（種類と道だけ）
-    console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, error: err.name }))
+    console.error(JSON.stringify({ severity: 'ERROR', msg: 'api error', path: c.req.routePath, request_id: auditContextOf(c).requestId, error: err.name }))
     return json(c, { error: 'internal' }, 500)
   })
 

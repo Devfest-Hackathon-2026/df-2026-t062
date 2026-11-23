@@ -93,10 +93,16 @@ test('用紙の直し: その様式だけの欄も、版の辞書の型で値に
 
 // ---------- 録音から AI が書いてよい欄 ----------
 
-test('録音から AI が書いてよい欄: 版が読む欄のうち、出どころに会話・書類・案がある欄。その様式だけの欄は説明書き（note）があるものだけ', () => {
+test('録音から AI が書いてよい欄: 版が読む欄のうち、出どころに会話・書類・案がある欄と、その様式だけの欄（説明書きがなくても。#152）', () => {
   const globals = FIELD_LIST.map((f) => f.key).filter((k) => ['person.name', 'person.address', 'family.members'].includes(k))
-  assert.deepEqual(writableFields(OFFICE_FORM).map((f) => f.key), [...globals, 'local.meetingPlace', 'local.hasPet', 'local.mood', 'local.nextVisit'],
-    '事業所の設定（office.name）と、note のない欄（local.visitCount）は入らない。fields.json の順、その様式だけの欄は local_fields の順')
+  assert.deepEqual(writableFields(OFFICE_FORM).map((f) => f.key), [...globals, 'local.meetingPlace', 'local.visitCount', 'local.hasPet', 'local.mood', 'local.nextVisit'],
+    '事業所の設定（office.name）は入らない。note のない欄（local.visitCount）も入る。fields.json の順、その様式だけの欄は local_fields の順')
+})
+
+test('入院時情報提供書の 5（在宅生活の展望）・6（カンファレンス）の欄は、会話から書ける（#152）', () => {
+  const keys = FIELD_LIST.filter((f) => f.key.startsWith('outlook.') || f.key.startsWith('conference.')).map((f) => f.key)
+  assert.equal(keys.length, 11)
+  assert.deepEqual(writableFields({ keys }).map((f) => f.key), keys)
 })
 
 test('全体のアセスメントの様式では、録音から書く欄の候補は今と同じ。指示文の「用紙の場所」も変わらない（今の動きの固定）', () => {
@@ -113,19 +119,19 @@ test('全体のアセスメントの様式では、録音から書く欄の候�
   assert.deepEqual(candidateFields(seedFormDef('assessment')), expected)
 })
 
-test('録音から書く欄の候補: 事業所の様式では、その様式だけの欄（note あり）も入る。用紙の場所は版のページから', () => {
+test('録音から書く欄の候補: 事業所の様式では、その様式だけの欄（note がなくても）も入る。用紙の場所は版のページから', () => {
   const specs = candidateFields(OFFICE_FORM)
   const mood = specs.find((s) => s.key === 'local.mood')!
   assert.deepEqual([mood.label, mood.type, mood.choices, mood.note, mood.source], ['きょうの様子', 'enum', ['良い', '普通', '悪い'], '面談のときの本人の様子', []])
   assert.match(mood.where, /p\.1 面談票/)
-  assert.equal(specs.some((s) => s.key === 'local.visitCount'), false)
+  assert.equal(specs.some((s) => s.key === 'local.visitCount'), true)
   assert.equal(specs.some((s) => s.key === 'intake.method'), false, '版が読まない欄は入らない')
 })
 
-test('AI の書き込みの計画: その様式だけの欄は、説明書き（note）のあるものだけ書く', () => {
+test('AI の書き込みの計画: その様式だけの欄は書く（説明書きがなくても。#152）。事業所の設定は書かない', () => {
   const plan = planBatch({}, { 'local.mood': { value: '良い' }, 'local.visitCount': { value: 3 }, 'office.name': { value: '別の事業所' } }, new Set(), fieldDict(LOCAL))
-  assert.deepEqual(plan.changes.map((c) => c.key), ['local.mood'])
-  assert.deepEqual(plan.skipped, [{ key: 'local.visitCount', reason: 'not-ai-field' }, { key: 'office.name', reason: 'not-ai-field' }])
+  assert.deepEqual(plan.changes.map((c) => c.key), ['local.mood', 'local.visitCount'])
+  assert.deepEqual(plan.skipped, [{ key: 'office.name', reason: 'not-ai-field' }])
 })
 
 // ---------- チャット ----------
@@ -246,7 +252,7 @@ test('API: 様式の版はその様式だけの欄の定義を渡し、直し（
   assert.deepEqual([after.fields['local.mood'].value, after.fields['local.hasPet'].value, after.fields['local.visitCount'].value], ['普通', true, 3])
 })
 
-test('worker: 録音から書く欄は、録音がつながった書類の版から決まる。版が読まない欄と、note のない欄は書かない', { skip }, async () => {
+test('worker: 録音から書く欄は、録音がつながった書類の版から決まる。版が読まない欄は書かない。note のない、その様式だけの欄は書く（#152）', { skip }, async () => {
   const doc = await newDocument()
   const { tx } = await import('../db/pool.ts')
   const repo = await import('../db/repo.ts')
@@ -280,7 +286,7 @@ test('worker: 録音から書く欄は、録音がつながった書類の版か
   const written = Object.fromEntries(rows.map((r) => [r.key, r.value]))
   assert.equal(written['local.mood'], '良い')
   assert.equal(written['person.address'], '見本市 2-2')
-  assert.equal(written['local.visitCount'], undefined, 'note のない、その様式だけの欄は書かない')
+  assert.equal(written['local.visitCount'], 5, 'note のない、その様式だけの欄も書く（#152）')
   assert.equal(written['intake.method'], undefined, '版が読まない欄は書かない')
   assert.equal(written['local.nextVisit'], undefined, '型の合わない値は落とす')
   const job = (await db.query('SELECT steps FROM jobs WHERE id = $1', [jobId])).rows[0]

@@ -70,7 +70,7 @@ test('移行の前と後で、どの書類にも同じ値が見え、利用者�
 test('書類の種類の最初の行: アセスメントが主な書類で、必須の欄は fields.json と同じ', { skip }, async () => {
   const rows = (await db.query('SELECT key, per_client, is_primary, create_from, required, topics, summary_mode FROM form_kinds ORDER BY key')).rows
   // care_plan_1〜3 は #90 で足した全体の種類（第1表だけアセスメントから写す）
-  assert.deepEqual(rows.map((r) => r.key), ['admission', 'assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3'])
+  assert.deepEqual(rows.map((r) => r.key), ['admission', 'assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7'])
   const assess = rows.find((r) => r.key === 'assessment')!
   const adm = rows.find((r) => r.key === 'admission')!
   assert.equal(assess.is_primary, true)
@@ -81,7 +81,9 @@ test('書類の種類の最初の行: アセスメントが主な書類で、必
   const { REQUIRED_ASSESS } = await import('../core/fields.ts')
   assert.deepEqual(assess.required, REQUIRED_ASSESS)
   assert.deepEqual(adm.required, [])
-  assert.deepEqual(adm.topics, [])
+  // #152 で入院時情報提供書も録音から書く（項目は 0009。中身は summary-job.test.ts）
+  assert.deepEqual(adm.topics.map((t: { id: string }) => t.id), ['basic', 'family', 'wishes', 'homeOutlook', 'conference'])
+  assert.equal(adm.summary_mode, 'single')
   const topics = assess.topics as { id: string, name: string, by: string, last: boolean, keys?: { first: string, later: string } }[]
   assert.equal(topics.filter((t) => t.by === 'ai' && !t.last).length, 23, '課題分析標準項目 23 項目')
   assert.equal(new Set(topics.map((t) => t.id)).size, topics.length, '項目の id は重ならない')

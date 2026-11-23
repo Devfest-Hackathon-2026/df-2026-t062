@@ -124,6 +124,15 @@ async function settled(prefix: '/api/office' | '/api/admin', token: string, id: 
 
 const row = async (id: string) => (await db.query('SELECT * FROM form_imports WHERE id = $1', [id])).rows[0]
 
+/** 上げたままの PDF を消した印（upload_deleted_at）が付くまで待つ。消すのは status を書いたあと（worker）なので、status だけ待つと印がまだ付いていないことがある */
+async function uploadRemoved(id: string) {
+  for (let i = 0; i < 200; i++) {
+    if ((await row(id)).upload_deleted_at) return
+    await new Promise((res) => setTimeout(res, 50))
+  }
+  throw new Error('上げたままの PDF の印が付かない')
+}
+
 test('責任者: PDF を上げる → 送り終わり → 変換 → 自分の事業所の様式の下書きの版。元の PDF と画像は事業所の場所に置き、上げたままの PDF は消す', { skip }, async () => {
   const pdf = await formPdf()
   const { id, complete } = await upload('/api/office', ADMIN_A, pdf)
@@ -132,6 +141,7 @@ test('責任者: PDF を上げる → 送り終わり → 変換 → 自分の�
   const done = await settled('/api/office', ADMIN_A, id)
   assert.equal(done.status, 'succeeded', JSON.stringify(done))
   assert.deepEqual(done.review, [])
+  await uploadRemoved(id)
 
   const v = (await db.query(
     `SELECT v.status, v.version, v.bindings, v.local_fields, v.base_pdf_sha256, v.pages, t.office_id, t.kind

@@ -27,6 +27,26 @@ resource "google_storage_bucket" "source" {
     enabled = false
   }
 
+  soft_delete_policy {
+    retention_duration_seconds = 259200
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.source_recording_lifecycle_enabled ? [1] : []
+
+    content {
+      action {
+        type = "Delete"
+      }
+
+      condition {
+        age            = 14
+        with_state     = "LIVE"
+        matches_prefix = ["recordings/"]
+      }
+    }
+  }
+
   # 録音の直接送信（resumable upload）のための CORS。画面の Origin だけを許す
   dynamic "cors" {
     for_each = length(var.app_origins) > 0 ? [1] : []

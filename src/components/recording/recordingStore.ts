@@ -4,6 +4,8 @@ const DB = 'careman-recordings'
 export interface PendingRecording {
   id: string
   clientId: string
+  /** 録音を始めた書類（#152）。これより前に端末に残した録音にはない（主な書類につなぐ） */
+  documentId?: string
   blob: Blob
   mime: string
   startedAt: number

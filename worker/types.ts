@@ -128,6 +128,8 @@ export interface Providers {
   documentWrite?: NonNullable<Providers['recording']>
   /** AI 点検の AI。点検 1 回ごとに新しく作る（使った量を数える） */
   inspect?: () => Llm
+  /** 書類を作るときに、元の書類から AI が書く（#195）。1 回ごとに新しく作る（使った量を数える） */
+  documentFill?: () => Llm
 }
 
 export const ZERO_USAGE: Usage = { calls: 0, promptTokens: 0, cachedTokens: 0, outputTokens: 0, thinkingTokens: 0, yen: 0 }

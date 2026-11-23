@@ -129,6 +129,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
             onChange={(t) => state.setValue(d.key, t === '' ? null : t)}
             onRevert={(t) => state.setValue(d.key, t === '' ? null : t, 'revert')}
             onSaveHunk={(i) => void state.saveHunk(d.key, i)} allowHunkSave={!combinedSave}
+            reviewOnDemand={combinedSave}
             onOpenChange={(o) => setDiffOpen(o ? s.name : '')}
           />
         </div>

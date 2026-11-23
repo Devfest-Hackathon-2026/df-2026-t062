@@ -75,6 +75,14 @@ const r2 = (v: number) => Math.round(v * 100) / 100
 /** マス・□ の一覧（番号: x0,y0-x1,y1） */
 export const listCells = (cs: Cell[]) => cs.map((c) => `${c.id}: ${c.x},${c.y}-${r2(c.x + c.w)},${r2(c.y + c.h)}`).join('\n')
 
+/** 時間割の書き方の指示（#147）。時刻の文字が 3 つ以上あるページにだけ入れ、ほかの様式の指示は変えない */
+const TIMETABLE = `  - 時間割のように、行が時刻の範囲を表す表（点線や罫線で時刻ごとに区切った行）は、マスの行ごとに 1 欄にし、範囲を「始め〜終わり」で書く（例: 月曜の列の 9:00〜10:00 の行は plan.weekly[day=月,start=09:00〜10:00].service）。
+    範囲は、表の左などに印字された時刻の文字が、どの行の高さにあるか（文字の y とマスの y）で決める。上から順に数えて決めない。
+    時刻の文字がない行は、上下の時刻の文字のある行から割り振る（印字が 2 時間おきで行が 1 時間ごとなら、1 時間ずつ）。
+    表の行は、いちばん下の行まで残さずすべて欄にする。始めの時刻がその範囲に入る予定が、すべてその欄に入る。
+`
+const timetable = (p: Pick<LayoutPage, 'words'>) => p.words.filter((w) => /^\d{1,2}:\d{2}$/.test(w.t)).length >= 3
+
 /** 1 回目の指示文。画像（1 枚目、何も書いていない様式）と一緒に渡す */
 export function firstPrompt(input: { page: Pick<LayoutPage, 'width' | 'height' | 'words' | 'hlines' | 'vlines'>, cells: Cell[], boxes: Cell[], catalog: string[] }): string {
   const { page, cells, boxes } = input
@@ -85,13 +93,16 @@ export function firstPrompt(input: { page: Pick<LayoutPage, 'width' | 'height' |
 - x, y, w, h: 欄の左上と幅・高さ（mm、ページの左上が原点）。座標は下の文字と罫線の数字を使って決める（画像から目で測らない）。
   欄は、印字の文字・□・罫線・ほかの欄のどれとも重ならない、空いた範囲だけにする。
   同じ枠の中に印字（□ のついた行など）があるときは、それを避けた残りにする。上下や左右に並ぶ欄どうしも重ねない。
-- ui: text（1 行の文字）、area（複数行の文章）、check（□ に ✓ を付ける）、circle（印字の選択肢を丸で囲む）
+- ui: text（1 行の文字）、area（複数行の文章）、check（□ に ✓ を付ける）、circle（印字の選択肢を丸で囲む）、diagram（図を描く枠）
+  - 家族構成図・家屋の見取図・人体図など、図を描く枠は、枠の内側全体を 1 欄（ui: diagram）にし、ref は一覧の型が image の key にする。
+    枠の中に印字の人体の絵や記号の説明があっても、枠の内側全体を 1 欄にする（この欄だけは印字と重なってよい）。枠が下の表のマスなら cell に番号を入れる。
+    合う image の key がないときは、図の枠でも ui: area の事業所だけの欄にする。
   - □ のついた選択肢は □ ごとに 1 欄（ui: check）。下の「□ の一覧」の番号を box に入れる（位置はプログラムが □ に合わせる）。一覧の □ は、ほぼすべてが記入欄。
   - □ のない選択肢（「A・B」と並んだ文字）を丸で囲むものは、選択肢ごとに 1 欄（ui: circle）。x, y, w, h は丸で囲む文字の位置。
   - 「年 月 日」の日付は、年・月・日を別の欄にし、part に y・m・d を入れる。元号の選択肢を丸で囲むものは ui: circle、part: era、mark は値がその元号。
 - ref: その欄に入れる値の key（下の一覧の書き方そのまま。[] は家族などの行）。
   - 行のうち特定の 1 行（一覧の「〜[].<印の名前>」が bool の印で選べる行）の欄は、[] の中にその印の名前を書く（例: people[isLeader].name）。何行目かが決まっているときは番号（[0]）でもよい。
-  - 印字の言い回しが key の名前と違っても、意味が同じならその key にする。ただし、key にするのは欄に書く中身がその key の意味と同じときだけ。話題が近くても、問いや選択肢の意味が違うなら事業所だけの欄にする。
+${timetable(page) ? TIMETABLE : ''}  - 印字の言い回しが key の名前と違っても、意味が同じならその key にする。ただし、key にするのは欄に書く中身がその key の意味と同じときだけ。話題が近くても、問いや選択肢の意味が違うなら事業所だけの欄にする。
   - 一覧のどの key も合わないときは、事業所だけの欄として local.<英字の名前>（例: local.meetingPlace）を ref にし、localFields にその定義を書く。
     同じ値を書く欄（同じ問いの選択肢の丸、年・月・日に分けた日付など）は、同じ local の key を使う。
   - □ や丸の選択肢は、その選択肢の文字（またはその書き出し）を選択肢に持つ key を探して ref にする。
@@ -153,7 +164,7 @@ export const FIRST_SCHEMA = {
         type: 'object',
         properties: {
           x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
-          ui: { type: 'string', enum: ['text', 'area', 'check', 'circle'] },
+          ui: { type: 'string', enum: ['text', 'area', 'check', 'circle', 'diagram'] },
           ref: { type: 'string' },
           mark: { type: 'object', properties: { kind: { type: 'string', enum: ['eq', 'none', 'true', 'false', 'empty', 'nonEmpty'] }, value: { type: 'string' } }, required: ['kind'] },
           part: { type: 'string', enum: ['y', 'm', 'd', 'era'] },

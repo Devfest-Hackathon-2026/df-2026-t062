@@ -137,3 +137,12 @@ test('saved diagram values generate a PDF with the normal export pipeline; empty
     assert.ok(filled.length > empty.length + 1000)
   } finally { await rm(folder, { recursive: true, force: true }) }
 })
+test('body map labels of nearby marks are stacked so long labels do not overlap (#198)', () => {
+  const doc = blank()
+  const knee = (id: string, x: number, side: string): Item => ({ id, kind: 'disability', label: `変形性膝関節症（${side}）`, x, y: 400, width: 40, height: 40, rotation: 0, view: 'front' } as Item)
+  doc.body.items = [knee('a', 140, '右膝'), knee('b', 175, '左膝'), knee('far', 600, '右肩')]
+  const svg = diagramSvg(doc, 'body')
+  const labelY = (id: string) => Number(svg.match(new RegExp(`data-object-id="${id}"[^>]*>(?:<text[^>]*>[^<]*</text>)<text x="[^"]*" y="([^"]*)"`))![1])
+  assert.ok(Math.abs(labelY('a') - labelY('b')) >= 17, 'labels of marks 35px apart must not share a line')
+  assert.equal(labelY('far'), labelY('a'), 'a mark far away keeps the default label position')
+})

@@ -241,9 +241,16 @@ test('事業所が直した項目: 書き足しと足した項目を合わせた
   assert.deepEqual((await summariesOf(c.documentId)).map((s) => s.topic), ['pet'], '直す前の録音で、一覧にない項目の答えは残さない')
 })
 
-test('まとめる項目が空の種類（入院時情報提供書）は、録音から書かない', { skip }, async () => {
+test('まとめる項目が空の種類は、録音から書かない', { skip }, async () => {
+  await db.query("INSERT INTO form_kinds (key, name, per_client, topics, summary_mode) VALUES ('notopics', '項目なし', 'many', '[]', 'single') ON CONFLICT DO NOTHING")
+  const { registerVersion } = await import('../db/forms.ts')
+  await registerVersion(db, {
+    kind: 'notopics', name: '項目なし', title: '項目なし', officeId: null, basePdfSha256: 'd'.repeat(64),
+    schemas: [[slot('本人の思い')]], bindings: { 本人の思い: { op: 'text@1', ui: 'text', ref: { key: 'complaint.person' } } },
+    pages: [{ no: 1, pdfIndex: 0, title: '項目なし', width: 210, height: 297 }],
+  }, { publish: true })
   const c = await newClient('項目なしの見本')
-  const created = await call(`/api/clients/${c.id}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })
+  const created = await call(`/api/clients/${c.id}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'notopics' }) })
   const docId = created.body.id as string
   const seen: Seen = { summarize: [], write: [] }
   const p = await providers(seen, () => ({ health: '話' }), () => ({ 'complaint.person': '書かない' }))
@@ -252,6 +259,29 @@ test('まとめる項目が空の種類（入院時情報提供書）は、録�
   assert.deepEqual([seen.summarize.length, seen.write.length], [0, 0])
   assert.equal((await db.query('SELECT status FROM jobs WHERE id = $1', [r.jobId])).rows[0].status, 'succeeded')
   assert.equal((await summariesOf(docId)).length, 0)
+})
+
+// #152: どの書類からでも録音できる。入院時情報提供書の録音は、入院時情報提供書の項目で要約し、その欄に書く
+test('入院時情報提供書の録音: 入院時情報提供書の項目で要約し、その書類の欄に書く。要約は録音ごとに単体（前の回を使わない）', { skip }, async () => {
+  const kind = (await db.query("SELECT topics, summary_mode FROM form_kinds WHERE key = 'admission'")).rows[0]
+  const topics = kind.topics as Topic[]
+  assert.equal(kind.summary_mode, 'single')
+  assert.deepEqual(topics.map((t) => t.id), ['basic', 'family', 'wishes', 'homeOutlook', 'conference'])
+  for (const t of topics) assert.ok(t.by === 'ai' && !t.last && t.guide.length >= 20, `${t.name} の説明`)
+
+  const c = await newClient('入院の見本')
+  const created = await call(`/api/clients/${c.id}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })
+  const docId = created.body.id as string
+  const seen: Seen = { summarize: [], write: [] }
+  const p = await providers(seen, () => ({ wishes: '本人は家に帰りたいと話した' }), () => ({ 'intention.person': '家に帰りたい' }))
+  const r1 = await upload(c.id, docId, '2026-11-10T01:00:00Z')
+  await run(r1.jobId, p)
+  assert.deepEqual(seen.summarize[0].topics, ['basic', 'family', 'wishes', 'homeOutlook', 'conference'])
+  assert.equal((await fieldsOf(docId))['intention.person']?.value, '家に帰りたい')
+  assert.equal((await fieldsOf(c.documentId))['intention.person'], undefined, 'アセスメントには書かない')
+  const r2 = await upload(c.id, docId, '2026-11-11T01:00:00Z')
+  await run(r2.jobId, p)
+  assert.deepEqual([seen.write[0].summaries.length, seen.write[1].summaries.length], [1, 1], '2 回目は前の回の要約を使わない')
 })
 
 test('本物の段（偽の Gemini）: 要約の行が DB に残り、欄の根拠はその行の id。選んでいない欄・切った文は入らない', { skip }, async () => {

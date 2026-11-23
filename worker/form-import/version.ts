@@ -3,9 +3,11 @@
 //   bindings     … 印字欄 → 値の対応（core/binding.ts。手で作った版と同じ書き方）
 //   pages        … ページ（core/form.ts の FormPage）
 //   localFields  … 事業所だけの欄の定義（form_template_versions.local_fields）
+//   （図の枠は image の印字欄と diagram@1。手で作った版と同じ）
 //   review       … 責任者に確かめてほしい欄（印字欄の名前と理由。form_imports.review）
 // 推測で決めたところは、確定した対応にせず review に書く（何行目か分からない、印の意味が分からない、ない key など）。
 import { checkBindings, specOf, type Binding, type Bindings, type Ref, type Step, type Test } from '../../core/binding.ts'
+import { diagramKinds } from '../../core/diagram/fields.ts'
 import { BY_KEY, choicesOf } from '../../core/fields.ts'
 import type { FormPage } from '../../core/form.ts'
 import type { PageDraft } from './convert.ts'
@@ -42,6 +44,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 function pdfmeSlot(name: string, s: DraftSlot): PdfmeSlot {
   const at = { name, content: '', position: { x: s.x, y: s.y }, width: s.w, height: s.h }
+  if (s.ui === 'diagram') return { ...at, type: 'image' }
   if (s.ui === 'circle') return { ...at, type: 'circleMark', content: 'false', rotate: 0, opacity: 1, color: FONT.fontColor, borderWidth: 0.3 }
   if (s.ui === 'check') {
     const size = clamp(Math.floor(Math.min(s.w, s.h) * PT_PER_MM * 0.9), 6, 12)
@@ -64,10 +67,16 @@ interface Parsed {
   ref: Ref
   /** 「[]」で、何行目か分からない */
   rowUnknown: boolean
+  /** 一覧の行を範囲を含む条件で選ぶ欄（key[欄=値,欄=始め〜終わり].欄）。条件に合う行をすべて読む */
+  rows?: { where: Record<string, Test>, show: string }
 }
 
+/** 1 桁の時（9:00）は 2 桁（09:00）にそろえる。値の一覧の時刻は HH:mm なので、文字のまま比べられるように */
+const padTime = (v: string) => (/^\d:\d\d$/.test(v) ? `0${v}` : v)
+const RANGE = /\s*[〜~～]\s*/
+
 /**
- * AI の key の書き方（key、key.欄、key[0].欄、key[印].欄、key[欄=値].欄、key[].欄）を Ref にする。
+ * AI の key の書き方（key、key.欄、key[0].欄、key[印].欄、key[欄=値].欄、key[欄=値,欄=値].欄、key[欄=始め〜終わり].欄、key[].欄）を Ref にする。
  * fields.json にない key・欄なら null
  */
 export function parseRef(text: string): Parsed | null {
@@ -75,6 +84,7 @@ export function parseRef(text: string): Parsed | null {
   if (!key) return null
   const path: Step[] = []
   let rowUnknown = false
+  let range: Record<string, Test> | null = null
   let rest = text.slice(key.length)
   while (rest) {
     const m = rest.match(/^\[([^\]]*)\]/) ?? rest.match(/^\.([A-Za-z][A-Za-z0-9_]*)/)
@@ -83,7 +93,24 @@ export function parseRef(text: string): Parsed | null {
       const inner = m[1]
       if (inner === '') { path.push(0); rowUnknown = true }
       else if (/^\d+$/.test(inner)) path.push(Number(inner))
-      else if (inner.includes('=')) { const [k, v] = inner.split('='); path.push({ match: { [k.trim()]: v.trim() } }) }
+      else if (inner.includes('=')) {
+        const match: Record<string, string> = {}
+        const where: Record<string, Test> = {}
+        let hasRange = false
+        for (const part of inner.split(',')) {
+          const eq = part.indexOf('=')
+          if (eq < 0) return null
+          const k = part.slice(0, eq).trim()
+          const v = part.slice(eq + 1).trim()
+          // 条件の項目が、その一覧の行の項目にあるか
+          if (!k || checkBindings({ x: { op: 'text@1', ui: 'text', ref: { key, path: [...path, 0, k] } } }).length) return null
+          const r = v.split(RANGE)
+          if (r.length === 2 && r[0] && r[1]) { where[k] = { between: [padTime(r[0]), padTime(r[1])] }; hasRange = true }
+          else { match[k] = padTime(v); where[k] = { eq: padTime(v) } }
+        }
+        if (hasRange) { if (range || path.length) return null; range = where }
+        path.push({ match })
+      }
       else path.push({ flag: inner })
     } else {
       path.push(m[1])
@@ -92,7 +119,12 @@ export function parseRef(text: string): Parsed | null {
   }
   const ref: Ref = path.length ? { key, path } : { key }
   // 欄の名前が fields.json にあるか（共通の確かめで見る）
-  if (checkBindings({ x: { op: 'text@1', ui: 'text', ref } }).length) return null
+  if (checkBindings({ x: { op: 'text@1', ui: 'text', ref: range ? { key, path: [0, ...path.slice(1)] } : ref } }).length) return null
+  if (range) {
+    // 範囲で選べるのは「一覧[条件].項目」の形だけ
+    if (path.length !== 2 || typeof path[1] !== 'string') return null
+    return { ref: { key }, rowUnknown: false, rows: { where: range, show: path[1] } }
+  }
   return { ref, rowUnknown }
 }
 
@@ -130,7 +162,8 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
   for (const p of sorted) {
     for (const msg of p.problems) review.push({ slot: '', reason: `${p.page} ページ: ${msg}` })
     const pageSlots: PdfmeSlot[] = []
-    p.slots.forEach((s, i) => {
+    p.slots.forEach((answered, i) => {
+      const s = diagramUi(answered)
       const base = `p${p.page}_${s.label.replace(/\s+/g, '').slice(0, 40) || '欄'}`
       let name = base
       for (let n = 2; used.has(name); n++) name = `${base}_${n}`
@@ -141,6 +174,7 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
         review.push({ slot: name, reason })
         return { key: fallbackKey }
       }
+      if (answered.ui === 'diagram' && s.ui !== 'diagram' && answered.ref) review.push({ slot: name, reason: `図の欄ではない key なので、文字の欄にした（${answered.ref}）` })
       bindings[name] = bindingOf(s, name, locals, toLocal, (reason) => review.push({ slot: name, reason }))
       pageSlots.push(pdfmeSlot(name, s))
     })
@@ -155,10 +189,22 @@ export function buildVersion(drafts: PageDraft[]): DraftVersion {
   return { schemas, bindings, pages, localFields: [...locals.values()].filter((d) => usedLocal.has(d.key)), review: [...review, ...conflicts] }
 }
 
+/**
+ * 図の欄（#128）。図の key（家族構成図・見取図・人体図）は、AI が文字の欄と答えても図の欄にする。
+ * 図の枠と答えても図の key でなければ、複数行の文字の欄にする（図は決まった key にしか描けない）
+ */
+function diagramUi(s: DraftSlot): DraftSlot {
+  const isDiagramKey = !!s.ref && !!diagramKinds[s.ref]
+  if (isDiagramKey && (s.ui === 'text' || s.ui === 'area')) return { ...s, ui: 'diagram' }
+  if (!isDiagramKey && s.ui === 'diagram') return { ...s, ui: 'area' }
+  return s
+}
+
 function bindingOf(
   s: DraftSlot, name: string, locals: Map<string, LocalField>,
   toLocal: (type: LocalField['type'], reason: string) => Ref, note: (reason: string) => void,
 ): Binding {
+  if (s.ui === 'diagram') return { op: 'diagram@1', ui: 'diagram', ref: { key: s.ref! } }
   const isMark = s.ui === 'check' || s.ui === 'circle'
   let parsed: Parsed | null = null
   if (s.ref?.startsWith('local.')) parsed = { ref: { key: s.ref }, rowUnknown: false }
@@ -166,6 +212,10 @@ function bindingOf(
   if (!parsed) {
     const ref = toLocal(isMark ? 'bool' : 'text', s.ref ? `値の一覧にない key なので、事業所だけの欄にした（${s.ref}）` : '値の key がないので、事業所だけの欄にした')
     return isMark ? { op: 'option@1', ui: s.ui as 'check' | 'circle', ref, is: { eq: true } } : { op: 'text@1', ui: s.ui === 'area' ? 'area' : 'text', ref }
+  }
+  if (parsed.rows) {
+    if (!isMark) return { op: 'join@1', ui: s.ui === 'area' ? 'area' : 'text', ref: parsed.ref, where: parsed.rows.where, show: parsed.rows.show, sep: '\n' }
+    return { op: 'option@1', ui: s.ui as 'check' | 'circle', ref: toLocal('bool', `範囲の条件で行を選べるのは文字の欄だけなので、事業所だけの欄にした（${s.ref}）`), is: { eq: true } }
   }
   let { ref } = parsed
   if (!isMark) {

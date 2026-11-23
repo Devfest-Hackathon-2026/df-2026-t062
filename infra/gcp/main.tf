@@ -8,6 +8,8 @@ resource "google_project_service" "required" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "identitytoolkit.googleapis.com",
+    "logging.googleapis.com",
+    "monitoring.googleapis.com",
     "run.googleapis.com",
     "speech.googleapis.com",
     "sqladmin.googleapis.com",
@@ -37,6 +39,13 @@ resource "google_service_account" "runtime" {
 resource "google_service_account" "worker" {
   account_id   = "cloud-run-worker-runtime"
   display_name = "Cloud Run worker runtime"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_service_account" "recording_cleanup" {
+  account_id   = "cloud-run-recording-cleanup"
+  display_name = "Cloud Run recording cleanup job"
 
   depends_on = [google_project_service.required]
 }

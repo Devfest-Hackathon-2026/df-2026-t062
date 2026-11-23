@@ -36,7 +36,7 @@ jobs:
       - run: npm ci
       - name: Install PDF renderer and Japanese fonts
         run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-noto-cjk
-      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
         env:
           E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/careman_e2e

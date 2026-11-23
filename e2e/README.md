@@ -8,11 +8,18 @@
 
 ```sh
 npm ci
-npx playwright install chromium webkit
+npx playwright install chromium   # iPad も流すときは chromium webkit
 # macOS: brew install poppler
 # Ubuntu: sudo apt-get install poppler-utils fonts-noto-cjk
-# Linuxでブラウザ用ライブラリがなければ npx playwright install --with-deps chromium webkit
+# Linuxでブラウザ用ライブラリがなければ npx playwright install --with-deps chromium
 E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run test:e2e
+```
+
+- いつもは PC（`pc-1920`）だけで流す。CI もこれだけ（#189。開発の途中は、6 構成を毎回流すと遅く、iPad の WebKit で関係のない理由でも落ちるため）。
+- ほかの大きさと iPad も流すときは `E2E_ALL=1` を付ける。リリースの前や、iPad の画面を変えたときに流す。
+
+```sh
+E2E_ALL=1 E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run test:e2e
 ```
 
 - 通常の `.env` / `DATABASE_URL` は読み込まない。`E2E_DATABASE_URL` はローカルホストに限定。
@@ -25,14 +32,14 @@ E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run te
 
 ```sh
 E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run test:e2e -- --project=pc-1920
-E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run test:e2e -- --project=ipad-11-portrait
+E2E_ALL=1 E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/careman npm run test:e2e -- --project=ipad-11-portrait
 npx playwright show-report
 # 失敗時はレポート内のtrace.zip、または npx playwright show-trace <trace.zip>
 ```
 
 ## 表示条件
 
-全6構成で、同じ3シナリオを実行する。`?ui=pad` は指定せず、タッチ入力によるiPad画面への自動切替も検証する。`innerWidth` が設定値と一致することを検査し、ブラウザズームで寸法が変わった検証を除外する。
+`E2E_ALL=1` のときは全6構成で、同じシナリオを実行する（いつもは pc-1920 だけ）。`?ui=pad` は指定せず、タッチ入力によるiPad画面への自動切替も検証する。`innerWidth` が設定値と一致することを検査し、ブラウザズームで寸法が変わった検証を除外する。
 
 | プロジェクト | CSS px（幅 × 高さ） | ブラウザ / 入力 |
 | --- | --- | --- |

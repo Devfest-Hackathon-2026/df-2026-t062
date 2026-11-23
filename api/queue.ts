@@ -1,6 +1,6 @@
 // ジョブを積む。
 //   QUEUE_MODE=tasks: Cloud Tasks。worker の /tasks/jobs/<id>/run（録音）・/tasks/form-imports/<id>/run（様式の取り込み）・
-//     /tasks/inspections/<id>/run（AI 点検）を OIDC トークンつきで呼ぶ
+//     /tasks/inspections/<id>/run（AI 点検）・/tasks/document-fills/<id>/run（書類を作るときに AI が書く）を OIDC トークンつきで呼ぶ
 //   QUEUE_MODE=local（既定）: 同じプロセスで worker の処理を呼ぶ（ローカルとテスト）
 export interface Queue {
   enqueueDocumentInput?(id: string, options?: { initial: boolean }): Promise<void>
@@ -10,6 +10,9 @@ export interface Queue {
   enqueueFormImport(importId: string, options?: { initial: boolean }): Promise<void>
   /** AI 点検 */
   enqueueInspection(inspectionId: string, options?: { initial: boolean }): Promise<void>
+  enqueueRetentionHold?(recordingId: string, operationVersion: string): Promise<void>
+  /** 書類を作るときに AI が書く（#195） */
+  enqueueDocumentFill?(fillId: string, options?: { initial: boolean }): Promise<void>
 }
 
 export class CloudTasksQueue implements Queue {
@@ -36,7 +39,15 @@ export class CloudTasksQueue implements Queue {
     return this.createTask(`inspection-${inspectionId}`, `/tasks/inspections/${inspectionId}/run`, options)
   }
 
-  private async createTask(name: string, path: string, options?: { initial: boolean }) {
+  enqueueDocumentFill(fillId: string, options?: { initial: boolean }) {
+    return this.createTask(`document-fill-${fillId}`, `/tasks/document-fills/${fillId}/run`, options)
+  }
+
+  enqueueRetentionHold(recordingId: string, operationVersion: string) {
+    return this.createTask(`retention-hold-${recordingId}-${operationVersion}`, `/tasks/recordings/${recordingId}/retention-hold-sync`, undefined, { recordingId, operationVersion })
+  }
+
+  private async createTask(name: string, path: string, options?: { initial: boolean }, body: Record<string, unknown> = {}) {
     const { TASKS_QUEUE, WORKER_URL, TASKS_INVOKER_SA } = this.env
     if (!TASKS_QUEUE || !WORKER_URL || !TASKS_INVOKER_SA) throw new Error('TASKS_QUEUE・WORKER_URL・TASKS_INVOKER_SA を設定してください')
     this.client ??= import('@google-cloud/tasks').then((m) => new m.CloudTasksClient())
@@ -52,7 +63,7 @@ export class CloudTasksQueue implements Queue {
           httpMethod: 'POST',
           url: `${WORKER_URL}${path}`,
           headers: { 'Content-Type': 'application/json' },
-          body: Buffer.from('{}').toString('base64'),
+          body: Buffer.from(JSON.stringify(body)).toString('base64'),
           // audience は worker の URL（パスを含めない）
           oidcToken: { serviceAccountEmail: TASKS_INVOKER_SA, audience: WORKER_URL },
         },
@@ -68,6 +79,8 @@ export class LocalQueue implements Queue {
   private runImport: (importId: string) => Promise<void>
   private runDocument: (id: string) => Promise<void>
   private runInspection: (inspectionId: string) => Promise<void>
+  private runRetentionHold: (recordingId: string, operationVersion: string) => Promise<void>
+  private runFill: (fillId: string) => Promise<void>
   private tail = Promise.resolve()
 
   constructor(
@@ -75,11 +88,15 @@ export class LocalQueue implements Queue {
     runImport: (importId: string) => Promise<void> = async () => {},
     runInspection: (inspectionId: string) => Promise<void> = async () => {},
     runDocument: (id: string) => Promise<void> = async () => {},
+    runRetentionHold: (recordingId: string, operationVersion: string) => Promise<void> = async () => {},
+    runFill: (fillId: string) => Promise<void> = async () => {},
   ) {
     this.run = run
     this.runImport = runImport
     this.runInspection = runInspection
     this.runDocument = runDocument
+    this.runRetentionHold = runRetentionHold
+    this.runFill = runFill
   }
 
   async enqueue(jobId: string) {
@@ -96,6 +113,14 @@ export class LocalQueue implements Queue {
 
   async enqueueInspection(inspectionId: string) {
     this.later(() => this.runInspection(inspectionId), { msg: 'inspection failed', inspectionId })
+  }
+
+  async enqueueRetentionHold(recordingId: string, operationVersion: string) {
+    this.later(() => this.runRetentionHold(recordingId, operationVersion), { msg: 'retention hold sync failed', recordingId })
+  }
+
+  async enqueueDocumentFill(fillId: string) {
+    this.later(() => this.runFill(fillId), { msg: 'document fill failed', fillId })
   }
 
   // ローカルには見回りがないため、先の処理が終わってから次を処理する。

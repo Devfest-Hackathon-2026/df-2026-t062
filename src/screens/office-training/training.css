@@ -1,0 +1,117 @@
+/* AI 特訓部屋（#115）。#154 で採用した試作（prototypes/154-ai-training-room の案 5）の見た目のまま。.tr-room の中だけに効く */
+.tr-room {
+  --ink: #162033; --muted: #667085; --subtle: #98a2b3; --line: #e3e8ef; --line-2: #d0d7e2;
+  --surface: #ffffff; --canvas: #f5f7fa; --brand: #2f61c8; --brand-dark: #214da8; --brand-soft: #edf3ff;
+  --success: #13795b; --success-soft: #e9f8f1; --warning: #a86113; --warning-soft: #fff4e5;
+  --hl: #fff1c2; --me: #2f61c8; --on-brand: #ffffff;
+  max-width: 1240px; color: var(--ink); font-size: 15px; line-height: 1.65;
+}
+.tr-room button, .tr-room input { font: inherit; color: inherit; }
+.tr-room button { cursor: pointer; }
+.tr-room :focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 35%, transparent); outline-offset: 2px; }
+.tr-room h1, .tr-room h2, .tr-room h3, .tr-room p { margin: 0; }
+.tr-room .titlerow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.tr-room .h1 { font-size: 22px; font-weight: 800; text-wrap: balance; }
+.tr-room .b { min-height: 38px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--surface); font-weight: 700; font-size: 14px; }
+.tr-room .b:hover { border-color: var(--brand); }
+.tr-room .b.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.tr-room .b:disabled { opacity: .6; cursor: default; }
+
+/* チャット */
+.tr-room .chatbox { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.tr-room .log { flex: none; padding: 22px 22px 8px; display: flex; flex-direction: column; gap: 16px; overflow: auto; height: 560px; }
+.tr-room .msg { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: start; max-width: 620px; }
+.tr-room .msg > img { width: 52px; height: 32px; object-fit: contain; margin-top: 4px; }
+.tr-room .bub { background: var(--canvas); border-radius: 4px 16px 16px 16px; padding: 10px 14px; min-width: 0; }
+.tr-room .bub .sub { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+.tr-room .bub .box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; }
+.tr-room .bub .box b { display: block; font-size: 12px; color: var(--muted); }
+.tr-room .me { align-self: flex-end; max-width: 520px; background: var(--me); color: #fff; border-radius: 16px 4px 16px 16px; padding: 9px 14px; }
+.tr-room .tr-think { color: var(--muted); }
+.tr-room .compose { display: flex; gap: 10px; padding: 10px 16px 14px; border-top: 1px solid var(--line); }
+.tr-room .compose input { flex: 1; min-width: 0; height: 46px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); }
+.tr-room .compose .b { min-height: 46px; }
+
+/* 項目の一覧＋チャット */
+.tr-room .map { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; margin-top: 14px; align-items: start; }
+.tr-room .tree { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 10px; max-height: 680px; overflow: auto; }
+.tr-room .tree h2 { font-size: 14px; font-weight: 800; padding: 0 8px; }
+.tr-room .ti { width: 100%; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 6px; border: 0; background: none; text-align: left; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.tr-room .ti:hover { background: var(--canvas); }
+.tr-room .ti[aria-current="true"] { background: var(--brand-soft); color: var(--brand-dark); font-weight: 700; }
+.tr-room .ti .st { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line-2); display: grid; place-items: center; font-size: 11px; margin-top: 2px; }
+.tr-room .ti .st.ok { border-color: var(--brand); background: var(--brand); color: var(--on-brand); }
+.tr-room .ti .st.add { border-color: var(--success); background: var(--success); color: var(--on-brand); }
+.tr-room .ti .taught { grid-column: 2; font-size: 12px; color: var(--success); font-weight: 600; }
+.tr-room .tr-add { margin-top: 6px; color: var(--brand-dark); font-weight: 700; }
+.tr-room .tr-add .st { border-style: dashed; border-color: var(--brand); color: var(--brand); }
+
+.tr-room .hello { font-size: 19px; font-weight: 800; letter-spacing: .01em; }
+.tr-room .ba { margin-top: 10px; display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 10px; align-items: stretch; }
+.tr-room .ba-col { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.tr-room .ba-col:last-child { border-color: color-mix(in srgb, var(--success) 45%, transparent); background: var(--success-soft); }
+.tr-room .ba-l { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+.tr-room .ba-v { font-size: 15px; font-weight: 700; }
+.tr-room .ba-v.old { color: var(--muted); font-weight: 600; }
+.tr-room .ba-v.new { color: var(--success); }
+.tr-room .ba-arrow { align-self: center; font-size: 20px; color: var(--success); font-weight: 800; }
+.tr-room .soft { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+/* 特訓度とご褒美 */
+.tr-room .col5 { display: flex; flex-direction: column; min-width: 0; }
+.tr-room .chatbox.flat { border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0; }
+.tr-room .lv { position: relative; display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 12px; align-items: center; padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+.tr-room .lvcat { width: 64px; height: 44px; object-fit: contain; border-radius: 10px; }
+.tr-room .lvcat.jump { animation: tr-jump .5s cubic-bezier(.3,1.6,.5,1); object-fit: cover; }
+@keyframes tr-jump { 0% { transform: translateY(0) scale(1); } 40% { transform: translateY(-8px) scale(1.08); } 100% { transform: none; } }
+.tr-room .lvtop { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.tr-room .lvl { font-size: 12px; font-weight: 700; color: var(--muted); }
+.tr-room .pct { font-size: 28px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--brand-dark); }
+.tr-room .pct small { font-size: 14px; margin-left: 1px; }
+.tr-room .pct.pop { animation: tr-pop .45s ease-out; display: inline-block; }
+@keyframes tr-pop { 0% { transform: scale(1); } 35% { transform: scale(1.25); color: var(--success); } 100% { transform: scale(1); } }
+.tr-room .combo { font-size: 12px; font-weight: 800; color: var(--warning); background: var(--warning-soft); padding: 2px 10px; border-radius: 99px; animation: tr-pop .45s ease-out; }
+.tr-room .lvtaught { margin-left: auto; font-size: 13px; color: var(--muted); }
+.tr-room .lvtaught b { color: var(--success); font-size: 16px; }
+.tr-room .segs { display: grid; gap: 3px; margin-top: 8px; }
+.tr-room .segs i { height: 8px; border-radius: 3px; background: var(--line); transition: background .3s; }
+.tr-room .segs i.ok { background: var(--brand); }
+.tr-room .segs i.tg { background: var(--success); }
+.tr-room .segs i.cur { box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 40%, transparent); }
+.tr-room .plus5 { position: absolute; right: 22px; top: 8px; font-weight: 800; color: var(--success); animation: tr-floatup 1s ease-out forwards; pointer-events: none; }
+@keyframes tr-floatup { from { opacity: 1; transform: translateY(6px); } to { opacity: 0; transform: translateY(-22px); } }
+.tr-room .secrow { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--muted); padding: 10px 8px 4px; }
+.tr-room .secn.full { color: var(--success); }
+.tr-room .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.tr-room .badge { font-size: 13px; font-weight: 800; padding: 4px 12px; border-radius: 99px; background: var(--success-soft); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); animation: tr-pop .5s ease-out; }
+.tr-room .slidein { animation: tr-slidein .28s ease-out; }
+@keyframes tr-slidein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.tr-room .box .addline { display: block; margin-top: 4px; color: var(--success); font-weight: 700; }
+.tr-room .addline.grow { animation: tr-grow 1.4s ease-out; border-radius: 4px; }
+@keyframes tr-grow { 0% { background: var(--hl); transform: scale(1.04); } 100% { background: transparent; transform: none; } }
+.tr-room .growcard { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--success-soft); border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); }
+.tr-room .growcard .gk { font-size: 12px; font-weight: 800; color: var(--success); letter-spacing: .04em; }
+.tr-room .growcard .undo { margin-top: 6px; border: 0; background: none; color: var(--muted); font-size: 12px; text-decoration: underline; padding: 0; }
+.tr-room .growcard.undone { opacity: .5; }
+.tr-room .growcard.undone .gk::after { content: "（取り消しました）"; }
+.tr-room .happy { width: 96px; height: 96px; object-fit: cover; border-radius: 50%; display: block; }
+.tr-room .cert { margin-top: 8px; padding: 16px 18px; border-radius: 14px; border: 2px solid var(--success); background: var(--surface); text-align: center; animation: tr-slidein .4s ease-out; }
+.tr-room .cert-k { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--on-brand); background: var(--success); padding: 2px 12px; border-radius: 99px; }
+.tr-room .cert-t { font-size: 18px; font-weight: 800; margin-top: 6px; }
+.tr-room .cert-s { display: flex; justify-content: center; gap: 18px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.tr-room .cert-s b { font-size: 20px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tr-room .cert p { margin-top: 6px; font-size: 14px; }
+.tr-confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+
+/* 返事のボタンを大きく。最初のボタン（前に進む方）を主役にする */
+.tr-room .quick { display: flex; flex-wrap: wrap; padding: 0 0 0 62px; gap: 10px; }
+.tr-room .qr { min-height: 50px; padding: 0 26px; border-radius: 12px; font-size: 16px; border: 1.5px solid var(--brand); color: var(--brand-dark); background: var(--surface); font-weight: 700; }
+.tr-room .qr:hover { background: var(--brand-soft); }
+.tr-room .qr:first-child { background: var(--brand); border-color: var(--brand); color: var(--on-brand); box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 30%, transparent); animation: tr-nudge 2.4s ease-in-out 1s infinite; }
+.tr-room .qr:first-child:hover { background: var(--brand-dark); }
+.tr-room .qr:first-child::after { content: "  →"; }
+@keyframes tr-nudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-3px); } 90% { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .tr-room .lvcat.jump, .tr-room .pct.pop, .tr-room .combo, .tr-room .badge, .tr-room .slidein, .tr-room .addline.grow, .tr-room .cert, .tr-room .plus5, .tr-room .qr:first-child { animation: none; }
+  .tr-room .plus5 { display: none; }
+}

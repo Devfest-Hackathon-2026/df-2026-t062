@@ -27,6 +27,7 @@ COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node api/ ./api/
 COPY --chown=node:node core/ ./core/
 COPY --chown=node:node db/ ./db/
+COPY --chown=node:node storage/ ./storage/
 COPY --chown=node:node worker/ ./worker/
 # 様式は DB の版を使う。forms/seed（登録する様式のデータ）と forms/admin（npm run forms:seed・forms:rebase・forms:check）だけを入れる。
 # 様式を作る道具（forms/tools）と元の PDF は入れない（PDF とページの画像は非公開の置き場）

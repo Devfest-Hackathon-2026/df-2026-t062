@@ -44,7 +44,9 @@ const view = (r: Record<string, unknown>): FormImportView => ({
 // ---------- api ----------
 
 export async function createImport(db: Db, scope: ImportScope, kind: string, createdBy: string | null): Promise<FormImportView> {
-  if (!(await db.query('SELECT 1 FROM form_kinds WHERE key = $1', [kind])).rows.length) throw new BadRequest('書類の種類がありません')
+  // 事業所は、全体の種類か自分の事業所の種類だけ。全体の様式（サイト管理者）は全体の種類だけ（#153）
+  const k = (await db.query('SELECT office_id, retired_at FROM form_kinds WHERE key = $1', [kind])).rows[0]
+  if (!k || (k.office_id !== null && k.office_id !== scope.officeId) || k.retired_at !== null) throw new BadRequest('書類の種類がありません')
   const r = await db.query(`INSERT INTO form_imports (office_id, kind, created_by) VALUES ($1, $2, $3) RETURNING ${COLUMNS}`, [scope.officeId, kind, createdBy])
   return view(r.rows[0])
 }

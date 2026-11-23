@@ -68,3 +68,9 @@ resource "google_sql_user" "worker" {
   name     = local.worker_db_user
   type     = "CLOUD_IAM_SERVICE_ACCOUNT"
 }
+
+resource "google_sql_user" "recording_cleanup" {
+  instance = google_sql_database_instance.main.name
+  name     = local.cleanup_db_user
+  type     = "CLOUD_IAM_SERVICE_ACCOUNT"
+}
