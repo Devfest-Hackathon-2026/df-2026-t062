@@ -615,7 +615,7 @@ export async function createCarePlan(db: Db, staff: Staff, clientId: string, inp
 
     const docIds: Record<1 | 2 | 3, string> = { 1: '', 2: '', 3: '' }
     for (const formNo of [1, 2, 3] as const) {
-      const doc = await createDocumentInTx(c, staff, clientId, `care_plan_${formNo}`)
+      const doc = await createDocumentInTx(c, staff, clientId, `care_plan_${formNo}`, { copySourceOnCreate: formNo === 1 })
       docIds[formNo] = doc.id
       await c.query('INSERT INTO care_plan_documents (plan_id, form_no, document_id) VALUES ($1,$2,$3)', [plan.id, formNo, doc.id])
     }

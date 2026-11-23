@@ -66,9 +66,10 @@ export async function runDocumentFill(deps: WorkerDeps, id: string, context?: Wo
     const form = await loadFormDef(db, target.template_version_id)
     const fields = await readFields(db, target.id)
     const values = Object.fromEntries(Object.entries(fields).filter(([, f]) => f.value !== null).map(([k, f]) => [k, f.value]))
-    // 写した値: 作ったときの写し（copy）で入り、まだ AI の値のままの欄
-    const copyBatch = (await db.query("SELECT changes FROM batches WHERE document_id = $1 AND kind = 'copy' ORDER BY created_at LIMIT 1", [target.id])).rows[0]
-    const copied = new Set<string>(((copyBatch?.changes ?? []) as { key: string }[]).map((c) => c.key).filter((k) => fields[k]?.by === 'ai'))
+    // 現在値の由来を見る。事業所設定の copy と、以前の AI 処理で更新済みの値は含めない。
+    const copies = await db.query("SELECT id FROM batches WHERE document_id = $1 AND kind = 'copy' AND label LIKE '%から写した'", [target.id])
+    const copyIds = new Set(copies.rows.map(({ id }) => id))
+    const copied = new Set(Object.keys(fields).filter((key) => fields[key].by === 'ai' && copyIds.has(fields[key].batchId)))
     const targets = fillTargets(form, Object.fromEntries(Object.entries(fields).map(([k, f]) => [k, { value: f.value, by: f.by }])), copied)
 
     // 4. 材料を集める

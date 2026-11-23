@@ -274,6 +274,10 @@ run "private_service_with_scoped_deployer" {
       google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
       length(google_monitoring_alert_policy.recording_cleanup_overdue.notification_channels) == 1 &&
       length(google_monitoring_alert_policy.recording_cleanup_final_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_mismatch.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_sync_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_no_success.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_scheduler_error.notification_channels) == 1 &&
       google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
     )
     error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."
@@ -345,6 +349,37 @@ run "recording_cleanup_scheduler_can_be_enabled_explicitly" {
   assert {
     condition     = !google_cloud_scheduler_job.recording_cleanup.paused
     error_message = "The recording cleanup Scheduler must be resumable only through an explicit Terraform variable."
+  }
+}
+
+run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
+  command = plan
+
+  variables {
+    project_id                         = "mock-project"
+    github_repository_id               = "1447301909"
+    github_repository_owner_id         = "234936919"
+    app_origins                        = []
+    source_recording_lifecycle_enabled = true
+  }
+
+  assert {
+    condition = (
+      one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.age]) == 30 &&
+      one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.with_state]) == "LIVE" &&
+      toset(one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.matches_prefix])) == toset(["recordings/"]) &&
+      one([for a in google_storage_bucket.source.lifecycle_rule[0].action : a.type]) == "Delete"
+    )
+    error_message = "The enabled source Lifecycle must be a 30-day LIVE recordings-only safety net."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_bucket.output.lifecycle_rule) == 0 &&
+      length(google_storage_bucket.work.lifecycle_rule) == 1 &&
+      length(google_storage_bucket.forms.lifecycle_rule) == 0
+    )
+    error_message = "The source Lifecycle safety net must not be applied to output or forms, and must not replace work cleanup."
   }
 }
 

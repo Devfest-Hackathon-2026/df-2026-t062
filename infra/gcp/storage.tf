@@ -40,7 +40,7 @@ resource "google_storage_bucket" "source" {
       }
 
       condition {
-        age            = 14
+        age            = 30
         with_state     = "LIVE"
         matches_prefix = ["recordings/"]
       }

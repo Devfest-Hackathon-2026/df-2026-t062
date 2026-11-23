@@ -3,13 +3,14 @@ import { writeBusinessAudit, writeBusinessAuditBatch, type AuditContext } from '
 import { tx, type Db, type Tx } from './pool.ts'
 import { decimalString, type DecimalString, type SourceObjectErrorCode } from '../storage/source-object-control.ts'
 
-export const RECORDING_RETENTION_POLICY_VERSION = 'recording-retention-v1'
-export const RECORDING_MAX_RETENTION_DAYS = 7
-export const RECORDING_SUCCESS_RETENTION_HOURS = 72
+export const RECORDING_RETENTION_POLICY_VERSION = 'recording-retention-v2'
+export const RECORDING_MAX_RETENTION_DAYS = 14
 export const RECORDING_HOLD_MAX_DAYS = 90
 export const RECORDING_DELETE_LEASE_MINUTES = 15
 export const RECORDING_DELETE_MAX_ATTEMPTS = 6
 export const SOURCE_SOFT_DELETE_RETENTION_SECONDS = 3 * 24 * 60 * 60
+export const INTERMEDIATE_RETENTION_DAYS = 14
+export const INTERMEDIATE_DELETE_LEASE_MINUTES = 15
 
 export const SOURCE_DELETE_STATUSES = ['pending', 'eligible', 'requested', 'deleting', 'deleted', 'failed'] as const
 export type SourceDeleteStatus = typeof SOURCE_DELETE_STATUSES[number]
@@ -40,6 +41,9 @@ export interface RecordingRetentionState {
   sourceDeletedAt: string | null
   sourceDeleteStatus: SourceDeleteStatus
   sourcePurgeExpectedAt: string | null
+  intermediateExpiresAt: string
+  intermediateDeleteStatus: 'pending' | 'deleting' | 'deleted' | 'failed'
+  intermediateDeletedAt: string | null
   retentionPolicyVersion: string
   retentionHold: boolean
   retentionHoldTarget: boolean
@@ -71,6 +75,16 @@ export interface ClaimedDeletionCandidate extends RecordingDeletionCandidate {
   attempts: number
 }
 
+export interface ClaimedIntermediateDeletionCandidate {
+  recordingId: string
+  officeId: string
+  clientId: string
+  documentId: string
+  intermediateExpiresAt: string
+  claimToken: string
+  attempts: number
+}
+
 export interface HoldSyncCandidate {
   recordingId: string
   officeId: string
@@ -93,6 +107,11 @@ export interface RecordingRetentionObservability {
   finalFailureCount: number
   unsyncedHoldCount: number
   escalatedHoldCount: number
+  intermediateOverdueCount: number
+  intermediateMissingExpiryCount: number
+  intermediateStuckCount: number
+  intermediateFailedPastRetryCount: number
+  intermediateFinalFailureCount: number
 }
 
 export interface RetentionHoldVerificationCandidate {
@@ -111,6 +130,9 @@ function state(row: Record<string, unknown>): RecordingRetentionState {
     sourceDeletedAt: iso(row.source_deleted_at),
     sourceDeleteStatus: row.source_delete_status as SourceDeleteStatus,
     sourcePurgeExpectedAt: iso(row.source_purge_expected_at),
+    intermediateExpiresAt: new Date(row.intermediate_expires_at as string).toISOString(),
+    intermediateDeleteStatus: row.intermediate_delete_status as RecordingRetentionState['intermediateDeleteStatus'],
+    intermediateDeletedAt: iso(row.intermediate_deleted_at),
     retentionPolicyVersion: row.retention_policy_version as string,
     retentionHold: row.retention_hold as boolean,
     retentionHoldTarget: row.retention_hold_target as boolean,
@@ -144,6 +166,8 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
   const updated = (await db.query(
     `UPDATE recordings
         SET source_expires_at = recorded_at + make_interval(days => $3),
+            intermediate_expires_at = recorded_at + make_interval(days => $3),
+            retention_policy_version = $4,
             source_delete_status = CASE
               WHEN retention_hold OR retention_hold_target OR retention_hold_sync_status <> 'synced' THEN 'pending'
               WHEN recorded_at + make_interval(days => $3) <= now() THEN 'eligible'
@@ -151,7 +175,7 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
             END
       WHERE id = $1 AND office_id = $2 AND source_delete_status IN ('pending', 'eligible')
       RETURNING id, source_delete_status`,
-    [recordingId, context.officeId, RECORDING_MAX_RETENTION_DAYS],
+    [recordingId, context.officeId, RECORDING_MAX_RETENTION_DAYS, RECORDING_RETENTION_POLICY_VERSION],
   )).rows[0]
   if (!updated) return null
   await retentionAudit(db, { ...context, action: 'recording.retention_set', recordingId, detail: {
@@ -160,36 +184,145 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
   return updated.source_delete_status as SourceDeleteStatus
 }
 
-export async function setRecordingSuccessRetention(db: Db | Tx, jobId: string, context: RecordingRetentionContext) {
-  const before = (await db.query(
-    `SELECT r.id, r.client_id, r.document_id, r.source_delete_status
-       FROM recordings r JOIN jobs j ON j.recording_id = r.id
-      WHERE j.id = $1 AND r.office_id = $2 FOR UPDATE OF r`,
-    [jobId, context.officeId],
-  )).rows[0]
-  if (!before) throw new Error('recording_not_found')
-  const updated = (await db.query(
-    `UPDATE recordings
-        SET source_expires_at = LEAST(source_expires_at, recorded_at + make_interval(days => $2), now() + make_interval(hours => $3)),
-            source_delete_status = CASE
-              WHEN retention_hold OR retention_hold_target OR retention_hold_sync_status <> 'synced' THEN 'pending'
-              WHEN LEAST(source_expires_at, recorded_at + make_interval(days => $2), now() + make_interval(hours => $3)) <= now() THEN 'eligible'
-              ELSE 'pending'
-            END
-      WHERE id = $1 AND source_delete_status IN ('pending', 'eligible') RETURNING id, source_delete_status`,
-    [before.id, RECORDING_MAX_RETENTION_DAYS, RECORDING_SUCCESS_RETENTION_HOURS],
-  )).rows[0]
-  if (!updated) return null
-  await retentionAudit(db, { ...context, clientId: context.clientId ?? before.client_id, documentId: context.documentId ?? before.document_id,
-    action: 'recording.retention_set', recordingId: before.id,
-    detail: { previousStatus: before.source_delete_status, nextStatus: updated.source_delete_status, trigger: 'ai_complete', jobId },
+export async function claimIntermediateDeletionCandidates(db: Db, limit = 100): Promise<ClaimedIntermediateDeletionCandidate[]> {
+  const token = randomUUID()
+  const rows = (await db.query(
+    `WITH candidates AS (
+       SELECT id
+         FROM recordings
+        WHERE intermediate_expires_at <= now()
+          AND intermediate_deleted_at IS NULL
+          AND NOT retention_hold
+          AND NOT retention_hold_target
+          AND (
+            (intermediate_delete_status = 'pending')
+            OR (intermediate_delete_status = 'failed' AND intermediate_delete_next_retry_at <= now())
+            OR (intermediate_delete_status = 'deleting' AND intermediate_delete_claimed_at <= now() - interval '${INTERMEDIATE_DELETE_LEASE_MINUTES} minutes')
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM jobs j
+             WHERE j.recording_id = recordings.id AND j.status IN ('queued', 'processing')
+          )
+        ORDER BY intermediate_expires_at, id
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+    )
+    UPDATE recordings r
+       SET intermediate_delete_status = 'deleting',
+           intermediate_delete_claim_token = $2,
+           intermediate_delete_claimed_at = now(),
+           intermediate_delete_last_attempt_at = now(),
+           intermediate_delete_attempts = intermediate_delete_attempts + 1,
+           intermediate_delete_next_retry_at = NULL,
+           intermediate_delete_last_error_code = NULL
+      FROM candidates c
+     WHERE r.id = c.id
+     RETURNING r.id, r.office_id, r.client_id, r.document_id, r.intermediate_expires_at, r.intermediate_delete_attempts`,
+    [limit, token],
+  )).rows
+  return rows.map((row) => ({
+    recordingId: row.id,
+    officeId: row.office_id,
+    clientId: row.client_id,
+    documentId: row.document_id,
+    intermediateExpiresAt: new Date(row.intermediate_expires_at).toISOString(),
+    claimToken: token,
+    attempts: row.intermediate_delete_attempts,
+  }))
+}
+
+export async function markIntermediateDataDeleted(db: Db, candidate: ClaimedIntermediateDeletionCandidate) {
+  return tx(db, async (c) => {
+    const claimed = (await c.query(
+      `SELECT office_id, client_id, document_id
+         FROM recordings
+        WHERE id = $1 AND intermediate_delete_status = 'deleting'
+          AND intermediate_delete_claim_token = $2
+        FOR UPDATE`,
+      [candidate.recordingId, candidate.claimToken],
+    )).rows[0]
+    if (!claimed) return false
+    const transcripts = (await c.query(
+      'DELETE FROM transcripts WHERE recording_id = $1 RETURNING recording_id',
+      [candidate.recordingId],
+    )).rowCount ?? 0
+    const summaries = (await c.query(
+      'DELETE FROM recording_summaries WHERE recording_id = $1 RETURNING id',
+      [candidate.recordingId],
+    )).rowCount ?? 0
+    const draftRedactions = (await c.query(
+      `UPDATE care_record_drafts
+          SET source = jsonb_set(
+            source,
+            '{recordings}',
+            COALESCE(
+              (SELECT jsonb_agg(CASE WHEN recording->>'id' = $1::text THEN recording - 'utterances' ELSE recording END)
+                 FROM jsonb_array_elements(COALESCE(source->'recordings', '[]'::jsonb)) AS recording),
+              '[]'::jsonb
+            )
+          )
+        WHERE source->'recordings' @> jsonb_build_array(jsonb_build_object('id', $1::text))
+        RETURNING id`,
+      [candidate.recordingId],
+    )).rowCount ?? 0
+    const row = (await c.query(
+      `UPDATE recordings
+          SET intermediate_delete_status = 'deleted',
+              intermediate_deleted_at = now(),
+              intermediate_delete_claim_token = NULL,
+              intermediate_delete_claimed_at = NULL,
+              intermediate_delete_next_retry_at = NULL,
+              intermediate_delete_last_error_code = NULL
+        WHERE id = $1 AND intermediate_delete_status = 'deleting' AND intermediate_delete_claim_token = $2
+        RETURNING office_id, client_id, document_id, intermediate_deleted_at`,
+      [candidate.recordingId, candidate.claimToken],
+    )).rows[0]
+    if (!row) return false
+    await retentionAudit(c, {
+      officeId: row.office_id,
+      clientId: row.client_id,
+      documentId: row.document_id,
+      auditContext: { source: 'scheduler' },
+      action: 'recording.intermediate_deleted',
+      recordingId: candidate.recordingId,
+      detail: {
+        intermediateDeletedAt: new Date(row.intermediate_deleted_at).toISOString(),
+        transcriptCount: transcripts,
+        summaryCount: summaries,
+        draftRedactionCount: draftRedactions,
+      },
+    })
+    return { transcripts, summaries }
   })
-  return updated.source_delete_status as SourceDeleteStatus
+}
+
+export async function markIntermediateDataDeleteFailed(
+  db: Db,
+  candidate: ClaimedIntermediateDeletionCandidate,
+  errorCode: 'database_error',
+  retryable: boolean,
+) {
+  const retryAt = retryable && candidate.attempts < RECORDING_DELETE_MAX_ATTEMPTS
+    ? new Date(Date.now() + DELETE_RETRY_DELAYS_MS[Math.min(candidate.attempts - 1, DELETE_RETRY_DELAYS_MS.length - 1)]!)
+    : null
+  const row = (await db.query(
+    `UPDATE recordings
+        SET intermediate_delete_status = 'failed',
+            intermediate_delete_claim_token = NULL,
+            intermediate_delete_claimed_at = NULL,
+            intermediate_delete_last_error_code = $3,
+            intermediate_delete_next_retry_at = $4
+      WHERE id = $1 AND intermediate_delete_status = 'deleting' AND intermediate_delete_claim_token = $2
+      RETURNING id`,
+    [candidate.recordingId, candidate.claimToken, errorCode, retryAt],
+  )).rows[0]
+  return Boolean(row)
 }
 
 export async function getRecordingRetention(db: Db | Tx, recordingId: string, officeId: string): Promise<RecordingRetentionState | null> {
   const row = (await db.query(
-    `SELECT id, source_expires_at, source_deleted_at, source_delete_status, source_purge_expected_at, retention_policy_version,
+    `SELECT id, source_expires_at, source_deleted_at, source_delete_status, source_purge_expected_at,
+            intermediate_expires_at, intermediate_delete_status, intermediate_deleted_at, retention_policy_version,
             retention_hold, retention_hold_target, retention_hold_sync_status, retention_hold_operation_version,
             retention_hold_until, retention_hold_reason_code, retention_hold_set_at, retention_hold_set_by
        FROM recordings WHERE id = $1 AND office_id = $2`,
@@ -696,24 +829,40 @@ export async function lifecycleReadiness(db: Db) {
        count(*) FILTER (WHERE retention_hold_sync_status <> 'synced' AND (retention_hold OR retention_hold_target))::int AS unsynced_holds,
        count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_holds,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND source_expires_at IS NULL)::int AS missing_expiry,
+       count(*) FILTER (WHERE source_deleted_at IS NOT NULL AND source_purge_expected_at IS NULL)::int AS missing_purge_expectation,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND status = 'uploaded' AND source_generation IS NULL)::int AS missing_generation,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_sync_status = 'legacy')::int AS legacy_hold_sync,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'failed')::int AS failed_deletions,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND source_delete_status = 'deleting'
          AND source_delete_claimed_at <= now() - interval '15 minutes')::int AS stuck_deletions,
        count(*) FILTER (WHERE source_deleted_at IS NULL AND status IN ('uploading', 'abandoning')
-         AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days')::int AS stale_uploads
+         AND upload_started_at IS NOT NULL AND upload_started_at <= now() - interval '7 days')::int AS stale_uploads,
+       count(*) FILTER (WHERE source_deleted_at IS NULL AND retention_hold_target AND retention_hold_until <= now())::int AS expired_active_holds,
+       count(*) FILTER (WHERE intermediate_expires_at IS NULL)::int AS intermediate_missing_expiry,
+       count(*) FILTER (WHERE intermediate_delete_status = 'failed')::int AS intermediate_failed_deletions,
+       count(*) FILTER (WHERE intermediate_delete_status = 'deleting'
+         AND intermediate_delete_claimed_at <= now() - interval '15 minutes')::int AS intermediate_stuck_deletions,
+       count(*) FILTER (WHERE intermediate_delete_status = 'deleted' AND intermediate_deleted_at IS NULL)::int AS intermediate_deleted_state_mismatch,
+       count(*) FILTER (WHERE intermediate_delete_status = 'failed'
+         AND intermediate_delete_next_retry_at IS NOT NULL AND intermediate_delete_next_retry_at <= now())::int AS intermediate_failed_past_retry
      FROM recordings`,
   )).rows[0]
   return {
     unsyncedHolds: Number(row.unsynced_holds),
     escalatedHolds: Number(row.escalated_holds),
     missingExpiry: Number(row.missing_expiry),
+    missingPurgeExpectation: Number(row.missing_purge_expectation),
     missingGeneration: Number(row.missing_generation),
     legacyHoldSync: Number(row.legacy_hold_sync),
     failedDeletions: Number(row.failed_deletions),
     stuckDeletions: Number(row.stuck_deletions),
     staleUploads: Number(row.stale_uploads),
+    expiredActiveHolds: Number(row.expired_active_holds),
+    intermediateMissingExpiry: Number(row.intermediate_missing_expiry),
+    intermediateFailedDeletions: Number(row.intermediate_failed_deletions),
+    intermediateStuckDeletions: Number(row.intermediate_stuck_deletions),
+    intermediateDeletedStateMismatch: Number(row.intermediate_deleted_state_mismatch),
+    intermediateFailedPastRetry: Number(row.intermediate_failed_past_retry),
   }
 }
 
@@ -733,7 +882,18 @@ export async function getRecordingRetentionObservability(db: Db): Promise<Record
          AND source_delete_attempts >= $1)::int AS final_failure_count,
        count(*) FILTER (WHERE retention_hold_sync_status <> 'synced'
          AND (retention_hold OR retention_hold_target))::int AS unsynced_hold_count,
-       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_hold_count
+       count(*) FILTER (WHERE retention_hold_sync_escalated_at IS NOT NULL)::int AS escalated_hold_count,
+       count(*) FILTER (WHERE intermediate_deleted_at IS NULL AND intermediate_expires_at <= now()
+         AND NOT retention_hold AND NOT retention_hold_target
+         AND intermediate_delete_status IN ('pending', 'failed')
+         AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.recording_id = recordings.id AND j.status IN ('queued', 'processing')))::int AS intermediate_overdue_count,
+       count(*) FILTER (WHERE intermediate_expires_at IS NULL)::int AS intermediate_missing_expiry_count,
+       count(*) FILTER (WHERE intermediate_delete_status = 'deleting'
+         AND intermediate_delete_claimed_at <= now() - interval '15 minutes')::int AS intermediate_stuck_count,
+       count(*) FILTER (WHERE intermediate_delete_status = 'failed'
+         AND intermediate_delete_next_retry_at IS NOT NULL AND intermediate_delete_next_retry_at <= now())::int AS intermediate_failed_past_retry_count,
+       count(*) FILTER (WHERE intermediate_delete_status = 'failed'
+         AND intermediate_delete_attempts >= $1)::int AS intermediate_final_failure_count
      FROM recordings`,
     [RECORDING_DELETE_MAX_ATTEMPTS],
   )).rows[0]
@@ -745,6 +905,11 @@ export async function getRecordingRetentionObservability(db: Db): Promise<Record
     finalFailureCount: Number(row.final_failure_count),
     unsyncedHoldCount: Number(row.unsynced_hold_count),
     escalatedHoldCount: Number(row.escalated_hold_count),
+    intermediateOverdueCount: Number(row.intermediate_overdue_count),
+    intermediateMissingExpiryCount: Number(row.intermediate_missing_expiry_count),
+    intermediateStuckCount: Number(row.intermediate_stuck_count),
+    intermediateFailedPastRetryCount: Number(row.intermediate_failed_past_retry_count),
+    intermediateFinalFailureCount: Number(row.intermediate_final_failure_count),
   }
 }
 

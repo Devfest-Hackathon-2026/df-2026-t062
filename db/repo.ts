@@ -13,7 +13,7 @@ import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
-import { setRecordingRetentionOnComplete, setRecordingSuccessRetention } from './recording-retention.ts'
+import { setRecordingRetentionOnComplete } from './recording-retention.ts'
 
 type Q = Db | Tx
 
@@ -190,7 +190,7 @@ export async function getClient(db: Q, officeId: string, clientId: string) {
 
 // ---------- 書類 ----------
 
-async function lockDocument(c: Tx, officeId: string, documentId: string) {
+export async function lockDocument(c: Tx, officeId: string, documentId: string) {
   const d = (await c.query('SELECT id, client_id, kind, template_version_id FROM documents WHERE id = $1 AND office_id = $2 FOR UPDATE', [documentId, officeId])).rows[0]
   if (!d) throw new NotFound()
   return { id: d.id as string, clientId: d.client_id as string, kind: d.kind as FormKind, versionId: d.template_version_id as string }
@@ -241,10 +241,60 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
 export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ id: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
   const r = await db.query(
     `SELECT r.id, r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
-     WHERE t.office_id = $1 AND t.client_id = $2 ORDER BY r.recorded_at`,
+     WHERE t.office_id = $1 AND t.client_id = $2
+       AND r.intermediate_delete_status NOT IN ('deleted', 'deleting')
+       AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target)
+     ORDER BY r.recorded_at`,
     [officeId, clientId],
   )
   return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
+}
+
+/** 管理者が保持期限と保全状態を確認するための録音一覧。音声の中身や保存先は返さない。 */
+export interface RecordingRetentionListItem {
+  id: string
+  recordedAt: string
+  sourceExpiresAt: string
+  sourcePurgeExpectedAt: string | null
+  sourceDeleteStatus: string
+  sourceDeletedAt: string | null
+  intermediateExpiresAt: string
+  intermediateDeleteStatus: string
+  intermediateDeletedAt: string | null
+  retentionHold: boolean
+  retentionHoldTarget: boolean
+  retentionHoldSyncStatus: string
+  retentionHoldUntil: string | null
+  retentionHoldReasonCode: string | null
+}
+
+export async function listRecordingRetentions(db: Q, officeId: string, clientId: string): Promise<RecordingRetentionListItem[]> {
+  const r = await db.query(
+    `SELECT id, recorded_at, source_expires_at, source_purge_expected_at, source_delete_status, source_deleted_at,
+            intermediate_expires_at, intermediate_delete_status, intermediate_deleted_at,
+            retention_hold, retention_hold_target, retention_hold_sync_status,
+            retention_hold_until, retention_hold_reason_code
+       FROM recordings
+      WHERE office_id = $1 AND client_id = $2
+      ORDER BY recorded_at DESC, id DESC`,
+    [officeId, clientId],
+  )
+  return r.rows.map((row) => ({
+    id: String(row.id),
+    recordedAt: new Date(row.recorded_at).toISOString(),
+    sourceExpiresAt: new Date(row.source_expires_at).toISOString(),
+    sourcePurgeExpectedAt: row.source_purge_expected_at ? new Date(row.source_purge_expected_at).toISOString() : null,
+    sourceDeleteStatus: String(row.source_delete_status),
+    sourceDeletedAt: row.source_deleted_at ? new Date(row.source_deleted_at).toISOString() : null,
+    intermediateExpiresAt: new Date(row.intermediate_expires_at).toISOString(),
+    intermediateDeleteStatus: String(row.intermediate_delete_status),
+    intermediateDeletedAt: row.intermediate_deleted_at ? new Date(row.intermediate_deleted_at).toISOString() : null,
+    retentionHold: Boolean(row.retention_hold),
+    retentionHoldTarget: Boolean(row.retention_hold_target),
+    retentionHoldSyncStatus: String(row.retention_hold_sync_status),
+    retentionHoldUntil: row.retention_hold_until ? new Date(row.retention_hold_until).toISOString() : null,
+    retentionHoldReasonCode: row.retention_hold_reason_code ? String(row.retention_hold_reason_code) : null,
+  }))
 }
 
 /** 同じ利用者のほかの書類（書き方の相談で AI が読む）。同じ事業所の、同じ利用者のものだけ */
@@ -492,7 +542,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       if (old) {
         const plan: BatchPlan = { changes: old.changes, kept: old.kept, skipped: [] }
         await finishJob(c, input, old.id, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion?.auditContext })
         return { batchId: old.id as string, plan }
       }
     }
@@ -507,7 +556,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     if (!plan.changes.length && !plan.kept.length) {
       if (input.completion) {
         await finishJob(c, input, null, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
       }
       return { batchId: null, plan }
     }
@@ -522,7 +570,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
     if (input.completion) {
       await finishJob(c, input, batch.id, plan)
-      await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
     }
     return { batchId: batch.id as string, plan }
   })
@@ -540,20 +587,29 @@ async function finishJob(c: Tx, input: ApplyInput, batchId: string | null, plan:
 const settingsOf = (office: { name?: string, phone?: string | null, fax?: string | null } | undefined, staff: Staff): Record<string, unknown> =>
   ({ 'office.name': office?.name, 'office.careManagerName': staff.name, 'office.phone': office?.phone, 'office.fax': office?.fax })
 
-/**
- * 書類を作る（docs/再設計/16 の「書類を作る」。どの種類も同じ流れ。AI は使わない）。
- *   1. 様式を選ぶ: 事業所の様式があればそれ、なければ全体の様式の、公開した版
- *   2. 同じ key を写す: create_from の種類の書類（何通もあるなら一番新しいもの）から、新しい書類の版が読む key の値をそのまま写す。
- *      その様式だけの欄（local.*）は写さない。写したあとはつながない
- *   3. 設定を入れる: 事業所名・電話・FAX・担当ケアマネの氏名（版が読むものだけ）
- * 写した値と設定は AI の値として入る（書き込みの記録は copy）。1 人 1 通の種類で、もう書類があれば作らずに返す（created: false）
- */
+/** 転記または事業所設定を、書き込みの履歴とともに入れる。呼び出し元が書類をロックする。 */
+export async function insertCopyBatch(c: Tx, staff: Staff, document: { id: string, clientId: string }, values: Record<string, unknown>, label: string) {
+  const changes = Object.entries(values)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, after]) => ({ key, op: 'add', before: null, after }))
+  if (!changes.length) return 0
+  const batch = (await c.query(
+    "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
+    [staff.officeId, document.clientId, document.id, label, JSON.stringify(changes)],
+  )).rows[0]
+  for (const { key, after } of changes) {
+    await writeField(c, staff.officeId, document.clientId, document.id, key, after, 'ai', staff.id, { aiValue: after, batchId: batch.id })
+  }
+  return changes.length
+}
+
+/** 公開様式を選び、事業所設定を入れて書類を作る。元の書類を写すのは AI への依頼時（#213）。 */
 export async function createDocument(db: Db, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
   return tx(db, (c) => createDocumentInTx(c, staff, clientId, kindKey))
 }
 
 /** 計画版の作成など、ほかの書き込みと同じトランザクションで書類を作るとき（createDocument の中身） */
-export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string): Promise<{ id: string, kind: string, created: boolean }> {
+export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, kindKey: string, options?: { copySourceOnCreate: boolean }): Promise<{ id: string, kind: string, created: boolean }> {
   // ほかの事業所の種類は「無い」。やめた種類は新しく作れない（#153）
   const kind = await visibleKind(c, staff.officeId, kindKey)
   if (!kind) throw new BadRequest('書類の種類がありません')
@@ -572,8 +628,8 @@ export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, 
   const keys = new Set((await loadFormDef(c, version)).keys.filter((k) => !k.startsWith('local.')))
   const values: Record<string, unknown> = {}
   let from: string | null = null
-  if (kind.createFrom) {
-    const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom])).rows[0]
+  if (options?.copySourceOnCreate && kind.createFrom) {
+    const src = (await c.query('SELECT id FROM documents WHERE client_id = $1 AND kind = $2 AND office_id = $3 ORDER BY seq DESC, created_at DESC LIMIT 1', [clientId, kind.createFrom, staff.officeId])).rows[0]
     if (src) {
       from = (await kindOf(c, kind.createFrom))?.name ?? kind.createFrom
       for (const [key, f] of Object.entries(await readFields(c, src.id))) if (keys.has(key)) values[key] = f.value
@@ -581,15 +637,9 @@ export async function createDocumentInTx(c: Tx, staff: Staff, clientId: string, 
   }
   const office = (await c.query('SELECT name, phone, fax FROM offices WHERE id = $1', [staff.officeId])).rows[0]
   for (const [key, value] of Object.entries(settingsOf(office, staff))) if (keys.has(key)) values[key] = value
-  const changes = Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== '')
-  if (changes.length) {
-    const batch = (await c.query(
-      "INSERT INTO batches (office_id, client_id, document_id, kind, label, changes) VALUES ($1,$2,$3,'copy',$4,$5) RETURNING id",
-      [staff.officeId, clientId, doc.id, from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定', JSON.stringify(changes.map(([key, after]) => ({ key, op: 'add', before: null, after })))],
-    )).rows[0]
-    for (const [key, value] of changes) await writeField(c, staff.officeId, clientId, doc.id, key, value, 'ai', staff.id, { aiValue: value, batchId: batch.id })
-  }
-  await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied: changes.length })
+  const copied = await insertCopyBatch(c, staff, { id: doc.id, clientId }, values,
+    from ? `AI 書き込み・${from}から写した` : 'AI 書き込み・事業所の設定')
+  await audit(c, staff, staff.officeId, 'document.create', { clientId, documentId: doc.id }, { form: kind.key, copied })
   return { id: doc.id as string, kind: kind.key, created: true }
 }
 

@@ -71,7 +71,12 @@ export async function unheardTopics(db: Q, officeId: string, documentId: string)
   const added = (r.added as OfficeTopicsRow['added']).filter((a) => !baseIds.has(a.id))
   if (!added.length) return []
   const heard = new Set((await db.query(
-    'SELECT DISTINCT topic FROM recording_summaries WHERE document_id = $1 AND topic = ANY($2)', [documentId, added.map((a) => a.id)],
+    `SELECT DISTINCT s.topic FROM recording_summaries s
+       JOIN recordings r ON r.id = s.recording_id
+      WHERE s.document_id = $1 AND s.topic = ANY($2)
+        AND r.intermediate_delete_status NOT IN ('deleted', 'deleting')
+        AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target)`,
+    [documentId, added.map((a) => a.id)],
   )).rows.map((x) => x.topic as string))
   return added.filter((a) => !heard.has(a.id)).map((a) => ({ id: a.id, name: a.name }))
 }

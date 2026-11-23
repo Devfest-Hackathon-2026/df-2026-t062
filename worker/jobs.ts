@@ -76,7 +76,19 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
   heartbeat.unref()
   try {
     const providers = await deps.providers()
-    const rec = (await db.query('SELECT id, object_path, mime, recorded_at FROM recordings WHERE id = $1', [job.recording_id])).rows[0]
+    const rec = (await db.query(
+      `SELECT id, object_path, mime, recorded_at, intermediate_expires_at,
+              intermediate_delete_status, retention_hold, retention_hold_target
+         FROM recordings WHERE id = $1`,
+      [job.recording_id],
+    )).rows[0]
+    if (!rec) throw new Error('recording_not_found')
+    if (rec.intermediate_delete_status === 'deleted' || rec.intermediate_delete_status === 'deleting'
+      || (new Date(rec.intermediate_expires_at).getTime() <= Date.now() && !rec.retention_hold && !rec.retention_hold_target)) {
+      const error = new Error('intermediate_retention_expired')
+      error.name = 'IntermediateRetentionExpired'
+      throw error
+    }
     const sequence = Number((await db.query(
       // 時刻は JS の Date にするとマイクロ秒が落ちるので、DB の中で比べる
       "SELECT count(*) AS n FROM recordings WHERE client_id = $1 AND status = 'uploaded' AND recorded_at <= (SELECT recorded_at FROM recordings WHERE id = $2)",
@@ -147,7 +159,7 @@ export async function runJob(deps: WorkerDeps, jobId: string, context?: WorkerCo
     const kind = (e as Error)?.name ?? 'Error'
     // 誤りの番号（gRPC・HTTP の状態の番号）だけを足す。文面は中身が入りうるので出さない
     const code = typeof (e as { code?: unknown })?.code === 'number' ? (e as { code: number }).code : null
-    const terminal = job.attempts >= MAX_ATTEMPTS
+    const terminal = job.attempts >= MAX_ATTEMPTS || kind === 'IntermediateRetentionExpired'
     await db.query("UPDATE jobs SET status = $3, error_kind = $4, lease_until = NULL, run_token = NULL, updated_at = now() WHERE id = $1 AND run_token = $2", [jobId, token, terminal ? 'failed' : 'queued', code === null ? kind : `${kind}:${code}`])
     console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'job failed', jobId, error: kind, code }))
     // 中身が入りうるので、ローカルで調べるときだけ出す
@@ -208,6 +220,18 @@ async function fromSummaries(ctx: StepCtx, recording: Providers['recording']): P
 
   // ③ 要約（この録音で、まだ作っていなければ）
   if (!steps.summarize) {
+    const currentRetention = (await db.query(
+      `SELECT intermediate_expires_at, intermediate_delete_status, retention_hold, retention_hold_target
+         FROM recordings WHERE id = $1`,
+      [rec.id],
+    )).rows[0]
+    if (!currentRetention || ['deleted', 'deleting'].includes(currentRetention.intermediate_delete_status)
+      || (new Date(currentRetention.intermediate_expires_at).getTime() <= Date.now()
+        && !currentRetention.retention_hold && !currentRetention.retention_hold_target)) {
+      const error = new Error('intermediate_retention_expired')
+      error.name = 'IntermediateRetentionExpired'
+      throw error
+    }
     await setStep(db, jobId, token, 'summarize')
     const made = Number((await db.query('SELECT count(*) AS n FROM recording_summaries WHERE recording_id = $1', [rec.id])).rows[0].n)
     let usage: Usage | null = null
@@ -237,7 +261,10 @@ async function fromSummaries(ctx: StepCtx, recording: Providers['recording']): P
   const seqOf = new Map(recs.map((id, i) => [id, i + 1]))
   const rows = (await db.query(
     `SELECT s.id, s.topic, s.text, s.recording_id, r.recorded_at FROM recording_summaries s JOIN recordings r ON r.id = s.recording_id
-     WHERE s.document_id = $1 AND (s.recording_id = $2 OR ($3 AND r.recorded_at <= (SELECT recorded_at FROM recordings WHERE id = $2)))
+     WHERE s.document_id = $1
+       AND r.intermediate_delete_status NOT IN ('deleted', 'deleting')
+       AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target)
+       AND (s.recording_id = $2 OR ($3 AND r.recorded_at <= (SELECT recorded_at FROM recordings WHERE id = $2)))
      ORDER BY r.recorded_at, s.topic`,
     [job.document_id, rec.id, append],
   )).rows

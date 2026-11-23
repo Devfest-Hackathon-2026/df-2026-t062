@@ -40,7 +40,7 @@ export async function calculateCareFee(db:Db,staff:Staff,monthId:string,input:z.
   let fee=(await c.query('SELECT * FROM care_plan_fees WHERE month_id=$1 AND basis=$2 AND office_id=$3',[monthId,input.basis,staff.officeId])).rows[0]
   if(!fee){
    if(input.baseRevision!==0)throw new Conflict('fee_version')
-   const doc=await createDocumentInTx(c,staff,month.clientId,'care_plan_7')
+   const doc=await createDocumentInTx(c,staff,month.clientId,'care_plan_7', { copySourceOnCreate: true })
    fee=(await c.query('INSERT INTO care_plan_fees(office_id,client_id,month_id,basis,document_id,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[staff.officeId,month.clientId,monthId,input.basis,doc.id,staff.id])).rows[0]
   }
   const doc=(await c.query('SELECT template_version_id FROM documents WHERE id=$1 AND office_id=$2 FOR UPDATE',[fee.document_id,staff.officeId])).rows[0]

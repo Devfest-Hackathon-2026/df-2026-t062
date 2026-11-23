@@ -116,7 +116,7 @@ test('利用者を作ると主な書類も作り、応答は documentId。一覧
   }
 })
 
-test('POST /api/clients/:id/documents {kind}: 行を足すだけで新しい種類の書類を作れる。create_from の書類から同じ key を写し、事業所の設定を入れる。何通も作れる種類は seq が増える', { skip }, async () => {
+test('POST /api/clients/:id/documents {kind}: 行を足すだけで新しい種類の書類を作れる。作成時は事業所の設定を入れ、元の書類の値は入れない。何通も作れる種類は seq が増える', { skip }, async () => {
   await db.query("INSERT INTO form_kinds (key, name, per_client, create_from) VALUES ('kindmany', '何通もの書類', 'many', 'assessment') ON CONFLICT DO NOTHING")
   await registerGlobal('kindmany')
   const assess = (await call(`/api/clients/${ids.clientA}`)).body.client.documents.find((d: any) => d.kind === 'assessment')
@@ -135,11 +135,10 @@ test('POST /api/clients/:id/documents {kind}: 行を足すだけで新しい種�
 
   const made = (await call(`/api/documents/${first.body.id}`)).body.document
   assert.equal(made.kind, 'kindmany')
-  assert.equal(made.fields['person.address'].value, '見本市 1-1', 'アセスメントから写した')
-  assert.equal(made.fields['person.address'].by, 'ai', '写した値は AI の値')
+  assert.equal(made.fields['person.address'], undefined)
   assert.equal(made.fields['office.name'].value, 'みほん居宅介護支援事業所', '事業所の設定')
   assert.equal(made.batches[0].kind, 'copy')
-  assert.equal(made.batches[0].label, 'AI 書き込み・アセスメントから写した')
+  assert.equal(made.batches[0].label, 'AI 書き込み・事業所の設定')
   assert.equal(made.fields['person.phone'], undefined, '様式の版が読まない欄は写さない')
 })
 

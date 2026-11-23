@@ -288,7 +288,7 @@ test('直す → ページを保存 → 版 → PDF。保存していない AI �
   } else assert.equal(pdf.status, 503, '元の PDF が置き場になければ 503')
 })
 
-test('入院時情報提供書を作ると、基本情報も含めて同じ key の値を写す。写したあとはつながない', { skip }, async () => {
+test('手入力で作った入院時情報提供書にはアセスメントの値が入らず、書類間で同期しない', { skip }, async () => {
   const made = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '写しの見本' }) })
   assert.equal(made.status, 201)
   const { id: clientId, documentId } = made.body as { id: string, documentId: string }
@@ -304,23 +304,21 @@ test('入院時情報提供書を作ると、基本情報も含めて同じ key 
   const admId = (r.body as { id: string }).id
   const adm = (await call(`/api/documents/${admId}`)).body as Doc
   assert.equal(adm.document.kind, 'admission')
-  // 基本情報の 7 欄も、ほかの欄と同じく写す（AI の値として入る）
-  assert.equal(adm.document.fields['person.name'].value, '写しの見本')
-  assert.equal(adm.document.fields['person.address'].value, '見本市見本町 1-2-3')
-  assert.equal(adm.document.fields['person.address'].by, 'ai')
-  assert.equal(adm.document.fields['housing.notes'].value, '段差が多い')
+  for (const key of ['person.name', 'person.address', 'person.phone', 'housing.notes']) {
+    assert.equal(adm.document.fields[key], undefined, key)
+  }
+  assert.ok(adm.document.fields['office.name'])
 
-  // 写したあとは、どちらを直しても、もう片方は変わらない
-  const p = await patch(admId, 'person.address', '入院先の近く', '見本市見本町 1-2-3')
+  const p = await patch(admId, 'person.address', '入院先の近く', null)
   assert.equal(p.status, 200)
   assert.equal((p.body as Record<string, unknown>).syncedTo, undefined, '「ほかの書類にも入りました」は返さない')
   assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.address'].value, '見本市見本町 1-2-3')
   assert.equal((await patch(documentId, 'person.phone', '111-1111-1111', '000-0000-0000')).status, 200)
-  assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.phone'].value, '000-0000-0000')
+  assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.phone'], undefined)
 
   // 一覧の氏名は、主な書類（アセスメント）の氏名を直したときだけ変わる
   const listName = async () => ((await call('/api/clients')).body as { clients: { id: string, name: string }[] }).clients.find((c) => c.id === clientId)?.name
-  assert.equal((await patch(admId, 'person.name', '入院時の呼び名', '写しの見本')).status, 200)
+  assert.equal((await patch(admId, 'person.name', '入院時の呼び名', null)).status, 200)
   assert.equal(await listName(), '写しの見本')
   assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.name'].value, '写しの見本')
   assert.equal((await patch(documentId, 'person.name', '写しの見本 改', '写しの見本')).status, 200)
