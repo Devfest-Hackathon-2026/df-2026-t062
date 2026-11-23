@@ -84,6 +84,13 @@ SELECT
   has_table_privilege('recording_cleanup', 'public.recording_summaries', 'DELETE') AS summaries_delete,
   has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'SELECT') AS care_record_drafts_select,
   has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'UPDATE') AS care_record_drafts_update,
-  has_table_privilege('recording_cleanup', 'public.audit_events', 'INSERT') AS audit_insert,
+  (
+    SELECT bool_and(has_column_privilege('recording_cleanup', 'public.audit_events', required.column_name, 'INSERT'))
+    FROM (VALUES
+      ('office_id'), ('staff_id'), ('client_id'), ('document_id'), ('action'),
+      ('outcome'), ('request_id'), ('correlation_id'), ('trace_id'), ('source'),
+      ('route'), ('schema_version'), ('detail')
+    ) AS required(column_name)
+  ) AS audit_insert,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'USAGE') AS audit_sequence_usage,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'SELECT') AS audit_sequence_select;
