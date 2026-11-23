@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test'
 import { createPool, tx, type Db } from '../db/pool.ts'
 import { migrate } from '../db/migrate.ts'
 import { seed } from '../db/seed.ts'
-import { applyBatch, completeRecording, createClient, createRecording, activeJobs, type Staff } from '../db/repo.ts'
+import { applyBatch, completeRecording, createClient, createRecording, grantRecordingConsent, activeJobs, type Staff } from '../db/repo.ts'
 import {
   beginSourceDeletion,
   claimExpiredSourceRecordings,
@@ -46,6 +46,7 @@ after(async () => {
 
 async function job() {
   const client = await createClient(db, staff, { name: `障害注入 ${randomUUID()}` })
+  await grantRecordingConsent(db, staff, client.id)
   const rec = await tx(db, (c) => createRecording(c, staff, client.id, 'audio/webm', randomUUID()))
   const bytes = Buffer.alloc(4096)
   await storage.write('source', rec.objectPath, bytes)
