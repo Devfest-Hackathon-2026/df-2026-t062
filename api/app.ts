@@ -24,6 +24,7 @@ import { importPdfPath, pageImageAssetPath, type FormAssetsView } from '../core/
 import { SURVEY_IMPORT_KEYS, surveyChoice } from '../core/survey-import.ts'
 import * as importsDb from '../db/form-imports.ts'
 import * as inspections from '../db/inspections.ts'
+import * as fills from '../db/document-fills.ts'
 import { DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import * as forms from '../db/forms.ts'
 import * as carePlans from '../db/care-plans.ts'
@@ -31,6 +32,7 @@ import { tx, type Db } from '../db/pool.ts'
 import * as repo from '../db/repo.ts'
 import * as staffDb from '../db/staff.ts'
 import * as kinds from '../db/kinds.ts'
+import * as officeTopicsDb from '../db/office-topics.ts'
 import { defaultAccounts, type Accounts, type Verifier } from './auth.ts'
 import { fakeModel, runChat, type ChatDocument, type ChatModel } from './chat.ts'
 import { FormUnavailable, makePdf } from './pdf.ts'
@@ -44,10 +46,17 @@ import type { Queue } from './queue.ts'
 import { editSlot } from './form-slots.ts'
 import { fakeFieldMatcher, slotMeaning, type FieldMatcher } from '../core/slot-meaning.ts'
 import { fieldDict } from '../core/dictionary.ts'
-import { fakeTopicDrafter, type TopicDrafter } from '../core/topics.ts'
+import { fakeTopicDrafter, fakeTopicTeacher, NOTE_LINE_MAX, NOTE_LINES_MAX, settleTeach, type TopicDrafter, type TopicTeacher } from '../core/topics.ts'
 import { dailyWindow, LocalStorage, type Storage } from './storage.ts'
 import { randomUUID } from 'node:crypto'
 import { writeAccessAudit, writeSecurityAudit, type AccessAuditInput, type AuditContext } from '../db/audit.ts'
+import {
+  HOLD_REASON_CODES,
+  getRecordingRetention,
+  requestRecordingRetentionHold,
+  requestRecordingRetentionHoldRelease,
+  type HoldReasonCode,
+} from '../db/recording-retention.ts'
 
 export interface ApiDeps {
   db: () => Promise<Db>
@@ -62,6 +71,8 @@ export interface ApiDeps {
   fieldMatcher?: () => Promise<FieldMatcher>
   /** 事業所が足した書類の拾う内容の案を作る（#153）。省けば試しの案 */
   topicDrafter?: () => Promise<TopicDrafter>
+  /** 責任者のダメ出しを、どの項目に足すか振り分ける（#115 の AI 特訓部屋）。省けば試しの振り分け */
+  topicTeacher?: () => Promise<TopicTeacher>
   /** AUTH_MODE=dev のとき、メールでケアマネを引く */
   devAuth?: boolean
   /** 職員を登録するときにアカウントを作る（なければ AUTH_MODE で決める） */
@@ -154,6 +165,10 @@ const ChatInput = z.object({
     .refine((m) => m.at(-1)?.role === 'user'),
 })
 const CompleteInput = z.object({ durationMs: z.number().int().min(0).nullish(), bytes: z.number().int().positive().optional() })
+const RecordingRetentionHoldInput = z.object({
+  holdUntil: z.iso.datetime({ offset: true }),
+  reasonCode: z.enum(HOLD_REASON_CODES),
+}).strict()
 // 職員・最初の責任者を登録する。メールは小文字にそろえる（Identity Platform のメールは大文字・小文字を区別しない）
 const Email = z.string().trim().toLowerCase().max(254).pipe(z.email())
 const Name = z.string().trim().min(1).max(60)
@@ -172,14 +187,19 @@ const ImportInput = z.object({ kind: z.string().trim().min(1).max(100) })
 const OfficeKindInput = z.object({
   name: z.string().trim().min(1).max(40),
   perClient: z.enum(['one', 'many']),
-  copyFromPrimary: z.boolean(),
-  records: z.boolean(),
   append: z.boolean(),
 })
 const OfficeTopicsInput = z.object({
   topics: z.array(z.object({ id: z.string().max(41).optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
 })
-const TopicDraftRequest = z.object({ versionId: z.string().uuid() })
+// 事業所が直せる項目（#115）。全部を置き換える（足した項目・書き足しの行・合格の印）
+const TopicId = z.string().min(1).max(41)
+const OfficeTopicsEditInput = z.object({
+  added: z.array(z.object({ id: TopicId.optional(), name: z.string().trim().min(1).max(40), guide: z.string().trim().max(400) })).max(30),
+  notes: z.record(TopicId, z.array(z.string().max(NOTE_LINE_MAX)).max(NOTE_LINES_MAX)),
+  passed: z.array(TopicId).max(200),
+})
+const TeachRequest = z.object({ text: z.string().trim().min(1).max(NOTE_LINE_MAX), current: TopicId.nullable() })
 // 様式の下書きを直す。base は画面が元にした版の中身の指紋（content_sha）。直す部分だけを送る
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/)
 const FormVersionPatch = z.object({
@@ -496,7 +516,8 @@ export function createApp(deps: ApiDeps) {
       clientId: document.clientId, documentId: document.id, resourceType: 'document', resourceId: document.id,
       accessMode: 'view', action: 'document.view',
     })
-    return json(c, { document })
+    // 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの（id と名前だけ。#115）
+    return json(c, { document, unheardTopics: await officeTopicsDb.unheardTopics(db, staff.officeId, document.id) })
   }))
 
   // 復元した第4〜7表の閲覧にも、既存のアクセス監査を適用する。
@@ -774,10 +795,70 @@ export function createApp(deps: ApiDeps) {
   app.post('/api/recordings/:id/complete', staffRoute('care.work', async (c, staff, db) => {
     const { durationMs, bytes } = await body(c, CompleteInput)
     const jobId = await repo.completeRecording(db, staff, c.req.param('id')!, durationMs ?? null, bytes,
-      (path) => deps.storage().size('source', path))
+      async (path) => {
+        const result = await deps.storage().sourceObjects().getLiveObjectMetadata(path)
+        if (result.kind === 'not_found') return null
+        if (result.kind === 'error') throw new Error(`source_metadata_${result.code}`)
+        return {
+          size: result.metadata.size,
+          generation: result.metadata.generation,
+          metageneration: result.metadata.metageneration,
+        }
+      })
     if (!jobId) return json(c, { error: 'not_uploaded' }, 409)
     const job = await repo.dispatchRecordingJob(db, jobId, () => deps.queue().enqueue(jobId, { initial: true }))
     return json(c, job, 202)
+  }))
+
+  app.get('/api/office/recordings/:id/retention', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const recordingId = c.req.param('id')!
+    const retention = await getRecordingRetention(db, recordingId, staff.officeId)
+    if (!retention) throw new repo.NotFound()
+    await accessAudit(c, db, staff, {
+      resourceType: 'recording_retention', resourceId: recordingId, accessMode: 'view', action: 'recording.retention.view',
+    })
+    return json(c, { retention })
+  }))
+
+  app.put('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const input = await body(c, RecordingRetentionHoldInput)
+    const holdUntil = new Date(input.holdUntil)
+    const retention = await requestRecordingRetentionHold(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    }, holdUntil, input.reasonCode as HoldReasonCode)
+    if (!retention) throw new repo.NotFound()
+    const version = retention.retentionHoldOperationVersion
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, version)
+    return json(c, { retention }, 202)
+  }))
+
+  app.delete('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const retention = await requestRecordingRetentionHoldRelease(db, c.req.param('id')!, {
+      officeId: staff.officeId, actorStaffId: staff.id, auditContext: repo.auditContextOf(staff),
+    })
+    if (!retention) throw new repo.NotFound()
+    const queue = deps.queue()
+    if (!queue.enqueueRetentionHold) throw new Error('retention_hold_queue_unavailable')
+    await queue.enqueueRetentionHold(c.req.param('id')!, retention.retentionHoldOperationVersion)
+    return json(c, { retention }, 202)
+  }))
+
+  // 書類を作るときに AI が書く（#195）。元の書類（create_from の種類）の値を読み、この書類の欄を書き直す・空の欄を書く。裏の仕事（worker）
+  app.post('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const r = await fills.startFill(db, staff, c.req.param('id')!)
+    if (r.created) {
+      if (!deps.queue().enqueueDocumentFill) throw new Error('書類を書く仕事を積めません')
+      await deps.queue().enqueueDocumentFill!(r.id, { initial: true })
+    }
+    return json(c, { fillId: r.id }, 202)
+  }))
+  app.get('/api/documents/:id/fill', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const r = await fills.latestFill(db, staff.officeId, id)
+    await accessAudit(c, db, staff, { clientId: r.clientId, documentId: id, resourceType: 'document_fill', resourceId: r.fill?.id ?? id, accessMode: 'view', action: 'document.view' })
+    return json(c, { fill: r.fill })
   }))
 
   // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
@@ -915,6 +996,7 @@ export function createApp(deps: ApiDeps) {
       if (v.contentSha !== base) throw new repo.Conflict('form_version')
       const problems = await publishProblems(deps.storage(), v)
       if (problems.length) return json(c, { error: 'not_publishable', problems }, 422)
+      if (scope.officeId) await draftTopicsOnStart(db, scope.officeId, v)
       return json(c, await managerView(db, await forms.publishDraft(db, scope, id, base)))
     }))
     // 印字欄を言葉で直す（AI が欄に当てはめる。当たらなければ、その様式だけの欄を作る）か、使っていないことにする（印字欄を消す）
@@ -924,9 +1006,31 @@ export function createApp(deps: ApiDeps) {
       return json(c, { ...(await managerView(db, r.version)), matched: r.matched })
     }))
   }
+  /**
+   * 事業所が足した種類の書式を使い始めるときに、書式の欄から AI が項目（拾う内容）を決めて、そのまま入れる（#209）。
+   * 決めるのは、録音から書く種類で、項目がまだ全体のまとめだけのときだけ（直した書式を使い始め直しても、今ある項目は変えない）。
+   * AI が失敗しても使い始めは止めない（項目は全体のまとめだけのまま）。ログには中身を出さない
+   */
+  async function draftTopicsOnStart(db: Db, officeId: string, v: Pick<forms.FormVersion, 'id' | 'kind' | 'bindings' | 'localFields'>) {
+    const kindName = await kinds.needsTopicDraft(db, officeId, v.kind)
+    if (!kindName) return
+    const dict = fieldDict(v.localFields)
+    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
+    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
+      const m = slotMeaning(b, dict, v.localFields)
+      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
+    }))]
+    if (!slots.length) return
+    try {
+      const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName, slots })
+      if (drafted.length) await kinds.setDraftedTopics(db, officeId, v.kind, drafted)
+    } catch (e) {
+      console.log(JSON.stringify({ severity: 'WARNING', msg: 'topic draft on start failed', versionId: v.id, error: (e as Error)?.name ?? 'Error' }))
+    }
+  }
   versionRoutes('/api/office', (h) => staffRoute('form.manage', (c, staff, db) => h(c, { officeId: staff.officeId }, db)))
 
-  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容の案を作る・直す、やめる。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
+  // ---------- 責任者が書類の種類を足す（#153）: 足す、拾う内容を直す、やめる（拾う内容は、書式を使い始めるときに AI が決める。#209）。自分の事業所の種類だけ（全体の種類は 403、ほかの事業所は 404） ----------
   app.post('/api/office/form-kinds', staffRoute('form.manage', async (c, staff, db) => {
     const input = await body(c, OfficeKindInput)
     return json(c, { kind: await kinds.createOfficeKind(db, staff.officeId, input) }, 201)
@@ -935,25 +1039,27 @@ export function createApp(deps: ApiDeps) {
     const { topics } = await body(c, OfficeTopicsInput)
     return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, c.req.param('key')!, topics) })
   }))
-  // 拾う内容の案: 確かめた書式（下書きか公開した版）の欄に入る内容から AI が作り、そのまま保存する（責任者はこのあと直す）
-  app.post('/api/office/form-kinds/:key/topics/draft', staffRoute('form.manage', async (c, staff, db) => {
-    const key = c.req.param('key')!
-    const kind = await kinds.ownKind(db, staff.officeId, key)
-    const { versionId } = await body(c, TopicDraftRequest)
-    const v = await forms.versionForManager(db, { officeId: staff.officeId }, versionId)
-    if (v.kind !== key) throw new repo.BadRequest('別の書類の書式です')
-    const dict = fieldDict(v.localFields)
-    // 文字の欄のうち、録音から書く欄（事業所の設定や日付だけの欄を除く）と、その様式だけの欄の、入る内容の言葉
-    const slots = [...new Set(Object.values(v.bindings).flatMap((b) => {
-      const m = slotMeaning(b, dict, v.localFields)
-      return !m.mark && (m.rec || b.ref.key.startsWith('local.')) ? [m.what] : []
-    }))]
-    const drafted = await (await (deps.topicDrafter ?? (async () => fakeTopicDrafter))())({ kindName: kind.name, slots })
-    return json(c, { topics: await kinds.setOfficeTopics(db, staff.officeId, key, drafted) })
-  }))
   app.post('/api/office/form-kinds/:key/retire', staffRoute('form.manage', async (c, staff, db) => {
     await kinds.retireOfficeKind(db, staff.officeId, c.req.param('key')!)
     return json(c, { ok: true })
+  }))
+
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋）: 項目を見る、直す（足す・書き足す・合格の印）、ダメ出しを振り分ける。全体の項目は消せず、名前も変えられない ----------
+  app.get('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) =>
+    json(c, await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!))))
+  app.put('/api/office/topics/:kind', staffRoute('form.manage', async (c, staff, db) => {
+    const input = await body(c, OfficeTopicsEditInput)
+    return json(c, await officeTopicsDb.putOfficeTopics(db, staff, c.req.param('kind')!, input, repo.auditContextOf(staff)))
+  }))
+  // 振り分けだけ（保存しない）。画面が答えを見せ、そのまま PUT で保存する。AI の答えは一覧と照らしてから返す
+  app.post('/api/office/topics/:kind/teach', staffRoute('form.manage', async (c, staff, db) => {
+    const { text, current } = await body(c, TeachRequest)
+    const view = await officeTopicsDb.training(db, staff.officeId, c.req.param('kind')!)
+    // AI には、書き足しを含めた説明を渡す（教えたことと重ねて足さないように）
+    const items = view.items.map((i) => ({ id: i.id, name: i.name, guide: [i.guide, ...i.notes].filter(Boolean).join(' ') }))
+    const teach = await (deps.topicTeacher ?? (async () => fakeTopicTeacher))()
+    const decision = await teach({ kindName: view.kind.name, items, current: current && items.some((i) => i.id === current) ? current : null, text })
+    return json(c, { decision: settleTeach(items, decision, text) })
   }))
 
   // ---------- 責任者の書類の設定（#102）: 書類ごとの書式の様子、直す下書き、最初の書式に戻す、前の事業所の書式に戻す ----------
@@ -1013,7 +1119,7 @@ export function createApp(deps: ApiDeps) {
         context: { ...auditContextOf(c), route: c.req.routePath },
       }).catch(() => {})
     }
-    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound) {
+    if (err instanceof repo.NotFound || err instanceof forms.FormNotFound || (err instanceof Error && err.message === 'recording_not_found')) {
       return recordNotFound().then(() => json(c, { error: 'not_found' }, 404))
     }
     // ID の形でないもの（PostgreSQL の invalid_text_representation）も「無い」
@@ -1024,6 +1130,12 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
     if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'fee_source_updated' ? '第6表に新しい保存版があります。最新の保存版で再計算してから確定してください。' : err.message === 'fee_workbook_unverified' ? 'この算定はExcel数式との照合前です。再計算してから確定してください。' : err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof Error && ['invalid_hold_until', 'invalid_hold_reason_code'].includes(err.message)) {
+      return json(c, { error: err.message }, 400)
+    }
+    if (err instanceof Error && ['recording_source_deleted', 'recording_source_deleting', 'retention_hold_not_active'].includes(err.message)) {
+      return json(c, { error: err.message }, 409)
+    }
     if (err instanceof carePlans.PlanValidationFailed) return json(c, { error: 'validation_failed', problems: err.problems }, 422)
     if (err instanceof carePlans.PlanNotDraft) return json(c, { error: 'not_draft', message: '確定した計画版は直せません。訂正は新しい計画版で行います' }, 409)
     if (err instanceof carePlans.PlanUnsavedChanges) return json(c, { error: 'unsaved_changes', message: '保存していない変更があります' }, 409)

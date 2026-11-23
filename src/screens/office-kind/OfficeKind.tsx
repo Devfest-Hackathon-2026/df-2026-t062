@@ -1,6 +1,6 @@
-// 責任者の画面（#102）: 書類の画面（書式）。
+// 責任者の画面（#102）: 書類の画面（書式）。録音から書く書類には、AI 特訓部屋（#115）への入口のカードを並べる（#111 の採用案の 4 案目の並び）。
 import { useEffect, useState } from 'react'
-import { api } from '../../lib/api.ts'
+import { api, type TrainingItem } from '../../lib/api.ts'
 import { linkProps, navigate } from '../../lib/router.tsx'
 import { BackLink, Icon, OfficeShell } from '../../components/office-shell/OfficeShell.tsx'
 import { day, dismiss, failText, phaseOf, useOfficeForms } from '../../components/form-status/formStatus.ts'
@@ -15,6 +15,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
   const [confirm, setConfirm] = useState<Confirm>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [taught, setTaught] = useState<TrainingItem[]>([])
   const k = kinds?.find((x) => x.key === kind)
   const currentId = k?.current?.versionId
 
@@ -25,6 +26,14 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
     api.managedAssets(currentId).then((a) => { if (live) setThumb(a.pages[0]?.url ?? null) }).catch(() => {})
     return () => { live = false }
   }, [currentId])
+
+  const records = !!k?.records
+  useEffect(() => {
+    if (!records) return
+    let live = true
+    api.officeTraining(kind).then((v) => { if (live) setTaught(v.items.filter((i) => i.origin === 'added' || i.notes.length)) }).catch(() => {})
+    return () => { live = false }
+  }, [kind, records])
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -59,7 +68,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
   if (adding(k)) {
     return (
       <OfficeShell staffName={staffName} active={null} wide>
-        <AddSteps step={phase === 'review' || phase === 'reading' || fail ? 3 : 2} name={k.name} records={k.records} />
+        <AddSteps step={phase === 'review' || phase === 'reading' || fail ? 3 : 2} name={k.name} />
         <main className="oa-body">
           {phase === 'reading' ? (
             <div className="oa-wait" role="status">
@@ -94,6 +103,7 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
     <OfficeShell staffName={staffName} active="forms">
       <BackLink to="/office" label="書類の設定" />
       <h1 className="of-h1">{k.name}</h1>
+      <div className={k.records ? 'of-doc-cards' : undefined}>
       <section className="of-panel" aria-label="書式">
         <h2>書式</h2>
         <div className="of-paper">
@@ -116,6 +126,20 @@ export function OfficeKind({ staffName, kind }: { staffName: string, kind: strin
         </div>
         {actionError && <div role="alert" className="of-err">できませんでした（{actionError}）</div>}
       </section>
+      {k.records && (
+        <a className="of-teach-card" {...linkProps(`${base}/training`)}>
+          <h2>AI 特訓部屋</h2>
+          <img className="tc-cat" src="/assistant/pet-peeking.png" alt="" />
+          <p className="tc-lead">教えるほど、書類が事業所のやり方に近づきます</p>
+          {taught.length > 0 && (
+            <div className="tc-chips">
+              {taught.map((t) => <span key={t.id} className={`tc-chip ${t.origin === 'added' ? 'add' : 'rule'}`}>{t.origin === 'added' ? '＋ ' : ''}{t.name}</span>)}
+            </div>
+          )}
+          <span className="btn btn-p tc-go">教える</span>
+        </a>
+      )}
+      </div>
       {k.own && <div className="oa-stop"><button type="button" onClick={() => setConfirm({ type: 'stop' })}>この書類をやめる</button></div>}
       {confirm && (
         <>

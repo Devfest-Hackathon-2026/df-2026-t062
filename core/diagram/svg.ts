@@ -4,6 +4,20 @@ import { type Doc, type Tab, type Item } from './model.ts'
 
 const escape = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!)
 const text = (x: number, y: number, label: unknown, size = 20, color = '#172b3d') => `<text x="${x}" y="${y}" text-anchor="middle" font-size="${size}" fill="${color}">${escape(label)}</text>`
+const LABEL_SIZE = 17, LINE = 22
+const labelBase = (i: Item) => i.y + (i.range === 'area' ? i.height + 18 : 57) + (i.labelOffsetY ?? 0)
+/** Line index per body label: a label moves down until its estimated box clears every earlier label in the same view (#198). */
+export function bodyLabelLines(items: readonly Item[]): Map<string, number> {
+  const placed: { view: unknown, cx: number, half: number, y: number }[] = [], lines = new Map<string, number>()
+  for (const i of [...items].sort((a, b) => a.id.localeCompare(b.id))) {
+    const cx = i.x + i.width / 2, half = String(i.label ?? '').length * LABEL_SIZE / 2
+    let line = 0
+    while (placed.some((p) => p.view === i.view && Math.abs(p.cx - cx) < p.half + half && Math.abs(p.y - (labelBase(i) + line * LINE)) < LINE)) line++
+    lines.set(i.id, line)
+    placed.push({ view: i.view, cx, half, y: labelBase(i) + line * LINE })
+  }
+  return lines
+}
 /** One ordering rule for preview, editing, hit testing and export. */
 export function roomsBehind(items: readonly Item[]): Item[] { return [...items.filter((i) => i.kind === 'room'), ...items.filter((i) => i.kind !== 'room')] }
 export function diagramSvg(doc: Doc, tab: Tab, options: { editing?: boolean, cropBody?: boolean, bodyImage?: string, selected?: string, bodyView?: 'front' | 'back' } = {}): string {
@@ -47,11 +61,12 @@ export function diagramSvg(doc: Doc, tab: Tab, options: { editing?: boolean, cro
       for (let x = 0; x < 820; x += 32) contents += `<path d="M${x} 0 V560" stroke="#e0e6e8"/>`
       for (let y = 0; y < 560; y += 32) contents += `<path d="M0 ${y} H820" stroke="#e0e6e8"/>`
     }
+    const bodyLines = bodyLabelLines(doc.body.items)
     for (const i of tab === 'house' ? roomsBehind(doc.house.items) : doc.body.items.filter((i) => !options.bodyView || i.view === options.bodyView)) {
       let shape: string
       if (tab === 'body') {
         const marks: Partial<Record<Item['kind'], string>> = { disability: '△', loss: '×', pressure: '●', pain: '※', paralysis: '△', contracture: '△', note: '※' }
-        shape = `${i.range === 'area' ? `<rect width="${i.width}" height="${i.height}" fill="none" stroke="#172b3d" stroke-width="2" stroke-dasharray="5 3"/>` : ''}${text(i.width / 2, i.range === 'area' ? i.height / 2 + 10 : 35, marks[i.kind] ?? '●', 38, '#111')}${text(i.width / 2, (i.range === 'area' ? i.height + 18 : 57) + (i.labelOffsetY ?? 0) + doc.body.items.filter((other) => other.id.localeCompare(i.id) < 0 && Math.abs(other.x - i.x) < 20 && Math.abs(other.y - i.y) < 20).length * 22, i.label, 17)}`
+        shape = `${i.range === 'area' ? `<rect width="${i.width}" height="${i.height}" fill="none" stroke="#172b3d" stroke-width="2" stroke-dasharray="5 3"/>` : ''}${text(i.width / 2, i.range === 'area' ? i.height / 2 + 10 : 35, marks[i.kind] ?? '●', 38, '#111')}${text(i.width / 2, (i.range === 'area' ? i.height + 18 : 57) + (i.labelOffsetY ?? 0) + (bodyLines.get(i.id) ?? 0) * 22, i.label, 17)}`
       } else {
         shape = `<rect width="${i.width}" height="${i.height}" fill="${i.kind === 'room' ? '#f8fafb' : i.kind === 'wall' ? '#25394a' : i.kind === 'rail' ? '#dbe7f2' : '#fff'}" stroke="#25394a" stroke-width="2"/>`
         if (i.kind === 'bed') shape += `<rect x="7" y="7" width="${i.width - 14}" height="${Math.min(30, i.height / 3)}" fill="#edf3f7" stroke="#25394a"/>`

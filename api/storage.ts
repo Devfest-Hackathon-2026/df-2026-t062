@@ -4,6 +4,18 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile, appendFile, link, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import {
+  decimalString,
+  isNotFoundError,
+  sourceObjectErrorCode,
+  type CancelUploadResult,
+  type DecimalString,
+  type DeleteResult,
+  type HoldResult,
+  type MetadataResult,
+  type SourceObjectControl,
+  type StoredObjectMetadata,
+} from '../storage/source-object-control.ts'
 
 /** forms は様式の元の PDF とページの画像（非公開。上書きしない。画面には期限つきの URL で渡す） */
 export type Bucket = 'source' | 'output' | 'work' | 'forms'
@@ -36,6 +48,8 @@ export interface Storage {
   signedReadUrl(bucket: Bucket, path: string, window: UrlWindow): Promise<string>
   /** STT などに渡す場所（gs://… か、ローカルのファイルの場所） */
   uri(bucket: Bucket, path: string): string
+  /** 録音原本のmetadata・hold・generation指定削除だけを扱う狭い境界 */
+  sourceObjects(): SourceObjectControl
 }
 
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && createHash('sha256').update(a).digest('hex') === createHash('sha256').update(b).digest('hex')
@@ -106,6 +120,72 @@ export class GcsStorage implements Storage {
   uri(bucket: Bucket, path: string) {
     return `gs://${this.names[bucket]}/${path}`
   }
+
+  sourceObjects(): SourceObjectControl {
+    const bucket = () => this.bucket('source')
+    const metadata = (raw: import('@google-cloud/storage').FileMetadata): StoredObjectMetadata => ({
+      size: Number(raw.size ?? 0),
+      generation: decimalString(raw.generation),
+      metageneration: decimalString(raw.metageneration),
+      temporaryHold: raw.temporaryHold === true,
+    })
+    return {
+      getLiveObjectMetadata: async (path): Promise<MetadataResult> => {
+        try {
+          const [raw] = await (await bucket()).file(path).getMetadata()
+          return { kind: 'found', metadata: metadata(raw) }
+        } catch (error) {
+          if (isNotFoundError(error)) return { kind: 'not_found' }
+          const code = sourceObjectErrorCode(error)
+          return { kind: 'error', code: code === 'precondition_failed' ? 'unavailable' : code }
+        }
+      },
+      setTemporaryHold: async (path, generation, metageneration, enabled): Promise<HoldResult> => {
+        try {
+          const file = (await bucket()).file(path, { generation })
+          const [raw] = await file.setMetadata(
+            { temporaryHold: enabled },
+            { preconditionOpts: { ifGenerationMatch: generation, ifMetagenerationMatch: metageneration } },
+          )
+          return { kind: 'updated', metadata: metadata(raw) }
+        } catch (error) {
+          if (isNotFoundError(error)) return { kind: 'not_found' }
+          return { kind: 'error', code: sourceObjectErrorCode(error) }
+        }
+      },
+      deleteObjectGeneration: async (path, generation): Promise<DeleteResult> => {
+        try {
+          await (await bucket()).file(path, { generation, preconditionOpts: { ifGenerationMatch: generation } }).delete()
+          return { kind: 'deleted' }
+        } catch (error) {
+          if (isNotFoundError(error)) return { kind: 'not_found' }
+          return { kind: 'error', code: sourceObjectErrorCode(error) }
+        }
+      },
+      cancelUploadSession: cancelUploadSession,
+    }
+  }
+}
+
+async function cancelUploadSession(uploadSessionUrl: string): Promise<CancelUploadResult> {
+  let url: URL
+  try {
+    url = new URL(uploadSessionUrl)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return { kind: 'error', code: 'invalid_request' }
+  } catch {
+    return { kind: 'error', code: 'invalid_request' }
+  }
+  try {
+    const response = await fetch(url, { method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(30_000) })
+    if (response.status === 204) return { kind: 'cancelled' }
+    if ([404, 410, 499].includes(response.status)) return { kind: 'inactive' }
+    if (response.status === 401 || response.status === 403) return { kind: 'error', code: 'permission_denied' }
+    if (response.status === 429) return { kind: 'error', code: 'rate_limited' }
+    if (response.status >= 500) return { kind: 'error', code: 'unavailable' }
+    return { kind: 'error', code: 'invalid_request' }
+  } catch {
+    return { kind: 'error', code: 'unavailable' }
+  }
 }
 
 /** ローカルの置き場。送信の URL は api の /api/dev-upload/<token>、期限つきの URL は api の /api/dev-files/<置き場>/<場所> */
@@ -113,6 +193,8 @@ export class LocalStorage implements Storage {
   readonly root: string
   private apiOrigin: string
   private sessions = new Map<string, { file: string, partial: string, tail: Promise<void> }>()
+  private sourceMetadata = new Map<string, { generation: bigint, metageneration: bigint, temporaryHold: boolean }>()
+  private nextGeneration = 1n
   private secret: Buffer
 
   constructor(root = process.env.LOCAL_STORAGE_DIR ?? '.data/storage', apiOrigin = process.env.PUBLIC_API_ORIGIN ?? '') {
@@ -177,6 +259,7 @@ export class LocalStorage implements Storage {
         }
         this.sessions.delete(token)
         await unlink(session.partial).catch(() => {})
+        this.sourceMetadata.set(session.file, { generation: this.nextGeneration++, metageneration: 1n, temporaryHold: false })
         return { status: 200 } as const
       }
       return { status: 308, range: size ? `bytes=0-${size - 1}` : undefined } as const
@@ -200,10 +283,12 @@ export class LocalStorage implements Storage {
   async write(bucket: Bucket, path: string, data: Uint8Array) {
     await mkdir(dirname(this.file(bucket, path)), { recursive: true })
     await writeFile(this.file(bucket, path), data)
+    if (bucket === 'source') this.sourceMetadata.set(this.file(bucket, path), { generation: this.nextGeneration++, metageneration: 1n, temporaryHold: false })
   }
 
   async remove(bucket: Bucket, path: string) {
     await unlink(this.file(bucket, path)).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'ENOENT') throw e })
+    if (bucket === 'source') this.sourceMetadata.delete(this.file(bucket, path))
   }
 
   async writeOnce(bucket: Bucket, path: string, data: Uint8Array, _mime?: string, _cacheControl?: string): Promise<'written' | 'same'> {
@@ -225,6 +310,67 @@ export class LocalStorage implements Storage {
 
   uri(bucket: Bucket, path: string) {
     return this.file(bucket, path)
+  }
+
+  sourceObjects(): SourceObjectControl {
+    const meta = async (path: string): Promise<{ file: string, stored: StoredObjectMetadata } | null> => {
+      const file = this.file('source', path)
+      const info = await stat(file).catch(() => null)
+      if (!info) return null
+      let current = this.sourceMetadata.get(file)
+      if (!current) {
+        current = { generation: this.nextGeneration++, metageneration: 1n, temporaryHold: false }
+        this.sourceMetadata.set(file, current)
+      }
+      return { file, stored: {
+        size: info.size,
+        generation: decimalString(current.generation),
+        metageneration: decimalString(current.metageneration),
+        temporaryHold: current.temporaryHold,
+      } }
+    }
+    return {
+      getLiveObjectMetadata: async (path): Promise<MetadataResult> => {
+        const found = await meta(path)
+        return found ? { kind: 'found', metadata: found.stored } : { kind: 'not_found' }
+      },
+      setTemporaryHold: async (path, generation, metageneration, enabled): Promise<HoldResult> => {
+        const found = await meta(path)
+        if (!found) return { kind: 'not_found' }
+        const current = this.sourceMetadata.get(found.file)!
+        if (decimalString(current.generation) !== generation || decimalString(current.metageneration) !== metageneration) {
+          return { kind: 'error', code: 'precondition_failed' }
+        }
+        current.temporaryHold = enabled
+        current.metageneration++
+        return { kind: 'updated', metadata: { ...found.stored, metageneration: decimalString(current.metageneration), temporaryHold: enabled } }
+      },
+      deleteObjectGeneration: async (path, generation): Promise<DeleteResult> => {
+        const found = await meta(path)
+        if (!found) return { kind: 'not_found' }
+        const current = this.sourceMetadata.get(found.file)!
+        if (decimalString(current.generation) !== generation) return { kind: 'error', code: 'precondition_failed' }
+        if (current.temporaryHold) return { kind: 'error', code: 'permission_denied' }
+        await unlink(found.file)
+        this.sourceMetadata.delete(found.file)
+        return { kind: 'deleted' }
+      },
+      cancelUploadSession: async (uploadSessionUrl): Promise<CancelUploadResult> => {
+        let token: string
+        try {
+          const url = new URL(uploadSessionUrl, 'http://local.invalid')
+          token = url.pathname.split('/').at(-1) ?? ''
+        } catch {
+          return { kind: 'error', code: 'invalid_request' }
+        }
+        const session = this.sessions.get(token)
+        if (!session) return { kind: 'inactive' }
+        this.sessions.delete(token)
+        await session.tail.catch(() => {})
+        await unlink(session.partial).catch(() => {})
+        return { kind: 'cancelled' }
+      },
+    }
   }
 }
 

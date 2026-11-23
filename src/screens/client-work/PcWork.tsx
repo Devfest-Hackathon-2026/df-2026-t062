@@ -22,6 +22,9 @@ import { PetHelper } from '../../components/assistant/PetHelper.tsx'
 import { countText } from '../../components/document/changes.ts'
 import { downloadBlob } from '../../lib/download.ts'
 import { PlanHistoryButton, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { FillDialog, fillStepIndex, fillStepLabel } from '../../components/document/FillDialog.tsx'
+import { useDocumentFill } from '../../components/document/useDocumentFill.ts'
+import type { PetFill } from '../../components/assistant/PetHelper.tsx'
 
 export function PcWork({ clientId, staffName }: { clientId: string, staffName: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -54,32 +57,51 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   const [adoptingKey, setAdoptingKey] = useState('')
   const adoption = useRef<Promise<boolean> | null>(null)
   const [candidateError, setCandidateError] = useState('')
+  // 書類を作るときに AI が書く（#195）: 作った直後に聞く書類と、書いている間のダイアログ
+  const [fillAsk, setFillAsk] = useState('')
+  const [fillShown, setFillShown] = useState(false)
 
   useEffect(() => { setDiagramChatRequest(undefined); setDocSaved(false); setSavedPages(new Set()); setCur(0) }, [docId])
   useEffect(() => { if (state.pendingCount || state.total.ai || state.total.hand) setDocSaved(false) }, [state.pendingCount, state.total.ai, state.total.hand])
 
+  /** 元の書類（create_from の種類）があり、AI が書ける種類か（ケアプランは対象外） */
+  function canFillFrom(key: string) {
+    const from = kinds?.find((k) => k.key === key)?.createFrom
+    return !!from && !isPlanKind(key) && !!client?.documents.some((d) => d.kind === from)
+  }
   // 種類のタブを開く。その種類の書類がまだなければ作る（db/repo.ts の createDocument。写す種類は写す）
   const openKind = useCallback(async (key: string) => {
     if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
     setCarePlanOpen(false); setPlanDirty(false)
     setNewOpen(false)
     if (!client?.documents.some((d) => d.kind === key)) {
-      await api.createDocument(clientId, key)
+      const r = await api.createDocument(clientId, key)
+      if (r.created && canFillFrom(key)) setFillAsk(r.id)
       await reloadClient()
     }
     setTab(key)
-  }, [client, clientId, reloadClient, carePlanOpen, planDirty, planBusy, state.flush])
+  }, [client, kinds, clientId, reloadClient, carePlanOpen, planDirty, planBusy, state.flush])
   // 何通も作れる種類は、押すたびに新しい書類を作る
   const createKind = useCallback(async (key: string) => {
     if (planBusy || (carePlanOpen && planDirty && !window.confirm('保存していない入力があります。入力を破棄して移動しますか？'))) return
     setNewOpen(false)
-    await api.createDocument(clientId, key)
+    const r = await api.createDocument(clientId, key)
+    if (r.created && canFillFrom(key)) setFillAsk(r.id)
     await reloadClient()
     setTab(key)
-  }, [clientId, reloadClient, state.flush, planBusy, carePlanOpen, planDirty])
+  }, [clientId, reloadClient, client, kinds, planBusy, carePlanOpen, planDirty])
 
   const doc = state.doc
   const isPrimary = open.isPrimary
+  const fillable = !!docId && canFillFrom(open.key)
+  const filling = useDocumentFill(fillable ? docId : undefined, () => reloadDoc.current())
+  const fillSource = open.fromName ?? ''
+  const runFill = () => { setFillAsk(''); setFillShown(true); void filling.start() }
+  const petFill: PetFill | undefined = !fillable || !filling.loaded ? undefined
+    : filling.working ? { phase: 'working', step: fillStepLabel(Math.min(2, fillStepIndex(filling.fill!.step)), fillSource), onShow: () => setFillShown(true) }
+      : filling.justDone ? { phase: 'done', sourceName: fillSource, changes: filling.fill?.changes ?? 0 }
+        : !filling.fill || filling.fill.status === 'failed' ? { phase: 'offer', sourceName: fillSource, onRun: runFill, error: filling.error || undefined }
+          : undefined
   const kindName = open.kind?.name ?? ''
   const pages = state.pages
   /** ページが何枚もある書類（ページの番号・いまのページを出す） */
@@ -310,10 +332,11 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         </section>
         </>}
 
-        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics}
+        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics} unheard={doc?.id === docId ? state.unheard : []}
           onJump={jumpToField} onPreview={stagePreview} verifiedSources={verifiedSources}
           chat={{ documentId: doc?.id === docId ? doc?.id : undefined, current: state.current, saved: state.saved, onSet: state.setValue, onDiagramApply: state.applyDiagram, dict: fieldDict(state.form?.localFields) }}
 
+          fill={carePlanOpen ? undefined : petFill}
           onIdentity={(sha, confirmed) => {
             setCandidateError('')
             setVerifiedSources((previous) => {
@@ -324,6 +347,12 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
             })
           }} />
       </div>
+      {!carePlanOpen && fillable && fillAsk === docId && filling.loaded && !filling.fill && (
+        <FillDialog phase="ask" sourceName={fillSource} kindName={kindName} onRun={runFill} onDecline={() => setFillAsk('')} />
+      )}
+      {!carePlanOpen && fillShown && filling.working && (
+        <FillDialog phase="working" sourceName={fillSource} step={filling.fill!.step} onHide={() => setFillShown(false)} />
+      )}
     </div>
   )
 }

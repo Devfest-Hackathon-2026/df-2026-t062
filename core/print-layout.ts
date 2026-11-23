@@ -170,11 +170,29 @@ export function expandPrintLayout(
   })
 }
 
-function textChunks(text: string, slot: TemplateSlot): string[] {
+/** 印字欄に入る行の文字数と行数（最小の文字サイズ・1 文字 1em の保守的な見積もり） */
+function slotGrid(slot: TemplateSlot): { cols: number, lines: number } {
   const font = slot.dynamicFontSize?.min ?? slot.fontSize ?? 8
   const charWidth = font * 25.4 / 72
-  const cols = Math.max(1, Math.floor((slot.width - 1) / charWidth))
-  const linesPerPage = Math.max(1, Math.floor((slot.height - 0.8) / (charWidth * (slot.lineHeight ?? 1.15))))
+  return {
+    cols: Math.max(1, Math.floor((slot.width - 1) / charWidth)),
+    lines: Math.max(1, Math.floor((slot.height - 0.8) / (charWidth * (slot.lineHeight ?? 1.15)))),
+  }
+}
+
+/** 印字欄に入るおよその文字数（改行のない文で） */
+export function slotChars(slot: TemplateSlot): number {
+  const { cols, lines } = slotGrid(slot)
+  return cols * lines
+}
+
+/** 文が印字欄に収まるか（PDF のはみ出しの確かめと同じ計算） */
+export function fitsSlot(text: string, slot: TemplateSlot): boolean {
+  return textChunks(text, slot).length <= 1
+}
+
+function textChunks(text: string, slot: TemplateSlot): string[] {
+  const { cols, lines: linesPerPage } = slotGrid(slot)
   const lines = text.split('\n').flatMap((line) => {
     const chars = Array.from(line)
     if (!chars.length) return ['']

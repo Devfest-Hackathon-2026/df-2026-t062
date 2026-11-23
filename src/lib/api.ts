@@ -14,14 +14,17 @@ import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.
 import type { SurveyImportKey, SurveySource } from '../../core/survey-import.ts'
 import type { ChatMessage, ChatReply } from '../../api/chat.ts'
 import type { InspectionSummary, InspectionView } from '../../db/inspections.ts'
+import type { FillView } from '../../db/document-fills.ts'
 import { readChatStream } from './chatStream.ts'
 import type { CarePlanView, CarePlanSummary, NeedInput, SlotInput, AiDraftDetail } from '../../db/care-plans.ts'
 import type { KindFormState } from '../../db/forms.ts'
 import type { FormImportView } from '../../db/form-imports.ts'
 import type { SlotMeaning } from '../../core/slot-meaning.ts'
+import type { OfficeTopicsEdit, TeachDecision, TrainingItem } from '../../core/topics.ts'
+import type { TrainingView } from '../../db/office-topics.ts'
 import type { LocalField } from '../../core/dictionary.ts'
 
-export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning }
+export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
 
 /** 責任者が見る様式の版（GET /api/office/form-versions/:id）。slots は印字欄ごとの入る内容の言葉、review は取り込みが迷った欄 */
 export interface ManagedVersion {
@@ -154,7 +157,8 @@ export const api = {
   applyCareRecordDraft: (id: string, draftId: string) => req<{ draft: CareRecordDraftView, document: DocumentView }>('POST', `/api/care-records/${id}/ai-drafts/${draftId}/apply`, {}),
   confirmCareRecord: (id:string,baseRevision:number,relatedPlanId:string|null) => req<{confirmation: import('../../core/care-record.ts').CareRecordConfirmation}>('POST', `/api/care-records/${id}/confirm`, {baseRevision,relatedPlanId}),
   careRecordRevision: (id: string, rev: number) => req<{ revision: CareRecordRevision }>('GET', `/api/care-records/${id}/revisions/${rev}`),
-  document: (id: string) => req<{ document: DocumentView }>('GET', `/api/documents/${id}`),
+  /** unheardTopics: 面談のヒント。事業所が足した項目で、この書類でまだ話に出ていないもの（#115） */
+  document: (id: string) => req<{ document: DocumentView, unheardTopics?: { id: string, name: string }[] }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),
   patch: (id: string, changes: { key: string, value: unknown, base: unknown, mode?: 'edit' | 'revert' }[]) =>
     req<{ document: DocumentView }>('PATCH', `/api/documents/${id}/fields`, { changes }),
@@ -179,6 +183,9 @@ export const api = {
     req<{ rev: number, document: DocumentView }>('POST', `/api/documents/${id}/save`, body),
   jobs: (clientId: string) => req<{ jobs: JobView[] }>('GET', `/api/clients/${clientId}/jobs`),
   /** AI 点検（#113）。始める・これまでの点検・1 回の結果 */
+  /** 書類を作るときに、元の書類から AI が書く（#195） */
+  startFill: (documentId: string) => req<{ fillId: string }>('POST', `/api/documents/${documentId}/fill`, {}),
+  documentFill: (documentId: string) => req<{ fill: FillView | null }>('GET', `/api/documents/${documentId}/fill`),
   startInspection: (clientId: string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {}),
   inspections: (clientId: string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections`),
   inspection: (id: string) => req<{ inspection: InspectionView }>('GET', `/api/inspections/${id}`),
@@ -190,12 +197,16 @@ export const api = {
   // ---------- 責任者の書類の設定（#102） ----------
   officeForms: () => req<{ kinds: KindFormState[] }>('GET', '/api/office/forms'),
   // ---------- 責任者が書類の種類を足す（#153） ----------
-  createOfficeKind: (input: { name: string, perClient: 'one' | 'many', copyFromPrimary: boolean, records: boolean, append: boolean }) =>
+  createOfficeKind: (input: { name: string, perClient: 'one' | 'many', append: boolean }) =>
     req<{ kind: { key: string } }>('POST', '/api/office/form-kinds', input),
+  // ---------- 事業所が直せる項目（#115。AI 特訓部屋） ----------
+  // 事業所が足した書類の項目を置き換える（AI 特訓部屋の「この項目はいらない」が使う）
   setOfficeTopics: (key: string, topics: { id?: string, name: string, guide: string }[]) =>
     req<{ topics: KindFormState['topics'] }>('PUT', `/api/office/form-kinds/${encodeURIComponent(key)}/topics`, { topics }),
-  draftOfficeTopics: (key: string, versionId: string) =>
-    req<{ topics: KindFormState['topics'] }>('POST', `/api/office/form-kinds/${encodeURIComponent(key)}/topics/draft`, { versionId }),
+  officeTraining: (key: string) => req<TrainingView>('GET', `/api/office/topics/${encodeURIComponent(key)}`),
+  saveOfficeTraining: (key: string, edit: OfficeTopicsEdit) => req<TrainingView>('PUT', `/api/office/topics/${encodeURIComponent(key)}`, edit),
+  teachOfficeTopic: (key: string, text: string, current: string | null) =>
+    req<{ decision: TeachDecision }>('POST', `/api/office/topics/${encodeURIComponent(key)}/teach`, { text, current }),
   retireOfficeKind: (key: string) => req<{ ok: true }>('POST', `/api/office/form-kinds/${encodeURIComponent(key)}/retire`, {}),
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),

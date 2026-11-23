@@ -5,6 +5,7 @@ import { checkBindings, renderSlot, editSlot, type Binding } from '../core/bindi
 import type { DraftSlot, LocalField } from '../worker/form-import/draft.ts'
 import type { PageDraft } from '../worker/form-import/convert.ts'
 import { buildVersion } from '../worker/form-import/version.ts'
+import { checkDraftVersion } from '../worker/form-import/check.ts'
 
 const slot = (label: string, ui: DraftSlot['ui'], ref: string | null, more: Partial<DraftSlot> = {}): DraftSlot =>
   ({ x: 10, y: 10, w: 20, h: 4, ui, ref, label, confidence: 1, ...more })
@@ -136,4 +137,33 @@ test('条件で行を選ぶ欄: 一覧にない項目の名前は、値の一覧
 test('等しいだけの条件を 2 つ書いた欄は、その両方に合う行（1 行）を読む', () => {
   const v = buildVersion([page(1, [slot('月 9:00', 'text', 'plan.weekly[day=月,start=09:00].service')])])
   assert.deepEqual(v.bindings['p1_月9:00'], { op: 'text@1', ui: 'text', ref: { key: 'plan.weekly', path: [{ match: { day: '月', start: '09:00' } }, 'service'] } })
+})
+
+// #128: 図欄（家族構成図・家屋見取図・身体図）。手で作った版（forms/seed/assessment）と同じ、image の印字欄と diagram@1 にする
+test('図の枠（ui: diagram）は、pdfme の image の欄と diagram@1 にし、版の確かめを通る', () => {
+  const v = buildVersion([page(2, [slot('家族構成図', 'diagram', 'family.genogram', { w: 75, h: 56 })])])
+  assert.deepEqual(v.bindings['p2_家族構成図'], { op: 'diagram@1', ui: 'diagram', ref: { key: 'family.genogram' } })
+  const [s] = v.schemas[0]
+  assert.deepEqual([s.type, s.content, s.position, s.width, s.height], ['image', '', { x: 10, y: 10 }, 75, 56])
+  assert.deepEqual(v.review, [])
+  assert.deepEqual(checkDraftVersion(v), [])
+})
+
+test('図の key を文字の欄（text・area）で答えても、図の欄にする', () => {
+  const v = buildVersion([page(3, [slot('見取図', 'area', 'housing.floorPlan'), slot('障害等の部位', 'text', 'health.bodyMap')])])
+  assert.deepEqual(Object.values(v.bindings).map((b) => [b.op, b.ui, b.ref.key]), [['diagram@1', 'diagram', 'housing.floorPlan'], ['diagram@1', 'diagram', 'health.bodyMap']])
+  assert.deepEqual(v.schemas[0].map((s) => s.type), ['image', 'image'])
+  assert.deepEqual(checkDraftVersion(v), [])
+})
+
+test('図の枠に図でない key・ない key を答えたら、複数行の文字の欄にして要確認', () => {
+  const v = buildVersion([page(1, [slot('生活歴', 'diagram', 'person.lifeHistory'), slot('地図', 'diagram', 'local.map')], [{ key: 'local.map', label: '地図', type: 'text' }])])
+  assert.deepEqual(v.bindings['p1_生活歴'], { op: 'text@1', ui: 'area', ref: { key: 'person.lifeHistory' } })
+  assert.deepEqual(v.bindings['p1_地図'], { op: 'text@1', ui: 'area', ref: { key: 'local.map' } })
+  assert.deepEqual(v.schemas[0].map((s) => s.type), ['text', 'text'])
+  assert.deepEqual(v.review, [
+    { slot: 'p1_生活歴', reason: '図の欄ではない key なので、文字の欄にした（person.lifeHistory）' },
+    { slot: 'p1_地図', reason: '図の欄ではない key なので、文字の欄にした（local.map）' },
+  ])
+  assert.deepEqual(checkDraftVersion(v), [])
 })

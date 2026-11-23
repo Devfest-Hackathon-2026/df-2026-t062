@@ -125,3 +125,17 @@
 .pc .of-modal p { margin: 0; font-size: 14px; line-height: 1.8; }
 .pc .of-modal .gray { padding: 12px 14px; border-radius: 8px; background: #F4F5F7; font-size: 14px; line-height: 1.8; }
 .pc .of-modal-btns { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---------- 書類の画面: 書式と AI 特訓部屋の入口を並べる（#115。#111 採用案の 4 案目の doc-cards・teach-card） ---------- */
+.pc .of-doc-cards { margin-top: 16px; max-width: 1000px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: stretch; }
+.pc .of-doc-cards .of-panel { margin-top: 0; max-width: none; }
+.pc .of-teach-card { padding: 24px; border: 1px solid #E1E4EA; border-radius: 12px; background: #FFFFFF; color: #1F2430; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; transition: border-color .12s, box-shadow .12s; }
+.pc .of-teach-card:hover { border-color: #9fb6e3; box-shadow: 0 6px 18px rgba(31,52,86,.08); color: #1F2430; }
+.pc .of-teach-card h2 { align-self: stretch; text-align: left; margin: 0; font-size: 15px; font-weight: 700; }
+.pc .of-teach-card .tc-cat { width: 170px; height: 170px; object-fit: contain; margin-top: 20px; }
+.pc .of-teach-card .tc-lead { margin: 0; color: #4a5568; font-size: 14px; line-height: 1.6; }
+.pc .of-teach-card .tc-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.pc .of-teach-card .tc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1px solid #E1E4EA; background: #FFFFFF; }
+.pc .of-teach-card .tc-chip.add { background: #f6fcf9; border-color: #cfe9dd; }
+.pc .of-teach-card .tc-chip.rule { background: #EAF0FC; border-color: #b9cdf3; }
+.pc .of-teach-card .tc-go { margin-top: auto; width: 100%; max-width: 320px; justify-content: center; }
