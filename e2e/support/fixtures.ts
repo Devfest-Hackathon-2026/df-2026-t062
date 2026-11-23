@@ -16,7 +16,7 @@ export const test = base.extend<{ clientId: string, clientName: string, ui: 'pc'
     // APIのみ同一マシンへ接続。外部AI/Firebaseに依存しない。
     await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort())
     await page.route('**/__/firebase/init.json', (route) => route.fulfill({ status: 404, body: '' }))
-    await page.goto('/')
+    await page.goto('/app')
     await page.getByRole('textbox', { name: 'メールアドレス' }).fill('e2e@example.com')
     const clientsResponse = page.waitForResponse((response) => {
       const url = new URL(response.url())

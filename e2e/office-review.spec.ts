@@ -14,7 +14,7 @@ test('文字・丸・図の位置を直し、保存後と再表示で対応が�
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//,r=>r.abort())
  await page.route('**/__/firebase/init.json',r=>r.fulfill({status:404,body:''}))
- await page.goto('/')
+ await page.goto('/app')
  await page.getByRole('textbox',{name:'メールアドレス'}).fill('e2e-office@example.com')
  await page.getByRole('button',{name:'ログイン',exact:true}).click()
  await expect(page.getByRole('button',{name:'ログイン',exact:true})).not.toBeVisible()
