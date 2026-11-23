@@ -80,7 +80,14 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     ])
     const cleanupRoleExists = (await db.query("SELECT 1 FROM pg_roles WHERE rolname = 'recording_cleanup'")).rowCount === 1
     if (cleanupRoleExists) {
-      assert.equal((await db.query("SELECT has_table_privilege('recording_cleanup', 'audit_events', 'INSERT') AS allowed")).rows[0].allowed, true)
+      assert.equal((await db.query(`
+        SELECT bool_and(has_column_privilege('recording_cleanup', 'audit_events', required.column_name, 'INSERT')) AS allowed
+        FROM (VALUES
+          ('office_id'), ('staff_id'), ('client_id'), ('document_id'), ('action'),
+          ('outcome'), ('request_id'), ('correlation_id'), ('trace_id'), ('source'),
+          ('route'), ('schema_version'), ('detail')
+        ) AS required(column_name)
+      `)).rows[0].allowed, true)
       assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'USAGE') AS allowed")).rows[0].allowed, true)
       assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'SELECT') AS allowed")).rows[0].allowed, true)
     }

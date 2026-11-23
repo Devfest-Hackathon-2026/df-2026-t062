@@ -233,7 +233,14 @@ BEGIN
     AND has_table_privilege('recording_cleanup', 'public.recording_summaries', 'DELETE')
     AND has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'SELECT')
     AND has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'UPDATE')
-    AND has_table_privilege('recording_cleanup', 'public.audit_events', 'INSERT')
+    AND (
+      SELECT bool_and(has_column_privilege('recording_cleanup', 'public.audit_events', required.column_name, 'INSERT'))
+      FROM (VALUES
+        ('office_id'), ('staff_id'), ('client_id'), ('document_id'), ('action'),
+        ('outcome'), ('request_id'), ('correlation_id'), ('trace_id'), ('source'),
+        ('route'), ('schema_version'), ('detail')
+      ) AS required(column_name)
+    )
     AND has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'USAGE')
     AND has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'SELECT')
   )
@@ -250,6 +257,19 @@ BEGIN
     OR has_table_privilege('recording_cleanup', 'public.audit_events', 'SELECT')
     OR has_table_privilege('recording_cleanup', 'public.audit_events', 'UPDATE')
     OR has_table_privilege('recording_cleanup', 'public.audit_events', 'DELETE')
+    OR EXISTS (
+      SELECT 1
+      FROM information_schema.column_privileges
+      WHERE grantee = 'recording_cleanup'
+        AND table_schema = 'public'
+        AND table_name = 'audit_events'
+        AND privilege_type = 'INSERT'
+        AND column_name NOT IN (
+          'office_id', 'staff_id', 'client_id', 'document_id', 'action',
+          'outcome', 'request_id', 'correlation_id', 'trace_id', 'source',
+          'route', 'schema_version', 'detail'
+        )
+    )
     OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'SELECT')
     OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'INSERT')
     OR has_table_privilege('recording_cleanup', 'public.access_audit_events', 'UPDATE')
