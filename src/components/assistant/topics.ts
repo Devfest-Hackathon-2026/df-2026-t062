@@ -35,14 +35,14 @@ export function reviewItems(doc: Pick<DocumentView, 'fields'> | null, current: V
   for (const [key, field] of Object.entries(doc?.fields ?? {})) {
     if (!targets.has(key) || isEmpty(current[key]) || !(field.by === 'ai' || field.batchId || field.surveySource)) continue
     const value = current[key]
-    items.set(key, { key, value: displayValue(value), confirmed: sameValue(value, saved[key]) })
+    items.set(key, { key, value: displayValue(value), confirmed: !!field.reviewedAt && sameValue(value,field.value) })
   }
   const pendingSources: ReviewItem[] = []
   for (const { candidate, value, baseline, conflicts } of drafts) {
     const { key, reason } = candidate
     if (!targets.has(key)) continue
     const now = current[key]
-    const confirmed = !isEmpty(now) && !sameValue(now, baseline) && sameValue(now, saved[key])
+    const confirmed = !!doc?.fields[key]?.reviewedAt && sameValue(now,doc.fields[key].value) && !isEmpty(now) && !sameValue(now, baseline)
     const detail = confirmed ? undefined : conflicts?.length ? '読み取った書類同士で値が異なります'
       : reason ?? (!isEmpty(now) && !sameValue(now, value) ? `用紙の現在値：${displayValue(now)}` : undefined)
     const item = { key, value: confirmed ? displayValue(now) : value ?? (isEmpty(now) ? '' : `用紙：${displayValue(now)}`), confirmed, reason: detail }

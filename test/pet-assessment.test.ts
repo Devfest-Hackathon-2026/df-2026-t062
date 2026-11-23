@@ -34,7 +34,7 @@ test('面談の話題は、実際の用紙にあり必須の空欄をフィー�
   assert.deepEqual(availableTopics({}, fieldTargets([]), REQUIRED_ASSESS), [])
 })
 
-test('明確な認定調査票の候補だけを空欄に仮入力し、保存までは確認済みにならない', () => {
+test('明確な認定調査票の候補だけを空欄に仮入力し、保存だけでは確認済みにならない', () => {
   const saved = { 'survey.2_5': '全介助' }
   const drafts = stageSurvey(preview, {}, saved)
   assert.deepEqual([...surveyOverlays(drafts, {}, saved, targets).keys()], ['p6_2-2_2'])
@@ -45,7 +45,9 @@ test('明確な認定調査票の候補だけを空欄に仮入力し、保存�
   assert.deepEqual(reviewItems(null, {}, saved, drafts, targets).map((item) => item.confirmed), [false, false, false])
   const selected = { 'survey.2_2': '見守り等' }
   assert.equal(reviewItems(null, selected, saved, drafts, targets)[0].confirmed, false)
-  assert.equal(reviewItems(null, selected, { ...saved, ...selected }, drafts, targets)[0].confirmed, true)
+  assert.equal(reviewItems(null, selected, { ...saved, ...selected }, drafts, targets)[0].confirmed, false)
+  const doc: Pick<DocumentView,'fields'>={fields:Object.fromEntries(Object.entries(selected).map(([key,value])=>[key,{value,by:'cm' as const,aiValue:null,batchId:null,updatedAt:preview.readAt,reviewedAt:preview.readAt}]))}
+  assert.equal(reviewItems(doc, selected, { ...saved, ...selected }, drafts, targets)[0].confirmed, true)
   assert.equal(surveyOverlays(drafts, selected, saved, targets).size, 0)
 })
 
@@ -63,12 +65,12 @@ test('別の資料の値や用紙の値と矛盾した候補を上書きせず�
   assert.equal(reviewItems(null, entered, entered, existing, targets)[0].confirmed, false)
 })
 
-test('同じ欄に新しい要確認候補が届いても、保存済みの入力値は確認済みに残る', () => {
+test('同じ欄に新しい要確認候補が届いても、明示的に確認した入力値は確認済みに残る', () => {
   const key = 'survey.2_2'
   const current = { [key]: '見守り等' }
   const ambiguous = { ...preview, candidates: [{ ...preview.candidates[0], choice: null, reason: '印を確認できません' }] }
   const doc: Pick<DocumentView, 'fields'> = { fields: { [key]: {
-    value: current[key], by: 'cm', aiValue: null, batchId: null, updatedAt: preview.readAt,
+    value: current[key], by: 'cm', aiValue: null, batchId: null, updatedAt: preview.readAt, reviewedAt:preview.readAt,
     surveySource: { kind: 'survey-import', fileName: preview.fileName, sha256: preview.sha256, recordedOn: preview.recordedOn, page: 2, choice: 2 },
   } } }
   const result = reviewItems(doc, current, current, stageSurvey(ambiguous, current, current), targets)

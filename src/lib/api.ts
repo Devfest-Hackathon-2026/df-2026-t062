@@ -181,6 +181,9 @@ export const api = {
   }) => req<{ document: DocumentView }>('POST', `/api/documents/${id}/survey-import`, body),
   edits: (id: string, formVersionId: string, edits: SlotEdit[]) =>
     req<{ results: SlotEditResult[], document: DocumentView }>('POST', `/api/documents/${id}/edits`, { formVersionId, edits }),
+  reviewFields: (id:string,formVersionId:string,fields:{key:string;valueVersion:string;base:unknown}[],reviewed:boolean) =>
+    req<{document:DocumentView}>('POST',`/api/documents/${id}/review`,{formVersionId,fields,reviewed}),
+  confirmDocument: (id:string,baseRev:number) => req<{document:DocumentView}>('POST',`/api/documents/${id}/confirm`,{baseRev}),
   save: (id: string, body: { scope: 'document' } | { scope: 'page', page: number } | { scope: 'hunk', key: string, hunkIndex: number }) =>
     req<{ rev: number, document: DocumentView }>('POST', `/api/documents/${id}/save`, body),
   jobs: (clientId: string) => req<{ jobs: JobView[] }>('GET', `/api/clients/${clientId}/jobs`),
@@ -222,6 +225,8 @@ export const api = {
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),
   managedVersion: (id: string) => req<ManagedVersion>('GET', `/api/office/form-versions/${id}`),
+  positionSlots: (id: string, base: string, schemas: ManagedVersion['formVersion']['schemas']) =>
+    req<ManagedVersion>('PATCH', `/api/office/form-versions/${id}`, { base, schemas }),
   managedAssets: (id: string) => req<FormAssetsView>('GET', `/api/office/form-versions/${id}/assets`),
   teachSlot: (id: string, slot: string, base: string, text: string) =>
     req<ManagedVersion & { matched: 'field' | 'local' }>('POST', `/api/office/form-versions/${id}/slots/${encodeURIComponent(slot)}`, { base, text }),

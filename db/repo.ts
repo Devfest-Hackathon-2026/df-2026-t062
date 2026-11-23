@@ -26,7 +26,7 @@ export function auditContextOf(staff: Staff | null | undefined): AuditContext | 
   return staff ? auditContexts.get(staff) : undefined
 }
 
-export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, surveySource?: SurveySource, documentSource?: DocumentSource }
+export interface FieldRow { value: unknown, aiValue: unknown, by: Who, batchId: string | null, updatedAt: string, valueVersion?: string, reviewedAt?: string, reviewedBy?: string, surveySource?: SurveySource, documentSource?: DocumentSource }
 export interface SavedRow { value: unknown, by: Who }
 
 export interface DocumentView {
@@ -38,6 +38,7 @@ export interface DocumentView {
   fields: Record<string, FieldRow>
   saved: Record<string, SavedRow>
   rev: number
+  confirmation?: {rev:number;confirmedAt:string;confirmedBy:string}
   batches: { id: string, kind: string, label: string, createdAt: string, changes: number, kept: number }[]
 }
 
@@ -201,12 +202,13 @@ export async function lockDocument(c: Tx, officeId: string, documentId: string) 
 /** 書類の今の値（どの値も、どれか 1 つの書類に属する） */
 export async function readFields(db: Q, documentId: string): Promise<Record<string, FieldRow>> {
   const r = await db.query(
-    'SELECT key, value, ai_value, by, batch_id, updated_at, cite FROM field_values WHERE document_id = $1',
+    'SELECT key, value, ai_value, by, batch_id, updated_at, cite, reviewed_at, reviewed_by, value_version FROM field_values WHERE document_id = $1',
     [documentId],
   )
   const out: Record<string, FieldRow> = {}
   for (const row of r.rows) {
-    out[row.key] = { value: row.value, aiValue: row.ai_value, by: row.by, batchId: row.batch_id, updatedAt: new Date(row.updated_at).toISOString(),
+    out[row.key] = { valueVersion:row.value_version, value: row.value, aiValue: row.ai_value, by: row.by, batchId: row.batch_id, updatedAt: new Date(row.updated_at).toISOString(),
+      ...(row.reviewed_at ? {reviewedAt:new Date(row.reviewed_at).toISOString(),reviewedBy:row.reviewed_by} : {}),
       ...(row.cite?.kind === 'survey-import' ? { surveySource: row.cite as SurveySource } : {}),
       ...(row.cite?.kind === 'document-input' ? { documentSource: row.cite as DocumentSource } : {}) }
   }
@@ -221,11 +223,12 @@ async function readSaved(db: Q, documentId: string): Promise<Record<string, Save
 export async function getDocument(db: Q, officeId: string, documentId: string): Promise<DocumentView> {
   const d = (await db.query('SELECT id, client_id, kind, template_version_id FROM documents WHERE id = $1 AND office_id = $2', [documentId, officeId])).rows[0]
   if (!d) throw new NotFound()
-  const [fields, saved, rev, batches] = await Promise.all([
+  const [fields, saved, rev, batches, confirmation] = await Promise.all([
     readFields(db, d.id),
     readSaved(db, d.id),
     db.query('SELECT coalesce(max(rev), 0) AS rev FROM revisions WHERE document_id = $1', [d.id]),
     db.query('SELECT id, kind, label, created_at, jsonb_array_length(changes) AS n, jsonb_array_length(kept) AS k FROM batches WHERE document_id = $1 ORDER BY created_at DESC LIMIT 10', [d.id]),
+    db.query('SELECT rev,confirmed_at,confirmed_by FROM document_confirmations WHERE document_id=$1 ORDER BY rev DESC LIMIT 1',[d.id]),
   ])
   return {
     id: d.id,
@@ -235,6 +238,7 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
     fields,
     saved,
     rev: Number(rev.rows[0].rev),
+    ...(confirmation.rows[0] ? {confirmation:{rev:Number(confirmation.rows[0].rev),confirmedAt:new Date(confirmation.rows[0].confirmed_at).toISOString(),confirmedBy:confirmation.rows[0].confirmed_by}} : {}),
     batches: batches.rows.map((b) => ({ id: b.id, kind: b.kind, label: b.label, createdAt: new Date(b.created_at).toISOString(), changes: Number(b.n), kept: Number(b.k) })),
   }
 }
@@ -313,9 +317,10 @@ async function allowedKeys(db: Q, versionId: string): Promise<Set<string>> {
 export async function writeField(c: Tx, officeId: string, clientId: string, documentId: string, key: string, value: unknown, by: Who, staffId: string | null, extra: { aiValue?: unknown, batchId?: string, cite?: unknown } = {}) {
   const docId = documentId
   const prev = (await c.query(
-    'SELECT value, by, batch_id FROM field_values WHERE document_id = $1 AND key = $2',
+    'SELECT value, by, batch_id, reviewed_at FROM field_values WHERE document_id = $1 AND key = $2',
     [docId, key],
   )).rows[0]
+  if (by === 'ai' && prev?.reviewed_at && !sameValue(prev.value,value)) throw new Conflict('reviewed_field')
   if (prev) {
     await c.query(
       'INSERT INTO field_history (office_id, client_id, document_id, key, value, by, batch_id, changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
@@ -330,6 +335,9 @@ export async function writeField(c: Tx, officeId: string, clientId: string, docu
     `INSERT INTO field_values (office_id, client_id, document_id, key, value, ai_value, by, batch_id, cite, updated_by, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
      ON CONFLICT ON CONSTRAINT field_values_unique DO UPDATE SET
+       value_version = gen_random_uuid(),
+       reviewed_at = CASE WHEN field_values.value = EXCLUDED.value THEN field_values.reviewed_at ELSE NULL END,
+       reviewed_by = CASE WHEN field_values.value = EXCLUDED.value THEN field_values.reviewed_by ELSE NULL END,
        value = EXCLUDED.value,
        ai_value = coalesce(EXCLUDED.ai_value, field_values.ai_value),
        by = EXCLUDED.by,
@@ -551,7 +559,7 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     const form = await loadFormDef(c, d.versionId)
     const allowed = new Set(form.keys)
     const fields = await readFields(c, d.id)
-    const current: Record<string, CurrentField> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { value: v.value, by: v.by }]))
+    const current: Record<string, CurrentField> = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { value: v.value, by: v.by, reviewed: !!v.reviewedAt }]))
     const system = Object.fromEntries(Object.entries(input.system ?? {}).filter(([k]) => allowed.has(k)).map(([k, v]) => [k, { value: v }]))
     const proposed = { ...Object.fromEntries(Object.entries(input.proposed).filter(([k]) => allowed.has(k))), ...system }
     const plan = planBatch(current, proposed, new Set(Object.keys(system)), fieldDict(form.localFields))

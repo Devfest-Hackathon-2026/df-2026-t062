@@ -1,4 +1,5 @@
 // 様式の版の出口の確かめ（#99）。api の公開前の確かめ（#103）も使うので、PDF を読むモジュール（pdfjs）を読み込まない。
+import { geometryProblem } from '../../core/slot-geometry.ts'
 import { BY_KEY } from '../../core/fields.ts'
 import { checkBindings, type Bindings } from '../../core/binding.ts'
 import type { DraftVersion } from './version.ts'
@@ -9,8 +10,16 @@ import type { DraftVersion } from './version.ts'
  *   2. 対応が指す key が、fields.json か、その版の local_fields にある
  *   3. local_fields の key は local. で始まり、版の中で重ならない
  */
-export function checkDraftVersion(v: Pick<DraftVersion, 'schemas' | 'bindings' | 'localFields'>): string[] {
+export function checkDraftVersion(v: Pick<DraftVersion, 'schemas' | 'bindings' | 'localFields'> & Partial<Pick<DraftVersion,'pages'>>): string[] {
   const errors: string[] = []
+  if (v.pages) for (const [index, slots] of v.schemas.entries()) {
+    const page = v.pages.find(p => p.pdfIndex === index)
+    if (!page) { errors.push(`${index + 1} ページ: ページの寸法がありません`); continue }
+    for (const slot of slots) {
+      const problem = geometryProblem({x:slot.position.x,y:slot.position.y,w:slot.width,h:slot.height},page)
+      if (problem) errors.push(`${slot.name}: ${problem}`)
+    }
+  }
   const names = new Set(v.schemas.flat().map((s) => s.name))
   for (const n of names) if (!v.bindings[n]) errors.push(`${n}: 印字欄に対応がない`)
   for (const n of Object.keys(v.bindings)) if (!names.has(n)) errors.push(`${n}: 対応があるのに印字欄がない`)

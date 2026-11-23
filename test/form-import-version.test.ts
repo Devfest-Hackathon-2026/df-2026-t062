@@ -146,14 +146,14 @@ test('図の枠（ui: diagram）は、pdfme の image の欄と diagram@1 にし
   const [s] = v.schemas[0]
   assert.deepEqual([s.type, s.content, s.position, s.width, s.height], ['image', '', { x: 10, y: 10 }, 75, 56])
   assert.deepEqual(v.review, [])
-  assert.deepEqual(checkDraftVersion(v), [])
+  assert.deepEqual(checkDraftVersion({ ...v, pages: undefined }), [])
 })
 
 test('図の key を文字の欄（text・area）で答えても、図の欄にする', () => {
   const v = buildVersion([page(3, [slot('見取図', 'area', 'housing.floorPlan'), slot('障害等の部位', 'text', 'health.bodyMap')])])
   assert.deepEqual(Object.values(v.bindings).map((b) => [b.op, b.ui, b.ref.key]), [['diagram@1', 'diagram', 'housing.floorPlan'], ['diagram@1', 'diagram', 'health.bodyMap']])
   assert.deepEqual(v.schemas[0].map((s) => s.type), ['image', 'image'])
-  assert.deepEqual(checkDraftVersion(v), [])
+  assert.deepEqual(checkDraftVersion({ ...v, pages: undefined }), [])
 })
 
 test('図の枠に図でない key・ない key を答えたら、複数行の文字の欄にして要確認', () => {
@@ -165,5 +165,5 @@ test('図の枠に図でない key・ない key を答えたら、複数行の�
     { slot: 'p1_生活歴', reason: '図の欄ではない key なので、文字の欄にした（person.lifeHistory）' },
     { slot: 'p1_地図', reason: '図の欄ではない key なので、文字の欄にした（local.map）' },
   ])
-  assert.deepEqual(checkDraftVersion(v), [])
+  assert.deepEqual(checkDraftVersion({ ...v, pages: undefined }), [])
 })

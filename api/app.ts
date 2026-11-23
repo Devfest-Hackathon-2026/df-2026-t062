@@ -1,3 +1,4 @@
+import { reviewFields,confirmDocument } from '../db/document-review.ts'
 import * as fees from '../db/care-fees.ts'
 import { FeeCalculateInput,FeeConfirmInput } from '../core/care-fee-api.ts'
 import * as months from '../db/care-months.ts'
@@ -737,6 +738,17 @@ export function createApp(deps: ApiDeps) {
     return json(c, { ...r, document: await repo.getDocument(db, staff.officeId, c.req.param('id')!) })
   }))
 
+  app.post('/api/documents/:id/review', staffRoute('care.work', async(c,staff,db)=>{
+    const input=await body(c,z.object({formVersionId:z.uuid(),fields:z.array(z.object({key:z.string().min(1).max(200),valueVersion:z.uuid(),base:z.unknown()})).min(1).max(2000),reviewed:z.boolean()}))
+    await reviewFields(db,staff,c.req.param('id')!,input)
+    return json(c,{document:await repo.getDocument(db,staff.officeId,c.req.param('id')!)})
+  }))
+  app.post('/api/documents/:id/confirm', staffRoute('care.work', async(c,staff,db)=>{
+    const input=await body(c,z.object({baseRev:z.number().int().positive()}))
+    await confirmDocument(db,staff,c.req.param('id')!,input.baseRev)
+    return json(c,{document:await repo.getDocument(db,staff.officeId,c.req.param('id')!)})
+  }))
+
   app.post('/api/documents/:id/save', staffRoute('care.work', async (c, staff, db) => {
     await carePlans.assertGenericDocumentSave(db, staff.officeId, c.req.param('id')!)
     const r = await repo.saveDocument(db, staff, c.req.param('id')!, await body(c, SaveInput))
@@ -996,7 +1008,7 @@ export function createApp(deps: ApiDeps) {
     const dict = fieldDict(v.localFields)
     return {
       formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
-      problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+      problems: checkDraftVersion({ schemas: v.schemas as never, pages: v.pages, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
       slots: Object.fromEntries(Object.entries(v.bindings).map(([n, b]) => [n, slotMeaning(b, dict, v.localFields)])),
       review: v.status === 'draft' ? await forms.reviewOf(db, v.id) : [],
     }
