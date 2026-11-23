@@ -1,0 +1,172 @@
+{
+  "key": "C1",
+  "scenario": "C",
+  "repeat": 1,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:17:25.515Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 2849,
+    "promptSha256": "b127cc2930cd1b8cf4d008e1696db6365c00d776a07861ef09839b29f00f9365",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 11534,
+    "responseId": "JdIBa6aYIrScvdAPnJjZyQE",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 667,
+      "candidatesTokenCount": 379,
+      "totalTokenCount": 1787,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 667
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 379
+        }
+      ],
+      "thoughtsTokenCount": 741
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\n  \"plan1\": {\n    \"plan.intentionAnalysis\": \"本人は自宅での継続的な生活を強く希望し施設入所を拒否しているが、息子は施設入所を希望し在宅生活継続に同意しておらず、双方の意向が対立している。現時点で家族間の話し合いは未実施であり、方針は未決定であるとともに、介護力やサービス利用情報も未確認である。\",\n    \"plan.overallPolicy\": \"本人と息子の意向が乖離しているため、まずは双方が納得できる生活方針を決定できるよう話し合いの機会を設け、今後の方向性について合意形成を図る。\"\n  },\n  \"needs\": [\n    {\n      \"need\": \"今後の生活の場や支援方針について、本人と息子の意向をすり合わせ、方針を決定すること\",\n      \"longGoal\": {\n        \"goal\": \"本人と家族が話し合いを行い、双方が納得する今後の生活方針が定まる\",\n        \"periodText\": \"\"\n      },\n      \"shortGoals\": [\n        {\n          \"goal\": \"本人および息子の双方の意向や状況を整理し、話し合いの場を持つ\",\n          \"periodText\": \"\",\n          \"services\": []\n        }\n      ]\n    }\n  ],\n  \"slots\": [],\n  \"conflicts\": [\n    {\n      \"target\": \"今後の生活の場に関する意向（在宅継続か施設入所か）\",\n      \"reason\": \"本人は自宅で暮らし続けたい（施設入所は希望しない）と希望しているのに対し、息子は施設への入所を希望しており在宅生活の継続に同意していない。\"\n    }\n  ]\n}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 11568,
+    "draft": {
+      "id": "39e7c489-b208-469f-b99e-dc051f91b250",
+      "planId": "dc2f8bf0-9101-4a40-98a8-266e00a12273",
+      "status": "proposed",
+      "sourceDocumentId": "9b5741ee-b649-414f-9b2c-d8019dfab2eb",
+      "sourceRevisionId": 5,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:17:37.075Z",
+      "proposal": {
+        "needs": [
+          {
+            "need": "今後の生活の場や支援方針について、本人と息子の意向をすり合わせ、方針を決定すること",
+            "longGoal": {
+              "goal": "本人と家族が話し合いを行い、双方が納得する今後の生活方針が定まる",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "本人および息子の双方の意向や状況を整理し、話し合いの場を持つ",
+                "services": [],
+                "periodText": ""
+              }
+            ]
+          }
+        ],
+        "plan1": {
+          "plan.overallPolicy": "本人と息子の意向が乖離しているため、まずは双方が納得できる生活方針を決定できるよう話し合いの機会を設け、今後の方向性について合意形成を図る。",
+          "plan.intentionAnalysis": "本人は自宅での継続的な生活を強く希望し施設入所を拒否しているが、息子は施設入所を希望し在宅生活継続に同意しておらず、双方の意向が対立している。現時点で家族間の話し合いは未実施であり、方針は未決定であるとともに、介護力やサービス利用情報も未確認である。"
+        },
+        "slots": [],
+        "conflicts": [
+          {
+            "reason": "本人は自宅で暮らし続けたい（施設入所は希望しない）と希望しているのに対し、息子は施設への入所を希望しており在宅生活の継続に同意していない。",
+            "target": "今後の生活の場に関する意向（在宅継続か施設入所か）"
+          }
+        ]
+      },
+      "conflicts": [
+        {
+          "reason": "本人は自宅で暮らし続けたい（施設入所は希望しない）と希望しているのに対し、息子は施設への入所を希望しており在宅生活の継続に同意していない。",
+          "target": "今後の生活の場に関する意向（在宅継続か施設入所か）"
+        }
+      ],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 15,
+    "applied": {
+      "fields": [
+        "plan.intentionAnalysis"
+      ],
+      "needs": [
+        "28a93f9b-e83a-4125-a023-0c74720bea62"
+      ],
+      "slots": [],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "human_value"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証C",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）",
+      "plan.intentionAnalysis": "本人は自宅での継続的な生活を強く希望し施設入所を拒否しているが、息子は施設入所を希望し在宅生活継続に同意しておらず、双方の意向が対立している。現時点で家族間の話し合いは未実施であり、方針は未決定であるとともに、介護力やサービス利用情報も未確認である。"
+    },
+    "needs": [
+      {
+        "id": "28a93f9b-e83a-4125-a023-0c74720bea62",
+        "need": "今後の生活の場や支援方針について、本人と息子の意向をすり合わせ、方針を決定すること",
+        "longGoal": {
+          "id": "1bb2593e-3d4e-4b37-821f-a9ec3a8b177c",
+          "goal": "本人と家族が話し合いを行い、双方が納得する今後の生活方針が定まる",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "2e82c4a2-cba8-4a5f-8dd1-f79ac01be626",
+            "goal": "本人および息子の双方の意向や状況を整理し、話し合いの場を持つ",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": []
+          }
+        ]
+      }
+    ],
+    "slots": []
+  },
+  "expected": {
+    "focus": [
+      "本人の在宅希望",
+      "家族の施設希望",
+      "未合意・未決定"
+    ],
+    "services": [],
+    "slots": [],
+    "conflictsRequired": true
+  }
+}
