@@ -10,8 +10,24 @@ ORDER BY name;
 SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
-  AND table_name IN ('audit_events', 'access_audit_events', 'security_audit_events')
+  AND table_name IN ('audit_events', 'access_audit_events', 'security_audit_events', 'recording_consent_events')
 ORDER BY table_name;
+
+-- 録音開始前の同意イベントを必須にする最新スキーマの確認。
+SELECT table_name, column_name, is_nullable, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+    (table_name = 'recordings' AND column_name = 'consent_event_id')
+    OR (table_name = 'recording_consent_events' AND column_name IN ('id', 'event_type', 'occurred_at'))
+  )
+ORDER BY table_name, ordinal_position;
+
+SELECT trigger_name, event_object_table, action_timing, event_manipulation
+FROM information_schema.triggers
+WHERE trigger_schema = 'public'
+  AND trigger_name = 'recording_consent_events_guard'
+ORDER BY event_manipulation;
 
 SELECT table_name, column_name, is_nullable, data_type
 FROM information_schema.columns

@@ -21,13 +21,31 @@ GCP_PROJECT_ID="<project-id>" \
 GCP_REGION="asia-northeast1" \
 CLOUD_RUN_RECORDING_CLEANUP_JOB="t062-recording-cleanup" \
 MONITORING_NOTIFICATION_CHANNEL_IDS="projects/<project-id>/notificationChannels/<id>" \
-ENABLE_RECORDING_CLEANUP_SCHEDULER=true \
+ENABLE_RECORDING_CLEANUP_SCHEDULER=false \
 ENABLE_SOURCE_LIFECYCLE=false \
 APPLY=false \
 bash scripts/enable-recording-retention-production.sh
 ```
 
-Planの内容を確認した後だけ`APPLY=true`で再実行する。Lifecycleの有効化はScheduler・通知の初回成功を確認した後に、`ENABLE_SOURCE_LIFECYCLE=true`を指定して別途行う。通知は、最終失敗・保全不一致・Scheduler失敗・期限超過・Job無成功のアラートが同じ通知チャネルへ届くことを確認する。
+Planの内容を確認した後、まずはSchedulerを有効化する。適用時は、Planで確認した値を維持したうえで、明示確認変数を付けて再実行する。
+
+```bash
+GCP_PROJECT_ID="<project-id>" \
+GCP_REGION="asia-northeast1" \
+CLOUD_RUN_RECORDING_CLEANUP_JOB="t062-recording-cleanup" \
+MONITORING_NOTIFICATION_CHANNEL_IDS="projects/<project-id>/notificationChannels/<id>" \
+ENABLE_RECORDING_CLEANUP_SCHEDULER=true \
+ENABLE_SOURCE_LIFECYCLE=false \
+APPLY=true \
+CONFIRM_RECORDING_RETENTION_PRODUCTION=true \
+bash scripts/enable-recording-retention-production.sh
+```
+
+Lifecycleの有効化は、Scheduler・通知の初回成功と再度のreadiness 0件を確認した後に、`ENABLE_SOURCE_LIFECYCLE=true`を指定して別途Plan・Applyする。Lifecycleの直接有効化はTerraform側でも、Scheduler稼働・通知有効化・通知チャネル設定が揃わなければ拒否される。通知は、最終失敗・保全不一致・Scheduler失敗・期限超過・Job無成功のアラートが同じ通知チャネルへ届くことを確認する。
+
+`APPLY=true`だけでは適用されない。誤操作防止のため、`CONFIRM_RECORDING_RETENTION_PRODUCTION=true`も同時に指定する。
+
+PR8で追加した録音同意制約を含む最新イメージをRelease Cloud Runで反映し、Migration後に`recording-retention-preflight.sql`を実行する。`recording_consent_events`、`recordings.consent_event_id`、`recording_consent_events_guard`が確認できない場合は、本番有効化を中止する。
 
 既存の`enable-recording-lifecycle.sh`は互換用の入口であり、単独でTerraform applyは行わず、この手順へ委譲する。新規運用では`enable-recording-retention-production.sh`を使用する。
 
