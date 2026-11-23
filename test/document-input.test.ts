@@ -212,6 +212,22 @@ test('読取後の人の編集と競合したら、全候補と採用状態を�
   assert.equal(fields['survey.2_2'].value, '見守り等')
   assert.equal(fields['survey.2_4'], undefined)
   assert.deepEqual((await call(`/api/document-inputs/${id}`)).body.input.adopted, [])
+
+  // 競合しなかった欄を先に採用してから、同じ原本で残りの候補を更新する。
+  const adopt = (changes: { key: string, base: string | null }[]) =>
+    call(`/api/document-inputs/${id}/adopt`, 'POST', { targetConfirmed: true, changes })
+  assert.equal((await adopt([{ key: 'survey.2_4', base: null }])).status, 200)
+  const readsBeforeRefresh = readCalls
+  const again = await start(client.documentId)
+  assert.equal(again.input.id, id)
+  assert.equal(again.uploadUrl, null)
+  assert.equal((await call(`/api/document-inputs/${id}/complete`, 'POST', {})).body.input.status, 'queued')
+  await runDocumentInput(deps, id)
+  assert.equal(readCalls, readsBeforeRefresh, '既に読んだ原本は再度読み取らない')
+  const refreshed = (await call(`/api/document-inputs/${id}`)).body.input
+  assert.deepEqual(refreshed.adopted, ['survey.2_4'])
+  assert.equal(refreshed.result.candidates.find((c: { key: string }) => c.key === 'survey.2_2').base, '見守り等')
+  assert.equal((await adopt([{ key: 'survey.2_2', base: '見守り等' }])).status, 200)
 })
 test('複数印の項目は、別の明瞭な記載やwriterの返答で補わず保留する', { skip }, async () => {
   const client = await repo.createClient(db, staff, { name: '架空 複数印' })

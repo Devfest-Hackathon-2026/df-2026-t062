@@ -1,6 +1,6 @@
 import { diagramChatTitle } from './chatEntry.ts'
 import { useEffect, useRef, useState } from 'react'
-import { DocumentInput } from '../document-input/DocumentInput.tsx'
+import { DocumentInput, useDocumentInputs } from '../document-input/DocumentInput.tsx'
 import { GLOBAL_DICT, type FieldDict } from '../../../core/dictionary.ts'
 import type { SurveyPreview } from '../survey/readSurvey.ts'
 import { PetChat } from './PetChat.tsx'
@@ -93,6 +93,16 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
   const pending = review.filter((item) => !item.confirmed).length
   const inspections = useInspections(clientId)
   const inspectStatus = menuStatus(inspections.list)
+  const intake = useDocumentInputs(chat.documentId)
+  const inputReview = intake.inputs.filter((input) => input.status === 'review' &&
+    (input.result?.candidates.some((candidate) => !input.adopted.includes(candidate.key)) ||
+      input.result?.issues.length || input.result?.incompleteFields.length ||
+      input.result?.evidence.some((entry) => entry.uncertain))).length
+  const inputApplied = intake.inputs.filter((input) => input.status === 'review' && input.adopted.length &&
+    input.result?.candidates.every((candidate) => input.adopted.includes(candidate.key))).length
+  const inputStatus = [inputReview ? `確認待ち ${inputReview}件` : '', intake.working ? '読み取り中' : '',
+    inputApplied ? `反映済み ${inputApplied}件` : '',
+    intake.inputs.some((input) => input.status === 'failed') ? '読み取りに失敗した書類があります' : ''].filter(Boolean).join('・')
 
   useEffect(() => {
     body.current?.scrollTo(0, 0)
@@ -132,6 +142,7 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
                 <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className="assistant-card" onClick={() => open(id)}>
                   <PetIcon name={icon} />
                   <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}
+                    {id === 'documents' && inputStatus && <small role="status">{inputStatus}</small>}
                     {id === 'inspect' && inspectStatus && <small className={`insp-tone-${inspectStatus.tone}`}>{inspectStatus.text}</small>}</span>
                   <PetIcon name="chevron-right" />
                 </button>
@@ -140,7 +151,7 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
           </>
         )}
         {menu === 'documents' && <>
-          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} dict={chat.dict ?? GLOBAL_DICT} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
+          {chat.documentId ? <DocumentInput key={chat.documentId} documentId={chat.documentId} intake={intake} dict={chat.dict ?? GLOBAL_DICT} clientName={clientName} beforeAdopt={beforeDocumentAdopt} onApplied={onDocumentApplied} /> : <p>書類を開くと取り込めます。</p>}
         </>}
         {menu === 'review' && (
           <>
