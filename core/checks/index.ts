@@ -10,7 +10,7 @@ export interface CheckItem {
   /** 点検項目の番号（'1'〜'62'） */
   id: string
   name: string
-  /** 見る書類の種類（form_kinds.key。どれか 1 つがあれば点検できる） */
+  /** 見る書類の種類（form_kinds.key）。書類だけで判断できない項目は空 */
   docs: string[]
   /** 段階と基準（出典のまま） */
   levels: Partial<Record<Level, string>>
