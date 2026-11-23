@@ -2,7 +2,7 @@
 
 ## 目的
 
-録音原本の保持期限・GCS削除・保全状態を安全に確認するための運用手順。録音原本の保持期限はDBで管理し、GCS Soft Deleteは削除後3日間の復旧用安全措置として扱う。Soft Deleteの3日間は法令上の保存期間ではない。
+録音原本の保持期限・GCS削除・保全状態を安全に確認するための運用手順。録音原本の保持期限はDBで管理し、GCS Soft Deleteは削除後3日間の復旧用安全措置として扱う。Soft Deleteの3日間は法令上の保存期間ではない。GCS Lifecycleは`recordings/`のLIVEオブジェクトに対する30日後の安全弁であり、DBを正とする通常削除の代替ではない。
 
 ## 最初に確認すること
 
@@ -10,6 +10,7 @@
 2. Cloud Run Jobの実行履歴で、Schedulerから起動されたか、Jobが開始・完了したかを確認する。
 3. Cloud Loggingで`recording.retention.*`を検索し、`error_code`と件数だけを確認する。音声内容、利用者情報、GCSの完全なオブジェクトパスをログへ追加しない。
 4. Lifecycle有効化前のreadiness結果で、保持期限・GCS世代・保全同期・削除滞留・未完了uploadの件数がすべて0であることを確認する。
+5. Lifecycleを有効化する場合は、sourceバケットだけに`recordings/`・LIVE・30日のDelete条件が設定され、output・formsには設定されていないことをTerraform planで確認する。
 
 ## Alert別の対応
 
@@ -42,6 +43,7 @@
 - `missing_expiry_count` または `missing_generation_count` があれば、対象録音のDB値とGCSメタデータを確認する。
 - `legacy_hold_sync_count`、`unsynced_hold_count`、`escalated_hold_count` があれば、Object Holdの同期完了までLifecycleを有効化しない。
 - `failed_deletion_count`、`stuck_deletion_count`、`stale_upload_count` があれば、Cleanup Jobの失敗原因を解消してから再確認する。
+- LifecycleはDBの`source_expires_at`、保全状態、削除状態を参照しない。30日条件に達しても、通常の削除判定は必ずCleanup JobがDBを確認して行う。
 
 ## 安全な再実行
 

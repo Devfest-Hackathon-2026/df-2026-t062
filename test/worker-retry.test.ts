@@ -54,6 +54,19 @@ async function job() {
   return { jobId, recordingId: rec.id, clientId: client.id, documentId: client.documentId }
 }
 
+test('DBの保持期限前の録音は削除候補にならない', { skip }, async () => {
+  const j = await job()
+  await db.query(
+    "UPDATE recordings SET source_expires_at = now() + interval '1 day', source_delete_status = 'pending' WHERE id = $1",
+    [j.recordingId],
+  )
+
+  const candidates = await claimExpiredSourceRecordings(db)
+
+  assert.equal(candidates.some((candidate) => candidate.recordingId === j.recordingId), false)
+  assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
+})
+
 const providers = (write: Providers['recording']['writer']['write']): Providers => ({
   stt: new FakeStt(), speakers: new FakeSpeakers(), formImport: fakeFormImport, recording: { summarizer: new FakeSummarizer(), writer: { write } },
 })
