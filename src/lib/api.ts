@@ -1,3 +1,8 @@
+import type { CareFeeCalculation,CareFeeSummary,FeeCalculateInput } from '../../core/care-fee-api.ts'
+import type { CareMonthView,CareMonthSummary,CareMonthSaved,MonthCreateInput,MonthSaveInput,MonthActionInput } from '../../core/care-month-api.ts'
+import type { MonthEntry } from '../../core/care-month.ts'
+import type { z } from 'zod'
+import type { CareRecordKind, CareRecordSummary, CareRecordRevision, CareRecordDraftView } from '../../core/care-record.ts'
 import type { DiagramDraft } from '../../api/chat.ts'
 import type { DiagramChatField } from '../../core/diagram/fields.ts'
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
@@ -130,8 +135,28 @@ export const api = {
   clients: (q = '', sort: 'updated' | 'name' = 'updated') => req<{ clients: ClientSummary[] }>('GET', `/api/clients?q=${encodeURIComponent(q)}&sort=${sort}`),
   createClient: (input: { name: string, sex?: '男' | '女' | null, status?: string }) => req<{ id: string, documentId: string }>('POST', '/api/clients', input),
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),
+  publishedForm: (kind:string) => req<{formVersionId:string}>('GET',`/api/form-kinds/${encodeURIComponent(kind)}/published`),
   client: (id: string) => req<{ client: ClientDetail, jobs: JobView[] }>('GET', `/api/clients/${id}`),
   createDocument: (clientId: string, kind: string) => req<{ id: string, kind: string, created: boolean }>('POST', `/api/clients/${clientId}/documents`, { kind }),
+  careFees:(clientId:string)=>req<{fees:CareFeeSummary[]}>('GET',`/api/clients/${clientId}/care-plan-fees`),
+  careFee:(id:string,calculationId?:string)=>req<{calculation:CareFeeCalculation}>('GET',calculationId?`/api/care-plan-fees/${id}/calculations/${calculationId}`:`/api/care-plan-fees/${id}`),
+  careFeeHistory:(id:string)=>req<{history:{id:string;revision:number;createdAt:string}[]}>('GET',`/api/care-plan-fees/${id}/history`),
+  calculateCareFee:(monthId:string,input:z.infer<typeof FeeCalculateInput>)=>req<{calculation:CareFeeCalculation}>('POST',`/api/care-plan-months/${monthId}/fees`,input),
+  confirmCareFee:(id:string,calculationId:string,baseRevision:number)=>req<{calculation:CareFeeCalculation}>('POST',`/api/care-plan-fees/${id}/confirm`,{calculationId,baseRevision}),
+  careMonths:(clientId:string)=>req<{months:CareMonthSummary[]}>('GET',`/api/clients/${clientId}/care-plan-months`),
+  careMonth:(id:string)=>req<{month:CareMonthView}>('GET',`/api/care-plan-months/${id}`),
+  previewCareMonth:(clientId:string,planId:string,month:string)=>req<{confirmationId:string;sourceHash:string;planVersion:number;entries:MonthEntry[];unexpanded:CareMonthView['unexpanded']}>('POST',`/api/clients/${clientId}/care-plan-months/preview`,{planId,month}),
+  createCareMonth:(clientId:string,input:z.infer<typeof MonthCreateInput>)=>req<{month:CareMonthView;created:boolean}>('POST',`/api/clients/${clientId}/care-plan-months`,input),
+  saveCareMonth:(id:string,input:z.infer<typeof MonthSaveInput>)=>req<{month:CareMonthView}>('PUT',`/api/care-plan-months/${id}`,input),
+  previewMonthAction:(id:string,input:z.infer<typeof MonthActionInput>)=>req<{entries:MonthEntry[];added:MonthEntry[];removed:MonthEntry[];skipped:MonthEntry[]}>('POST',`/api/care-plan-months/${id}/preview`,input),
+  careMonthRevision:(id:string,rev:number)=>req<CareMonthSaved>('GET',`/api/care-plan-months/${id}/revisions/${rev}`),
+  careRecords: (clientId: string, query: { kind?: CareRecordKind, q?: string, from?: string, to?: string, offset?: number }) => req<{ records: CareRecordSummary[], hasMore: boolean }>('GET', `/api/clients/${clientId}/care-records?${new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
+  createCareRecord: (clientId: string, kind: CareRecordKind, requestId: string) => req<{ id: string, created: boolean }>('POST', `/api/clients/${clientId}/care-records`, { kind, requestId }),
+  careRecordDrafts: (id: string) => req<{ drafts: CareRecordDraftView[] }>('GET', `/api/care-records/${id}/ai-drafts`),
+  createCareRecordDraft: (id: string, requestId: string, instructions: string) => req<{ draft: CareRecordDraftView }>('POST', `/api/care-records/${id}/ai-drafts`, { requestId, instructions }),
+  applyCareRecordDraft: (id: string, draftId: string) => req<{ draft: CareRecordDraftView, document: DocumentView }>('POST', `/api/care-records/${id}/ai-drafts/${draftId}/apply`, {}),
+  confirmCareRecord: (id:string,baseRevision:number,relatedPlanId:string|null) => req<{confirmation: import('../../core/care-record.ts').CareRecordConfirmation}>('POST', `/api/care-records/${id}/confirm`, {baseRevision,relatedPlanId}),
+  careRecordRevision: (id: string, rev: number) => req<{ revision: CareRecordRevision }>('GET', `/api/care-records/${id}/revisions/${rev}`),
   /** unheardTopics: 面談のヒント。事業所が足した項目で、この書類でまだ話に出ていないもの（#115） */
   document: (id: string) => req<{ document: DocumentView, unheardTopics?: { id: string, name: string }[] }>('GET', `/api/documents/${id}`),
   revisions: (id: string) => req<{ revisions: { id: number, rev: number, savedAt: string }[] }>('GET', `/api/documents/${id}/revisions`),
@@ -195,9 +220,9 @@ export const api = {
   fixDraft: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/draft`, {}),
   revertForm: (kind: string) => req<{ kinds: KindFormState[] }>('POST', `/api/office/forms/${encodeURIComponent(kind)}/revert`, {}),
   reuseForm: (id: string) => req<ManagedVersion>('POST', `/api/office/form-versions/${id}/reuse`, {}),
-  async pdf(id: string): Promise<Blob> {
+  async pdf(id: string, revision?: number): Promise<Blob> {
     const token = await tokenSource()
-    const res = await fetch(`/api/documents/${id}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    const res = await fetch(`/api/documents/${id}/pdf${revision === undefined ? '' : '?rev=' + revision}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
     if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
     return res.blob()
   },

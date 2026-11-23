@@ -11,6 +11,8 @@ export function officialPlanPages(form: FormDef, current: Record<string, unknown
   const services = new Map(needs.flatMap((n) => n.shortGoals?.flatMap((g) => g.services ?? []) ?? []).map((s) => [s.id, s.content]))
   return expandPrintLayout(form, {
     ...current,
+    dailySchedule: Array.isArray(current.dailySchedule) ? current.dailySchedule.map((row) => row && typeof row === 'object'
+      ? { ...row, rhythm: row.rhythm || '\u200b' } : row) : current.dailySchedule,
     'plan.needs': needs.map((n) => ({
       need: n.need, longGoal: n.longGoal.goal, longGoalPeriod: period(n.longGoal),
       shortGoals: (n.shortGoals ?? []).map((g) => ({

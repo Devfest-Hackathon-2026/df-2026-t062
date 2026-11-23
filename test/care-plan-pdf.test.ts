@@ -103,6 +103,40 @@ test('第2表はサービスごとに改ページし、空の短期目標でも�
   assert.ok(pages.every((p) => p.input['利用者名'] === '見本 太郎'))
 })
 
+test('第2表は紙面内の同じニーズ・目標をまとめ、続きの用紙で再掲する', () => {
+  const form = readSeed('care_plan_2')
+  const repeated = () => ({ goal: '安全に移動する', period: '9月まで', services: [
+    { content: '訪問介護による移動介助', insured: true },
+    { content: '家族による見守り', insured: false },
+    { content: '本人の取り組み' },
+  ] })
+  const values = { 'plan.needs': [
+    { need: '外出したい', longGoal: '地域生活を続ける', longGoalPeriod: '年度末まで', shortGoals: [repeated(), repeated()] },
+    { need: '外出したい', longGoal: '地域生活を続ける' },
+  ] }
+  const [first, next] = expandPrintLayout(form, values)
+  assert.equal(first.input['ニーズ__row0'], '外出したい')
+  assert.equal(first.input['ニーズ__row1'], '')
+  assert.equal(first.input['長期期間__row3'], '')
+  assert.equal(first.input['短期目標__row1'], '')
+  assert.equal(first.input['短期期間__row1'], '')
+  assert.equal(first.input['短期目標__row3'], '安全に移動する', '同じ名称でも別の目標は表示する')
+  assert.equal(first.input['サービス内容__row1'], '家族による見守り')
+  assert.equal(first.input['保険給付__row0'], '○')
+  assert.equal(first.input['保険給付__row1'], '')
+  assert.equal(first.input['保険給付__row2'], '')
+  assert.equal(next.input['ニーズ__row0'], '外出したい')
+  assert.equal(next.input['長期目標__row0'], '地域生活を続ける')
+  assert.equal(next.input['短期目標__row0'], '安全に移動する')
+  assert.equal(next.input['ニーズ__row1'], '外出したい', '同じ名称でも別のニーズは表示する')
+
+  const print = form.pages[0].print
+  assert.equal(print?.type, 'table')
+  if (print?.type !== 'table') throw new Error('第2表の設定がありません')
+  delete print.groupSlots
+  assert.equal(expandPrintLayout(form, values)[0].input['ニーズ__row1'], '外出したい', '以前の様式版は従来の印字を再現する')
+})
+
 test('第3表は時間軸に配置し、同時提供を省略せず、翌日終了は翌曜日にも印字する', () => {
   const form = readSeed('care_plan_3')
   const pages = expandPrintLayout(form, {

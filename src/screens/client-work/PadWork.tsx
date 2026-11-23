@@ -1,3 +1,4 @@
+import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // iPad ②③ 用紙（キャンバス PadWork・PadRec）と、録音から用紙へ書く流れ A〜E（PadFlow1〜5）。
 // iPad でできることは 2 つだけ: 録音するかしないか、用紙を書き換えるか。
 import { useEffect, useRef, useState } from 'react'
@@ -11,7 +12,7 @@ import { linkProps } from '../../lib/router.tsx'
 import { pickDocument, useFormKinds } from '../../components/document/useFormKinds.ts'
 import { COMING_SOON_LABEL, newDocMenu } from './docMenu.ts'
 import { countText } from '../../components/document/changes.ts'
-import { CarePlanWork, isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
+import { isPlanKind } from '../../components/care-plan/CarePlanWork.tsx'
 
 export function PadWork({ clientId }: { clientId: string }) {
   // 開いている書類の種類（空なら主な書類）
@@ -80,7 +81,8 @@ export function PadWork({ clientId }: { clientId: string }) {
   const copied = doc?.batches.find((b) => b.kind === 'copy')?.changes ?? 0
   const batchLabel = doc?.batches[0]?.label ?? 'AI 書き込み'
 
-  if (carePlanOpen) return <CarePlanWork clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
+
+  if (carePlanOpen) return <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} clientId={clientId} clientName={client?.name ?? ''} touch onBack={() => setCarePlanOpen(false)} />
 
   return (
     <div className="pad" style={{ width: '100%', height: '100dvh', boxSizing: 'border-box', overflow: 'hidden', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#E9EBEF', fontSize: 16, lineHeight: 1.6, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -102,12 +104,12 @@ export function PadWork({ clientId }: { clientId: string }) {
         )}
         {docOpen && (
           <div role="menu" style={{ position: 'absolute', left: 150, top: 64, width: 380, background: '#FFFFFF', borderRadius: 16, boxShadow: '0 12px 36px rgba(20,24,32,0.28)', padding: 8, display: 'flex', flexDirection: 'column', zIndex: 20 }}>
-            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
+            {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && (client?.documents.some((d) => d.kind === k.key) || (k.available && k.perClient === 'one'))).map((k) => (
               <button key={k.key} className={menuItem(k.key === open.key)} role="menuitem" type="button" onClick={() => void openDoc(k.key)}>{k.name}</button>
             ))}
             <div style={{ height: 1, background: '#E1E4EA', margin: '6px 8px' }} />
             <div style={{ fontSize: 13, color: '#5A6270', padding: '4px 14px' }}>書類を作る（{client?.name}さんの今の情報から AI が書き込みます）</div>
-            {(kinds ?? []).filter((k) => !isPlanKind(k.key) && k.available && k.perClient === 'many').map((k) => (
+            {(kinds ?? []).filter((k) => !isCarePlanRelatedKind(k.key) && k.available && k.perClient === 'many' && !(['care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7'].includes(k.key) && client?.documents.some((d) => d.kind === k.key))).map((k) => (
               <button key={k.key} className="toc" role="menuitem" type="button" onClick={() => void openDoc(k.key, { create: true })}>＋ {k.name}</button>
             ))}
             {newDocMenu.map((d) => (
@@ -115,7 +117,7 @@ export function PadWork({ clientId }: { clientId: string }) {
             ))}
             <div className="care-plan-menu-section">
               <div className="care-plan-menu-title">ケアプラン</div>
-              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>✎ ケアプランを作成</button>}
+              {kinds?.filter((k) => isPlanKind(k.key) && k.available).length === 3 && <button type="button" className="toc toc-plan" role="menuitem" disabled={!state.doc || recorder.phase === 'rec' || recorder.phase === 'upload'} onClick={async () => { if (await state.flush()) { setDocOpen(false); setCarePlanOpen(true) } }}>ケアプラン</button>}
             </div>
           </div>
         )}

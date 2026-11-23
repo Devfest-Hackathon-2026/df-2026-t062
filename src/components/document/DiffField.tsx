@@ -25,6 +25,7 @@ interface Props {
   onRevert: (text: string) => void
   onSaveHunk: (index: number) => void
   allowHunkSave?: boolean
+  reviewOnDemand?: boolean
   onOpenChange?: (open: boolean) => void
 }
 
@@ -76,6 +77,7 @@ export function DiffField(p: Props) {
   }, [p.singleLine, cur])
 
   const caret = (el: HTMLTextAreaElement | HTMLInputElement, fromClick: boolean) => {
+    if (p.reviewOnDemand) return
     const pos = el.selectionStart ?? 0
     let hit = hunks.findIndex((h) => pos > h.s && pos < h.e)
     if (hit < 0 && fromClick) hit = hunks.findIndex((h) => pos >= h.s && pos <= h.e)
@@ -117,6 +119,7 @@ export function DiffField(p: Props) {
     pop = { h, k: cur, ctx: sentence(text, h.s, h.e), now, fixed: edited(h) && (!ai || now !== ai.ins) }
   }
   const hasBelow = !!pop || !!undo || !!note
+  const inputLabel = `${p.label}${hunks.length ? p.reviewOnDemand ? '（変更あり）' : '（変更あり。変更箇所を選択すると比較できます）' : ''}`
 
   return (
     <div ref={root} style={{ position: 'relative', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1C2229', ...(fill ? { width: '100%', height: '100%' } : { width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }) }}>
@@ -128,7 +131,7 @@ export function DiffField(p: Props) {
           {p.singleLine ? (
             <input
               className="diff-input" type="text"
-              aria-label={`${p.label}${hunks.length ? '（変更あり。変更箇所を選択すると比較できます）' : ''}`}
+              aria-label={inputLabel}
               value={text}
               disabled={p.disabled}
               onChange={(e) => { setUndo(null); setNote(''); p.onChange(e.target.value) }}
@@ -141,7 +144,7 @@ export function DiffField(p: Props) {
           ) : (
             <textarea
               className="diff-input" ref={ta}
-              aria-label={`${p.label}${hunks.length ? '（変更あり。変更箇所を選択すると比較できます）' : ''}`}
+              aria-label={inputLabel}
               value={text}
               disabled={p.disabled}
               onChange={(e) => { setUndo(null); setNote(''); p.onChange(e.target.value) }}
@@ -154,6 +157,9 @@ export function DiffField(p: Props) {
           )}
         </div>
       </div>
+      {p.reviewOnDemand && !!hunks.length && !p.disabled &&
+        <button type="button" aria-label={p.label + 'の変更を比較'} onClick={() => setOpen(cur < 0 ? 0 : -1)}
+          style={{ ...btn, position: 'absolute', top: '100%', right: 0, zIndex: 2, border: '1px solid #c9d5ef', background: '#fff' }}>変更を比較</button>}
       {hasBelow && (
         <div style={{ ...(fill ? { position: 'absolute', zIndex: 20, top: 'calc(100% + 8px)', left: 0, width: t ? 540 : 440, maxWidth: '90vw' } : {}), display: 'flex', flexDirection: 'column', gap: 6, lineHeight: 1.7, textAlign: 'left' }}>
           {pop && (

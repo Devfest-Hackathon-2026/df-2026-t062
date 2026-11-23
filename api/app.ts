@@ -1,3 +1,11 @@
+import * as fees from '../db/care-fees.ts'
+import { FeeCalculateInput,FeeConfirmInput } from '../core/care-fee-api.ts'
+import * as months from '../db/care-months.ts'
+import { MonthPreviewInput, MonthCreateInput, MonthSaveInput, MonthActionInput } from '../core/care-month-api.ts'
+import { careRecordDrafter } from './care-record-ai.ts'
+import { careRecordDrafts, createCareRecordDraft, applyCareRecordDraft } from '../db/care-record-drafts.ts'
+import { CareRecordCreate, CareRecordQuery, CareRecordDraftCreate, CareRecordConfirm } from '../core/care-record.ts'
+import { createCareRecord, listCareRecords, careRecordRevision, confirmCareRecord } from '../db/care-records.ts'
 import { PlanSlotSchema } from '../core/care-plan-slot.ts'
 import { pendingLocationSchema } from '../core/diagram/evidence.ts'
 import { diagramSchema, diagramKinds, diagramChatFields } from '../core/diagram/fields.ts'
@@ -362,6 +370,11 @@ export function createApp(deps: ApiDeps) {
 
   // 書類の種類（form_kinds）と、その事業所で書類を作れるか。作業画面のタブと「＋ 書類を作る」が使う
   app.get('/api/form-kinds', staffRoute('care.work', async (c, staff, db) => json(c, { kinds: await kinds.kindsForOffice(db, staff.officeId) })))
+  app.get('/api/form-kinds/:kind/published', staffRoute('care.work', async(c,staff,db)=>{
+    const kind=await kinds.visibleKind(db,staff.officeId,c.req.param('kind')!)
+    if(!kind)throw new repo.NotFound()
+    return json(c,{formVersionId:await forms.publishedVersionId(db,staff.officeId,kind.key)})
+  }))
 
   // ---------- ケアプラン（#90）----------
 
@@ -505,6 +518,78 @@ export function createApp(deps: ApiDeps) {
     })
     // 面談のヒント: 事業所が足した項目で、まだ話に出ていないもの（id と名前だけ。#115）
     return json(c, { document, unheardTopics: await officeTopicsDb.unheardTopics(db, staff.officeId, document.id) })
+  }))
+
+  // 復元した第4〜7表の閲覧にも、既存のアクセス監査を適用する。
+  const careRead = (scope: 'client' | 'record' | 'month' | 'fee', accessMode: 'list' | 'view',
+    handler: (c: Context, staff: repo.Staff, db: Db) => Promise<Response>) => staffRoute('care.work', async (c, staff, db) => {
+    const response = await handler(c, staff, db)
+    const id = c.req.param('id')!
+    let clientId = id, documentId: string | undefined
+    if (scope !== 'client') {
+      const table = { record: 'documents', month: 'care_plan_months', fee: 'care_plan_fees' }[scope]
+      const row = (await db.query(`SELECT client_id, ${scope === 'record' ? 'id' : 'document_id'} AS document_id FROM ${table} WHERE id=$1 AND office_id=$2`, [id, staff.officeId])).rows[0]
+      if (!row) throw new repo.NotFound()
+      clientId = row.client_id; documentId = row.document_id
+    }
+    await accessAudit(c, db, staff, {
+      clientId, documentId, resourceType: `care_${scope}`, resourceId: id,
+      accessMode, action: 'document.view',
+    })
+    return response
+  })
+
+  app.get('/api/care-fee-masters', staffRoute('care.work',async(c,_staff,db)=>json(c,{masters:await fees.careFeeMasters(db)})))
+  app.get('/api/clients/:id/care-plan-fees',careRead('client', 'list',async(c,staff,db)=>json(c,{fees:await fees.listCareFees(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-months/:id/fees',staffRoute('care.work',async(c,staff,db)=>json(c,{calculation:await fees.calculateCareFee(db,staff,c.req.param('id')!,await body(c,FeeCalculateInput))})))
+  app.get('/api/care-plan-fees/:id',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!)})))
+  app.post('/api/care-plan-fees/:id/confirm',staffRoute('care.work',async(c,staff,db)=>{const input=await body(c,FeeConfirmInput);return json(c,{calculation:await fees.confirmCareFee(db,staff,c.req.param('id')!,input.calculationId,input.baseRevision)})}))
+  app.get('/api/care-plan-fees/:id/history',careRead('fee', 'list',async(c,staff,db)=>json(c,{history:await fees.careFeeHistory(db,staff.officeId,c.req.param('id')!)})))
+  app.get('/api/care-plan-fees/:id/calculations/:calculation',careRead('fee', 'view',async(c,staff,db)=>json(c,{calculation:await fees.careFeeCalculation(db,staff.officeId,c.req.param('id')!,c.req.param('calculation')!)})))
+
+  app.get('/api/clients/:id/care-plan-months', careRead('client', 'list', async (c, staff, db) => json(c, { months: await months.listCareMonths(db,staff.officeId,c.req.param('id')!) })))
+  app.post('/api/clients/:id/care-plan-months/preview', staffRoute('care.work', async (c, staff, db) => {
+    const input=await body(c,MonthPreviewInput)
+    return json(c,await months.previewCareMonth(db,staff.officeId,c.req.param('id')!,input.planId,input.month))
+  }))
+  app.post('/api/clients/:id/care-plan-months', staffRoute('care.work', async (c, staff, db) => {
+    const r=await months.createCareMonth(db,staff,c.req.param('id')!,await body(c,MonthCreateInput))
+    return json(c,r,r.created?201:200)
+  }))
+  app.get('/api/care-plan-months/:id', careRead('month', 'view', async(c,staff,db)=>json(c,{month:await months.getCareMonth(db,staff.officeId,c.req.param('id')!)})))
+  app.put('/api/care-plan-months/:id', staffRoute('care.work', async(c,staff,db)=>json(c,{month:await months.saveCareMonth(db,staff,c.req.param('id')!,await body(c,MonthSaveInput))})))
+  app.post('/api/care-plan-months/:id/preview', staffRoute('care.work', async(c,staff,db)=>json(c,await months.previewMonthAction(db,staff.officeId,c.req.param('id')!,await body(c,MonthActionInput)))))
+  app.get('/api/care-plan-months/:id/revisions/:rev', careRead('month', 'view', async(c,staff,db)=>{
+    const rev=z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if(!rev.success)throw new repo.BadRequest('保存版が正しくありません')
+    return json(c,await months.careMonthSaved(db,staff.officeId,c.req.param('id')!,rev.data))
+  }))
+
+  app.get('/api/clients/:id/care-records', careRead('client', 'list', async (c, staff, db) => {
+    const query = CareRecordQuery.safeParse(c.req.query())
+    if (!query.success) throw new repo.BadRequest('検索条件が正しくありません')
+    return json(c, await listCareRecords(db, staff.officeId, c.req.param('id')!, query.data))
+  }))
+  app.post('/api/clients/:id/care-records', staffRoute('care.work', async (c, staff, db) => {
+    const record = await createCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordCreate))
+    return json(c, record, record.created ? 201 : 200)
+  }))
+  app.post('/api/care-records/:id/confirm', staffRoute('care.work', async (c, staff, db) => json(c, { confirmation: await confirmCareRecord(db, staff, c.req.param('id')!, await body(c, CareRecordConfirm)) })))
+  app.get('/api/care-records/:id/ai-drafts', careRead('record', 'list', async (c, staff, db) => json(c, { drafts: await careRecordDrafts(db, staff.officeId, c.req.param('id')!) })))
+  app.post('/api/care-records/:id/ai-drafts', staffRoute('care.work', async (c, staff, db) => {
+    const input = await body(c, CareRecordDraftCreate)
+    const model = deps.chat ? await deps.chat() : fakeModel
+    return json(c, { draft: await createCareRecordDraft(db, staff, c.req.param('id')!, input, careRecordDrafter(model)) }, 201)
+  }))
+  app.post('/api/care-records/:id/ai-drafts/:draft/apply', staffRoute('care.work', async (c, staff, db) => {
+    const id = c.req.param('id')!
+    const draft = await applyCareRecordDraft(db, staff, id, c.req.param('draft')!)
+    return json(c, { draft, document: await repo.getDocument(db, staff.officeId, id) })
+  }))
+  app.get('/api/care-records/:id/revisions/:rev', careRead('record', 'view', async (c, staff, db) => {
+    const rev = z.coerce.number().int().positive().safeParse(c.req.param('rev'))
+    if (!rev.success) throw new repo.NotFound()
+    return json(c, { revision: await careRecordRevision(db, staff.officeId, c.req.param('id')!, rev.data) })
   }))
 
   app.get('/api/documents/:id/revisions', staffRoute('care.work', async (c, staff, db) => {
@@ -658,7 +743,12 @@ export function createApp(deps: ApiDeps) {
 
   app.get('/api/documents/:id/pdf', staffRoute('care.work', async (c, staff, db) => {
     const doc = await repo.getDocument(db, staff.officeId, c.req.param('id')!)
-    const rev = await repo.latestRevision(db, staff.officeId, doc.id)
+    const requestedRev = c.req.query('rev')
+    const selectedRev = requestedRev === undefined ? undefined : z.coerce.number().int().positive().safeParse(requestedRev)
+    if (selectedRev && !selectedRev.success) throw new repo.BadRequest('保存版の番号が正しくありません')
+    const rev = selectedRev?.success
+      ? await careRecordRevision(db, staff.officeId, doc.id, selectedRev.data)
+      : await repo.latestRevision(db, staff.officeId, doc.id)
     const version = await forms.loadVersion(db, rev.formVersionId)
     const pdf = await makePdf(deps.storage(), version, rev.values)
     await accessAudit(c, db, staff, {
@@ -1039,7 +1129,7 @@ export function createApp(deps: ApiDeps) {
     if (err instanceof repo.Forbidden) return json(c, { error: 'forbidden', message: err.message }, 403)
     if (err instanceof staffDb.AlreadyRegistered) return json(c, { error: 'already_registered', message: 'このメールアドレスは、もう登録されています' }, 409)
     if (err instanceof forms.NotDraft) return json(c, { error: 'not_draft', message: '公開した版・退いた版は直せません。PDF を上げ直して新しい下書きを作ってください' }, 409)
-    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
+    if (err instanceof repo.Conflict) return json(c, { error: 'conflict', message: err.message === 'fee_source_updated' ? '第6表に新しい保存版があります。最新の保存版で再計算してから確定してください。' : err.message === 'fee_workbook_unverified' ? 'この算定はExcel数式との照合前です。再計算してから確定してください。' : err.message === 'form_version' ? '様式の版が変わりました。読み直してください' : 'ほかの直し・AI の書き込みと重なりました。読み直してください' }, 409)
     if (err instanceof Error && ['invalid_hold_until', 'invalid_hold_reason_code'].includes(err.message)) {
       return json(c, { error: err.message }, 400)
     }

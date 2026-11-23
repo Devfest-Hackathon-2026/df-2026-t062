@@ -1,0 +1,28 @@
+{
+  "kind": "care_plan_5",
+  "name": "居宅介護支援経過 第5表",
+  "title": "居宅介護支援経過（厚生労働省 令和6年7月4日）",
+  "publisher": "厚生労働省",
+  "sourceUrl": "https://www.mhlw.go.jp/content/001271371.pdf",
+  "sourcePdfSha256": "b525d876cc7b4c7252d243b6e3bfaf32c1508cb2dc8f7763686841967af4e5c9",
+  "sourcePages": [
+    21
+  ],
+  "basePdfSha256": "b1238092ad1a3723a48e85e43cd97817d9ca2279332347c497e718fd3cda130d",
+  "pages": [
+    {
+      "no": 1,
+      "pdfIndex": 0,
+      "title": "居宅介護支援経過",
+      "width": 297,
+      "height": 210,
+      "print": {
+        "type": "flow",
+        "slots": [
+          "内容_左",
+          "内容_右"
+        ]
+      }
+    }
+  ]
+}
