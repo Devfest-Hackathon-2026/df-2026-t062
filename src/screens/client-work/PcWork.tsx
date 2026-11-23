@@ -217,8 +217,7 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
   }
 
   const exportPdf = async () => {
-    if (!docId) return
-    await state.flush()
+    if (!docId || !await state.flush()) return
     const blob = await api.pdf(docId)
     downloadBlob(blob, `${client?.name ?? ''}_${kindName}.pdf`)
   }
@@ -245,6 +244,10 @@ export function PcWork({ clientId, staffName }: { clientId: string, staffName: s
         <a {...linkProps('/')} onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
           if (planBusy || (carePlanOpen && planDirty && !window.confirm('ケアプランの未保存の入力を破棄して利用者一覧に移動しますか？'))) { e.preventDefault(); return }
+          if (!carePlanOpen && state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
+            e.preventDefault()
+            return
+          }
           linkProps('/').onClick(e)
         }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, textDecoration: 'none' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者一覧

@@ -64,7 +64,7 @@ interface NeedBody {
   id: string
   need: string
   longGoal: { id: string, goal: string, periodText: string | null, periodFrom: string | null, periodTo: string | null }
-  shortGoals: { id: string, goal: string, services: { id: string, content: string }[] }[]
+  shortGoals: { id: string, goal: string, services: { id: string, content: string, insured: boolean }[] }[]
 }
 interface DraftBody {
   draft: {
@@ -526,7 +526,12 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
     needs: [{
       need: 'AI が見つけたニーズ',
       longGoal: { goal: 'AI の長期目標', periodText: '2026年4月〜2027年3月' },
-      shortGoals: [{ goal: 'AI の短期目標', services: [{ content: '訪問介護', insured: true, kind: '訪問介護', frequency: '週1回' }] }],
+      shortGoals: [{ goal: 'AI の短期目標', services: [
+        { content: '訪問介護', insured: true, kind: '訪問介護', frequency: '週1回' },
+        { content: '家族の支援', insured: false },
+        { content: '型が不正なサービス', insured: 'false' },
+        { content: '保険区分のないサービス' },
+      ] }],
     }],
     conflicts: [],
   }
@@ -556,6 +561,12 @@ test('AI 原案は保存済みアセスメントの版を固定し、人の値�
   assert.ok(after.applied.skipped.some((s) => s.target === 'plan.overallPolicy' && s.reason === 'human_value'))
   assert.equal(after.plan.needs?.length, 1)
   assert.equal(after.plan.needs?.[0].need, 'AI が見つけたニーズ')
+  assert.deepEqual(after.plan.needs?.[0].shortGoals[0].services.map((s) => [
+    s.content, s.insured,
+  ]), [['訪問介護', true], ['家族の支援', false]])
+  assert.deepEqual(after.applied.skipped.filter((s) => s.reason === 'invalid_value').map((s) => s.target), [
+    'needs[0].shortGoals[0].services[2].insured', 'needs[0].shortGoals[0].services[3].insured',
+  ])
 
   // もう一度適用しても、同じニーズは増えない
   const again = await post(`/api/care-plans/${plan.id}/ai-drafts/${draft.id}/apply`, { baseVersion: after.plan.lockVersion })
@@ -726,7 +737,7 @@ test('AI週間候補は今回作ったサービスだけに対応付け、時刻
   const ref = { need: 0, shortGoal: 0, service: 0 }
   const slot = { serviceRef: ref, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '10:00' }
   aiProposal = {
-    plan1: {}, needs: [{ need: '週間候補の架空ニーズ', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴支援' }] }] }],
+    plan1: {}, needs: [{ need: '週間候補の架空ニーズ', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴支援', insured: true }] }] }],
     slots: [slot, slot, { ...slot, start: '10:00', end: '09:00' }, { ...slot, serviceRef: { ...ref, service: 5 } },
       { ...slot, serviceRef: undefined, serviceId: randomUUID() }, { serviceRef: ref, scheduleType: 'other', note: '月1回の確認' }],
   }

@@ -32,3 +32,5 @@
 .diagram-house .diagram-drawing > p{min-block-size:2lh}
 
 .diagram-house [data-line-endpoint]{cursor:crosshair}
+
+.diagram-slot-readonly{cursor:default;box-sizing:border-box;text-align:center}
