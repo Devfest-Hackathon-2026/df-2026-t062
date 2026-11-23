@@ -13,6 +13,7 @@ export interface FieldSpec {
   fields?: FieldSpec[]
   source?: string[]
   forms?: Record<string, string>
+  format?: 'time'
   note?: string
   /** この欄に意味があるときの前提。欄なら欄の key、中の項目なら同じまとまりの中の項目の key → 値の一覧 */
   requires?: Record<string, (string | boolean | number)[]>
