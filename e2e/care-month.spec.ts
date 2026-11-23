@@ -29,6 +29,9 @@ test('第6表: 週間計画の確定→月次生成→例外/実績→失敗復�
  await expect(page.getByRole('img',{name:/第6表.*原紙/}).first()).toBeVisible()
  await expect(page.getByRole('button',{name:'次の用紙',exact:true})).toHaveCount(0)
  await expect(page.getByRole('img',{name:/第6表.*原紙 2$/})).toBeVisible()
+ const heading=(await page.getByRole('heading',{name:/さんのサービス利用票$/}).boundingBox())!
+ expect(heading.width).toBeGreaterThanOrEqual(200)
+ expect(heading.height).toBeLessThan(80)
 
  await page.locator('.care-month-work').getByRole('button',{name:'入力・修正',exact:true}).click()
  await page.locator('.care-month-work').getByLabel('保険者番号',{exact:true}).fill('001234')
