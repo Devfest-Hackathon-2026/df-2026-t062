@@ -34,7 +34,7 @@
 | `document_sync_reviews` | 使わない（2026-11-18 に書類どうしの食い違いを知らせる機能をやめた。行を足さない。表は消さない） | |
 | `revisions` | 版 | `rev`、`scope`（`hunk`／`page`／`document`）、`values`（保存した値の全部）、`template_version_id`（PDF はこの様式の版から作る） |
 | `batches` | 書き込み | `kind`（`recording`／`copy`／`seed`）、`label`（「AI 書き込み 2・1/25 の録音」など）、`changes`（key・op・before・after）、`kept`（書き換えなかったケアマネの欄） |
-| `recordings` | 録音（原本の音声） | `object_path`（Cloud Storage の source バケットの場所）、`mime`、`bytes`、`duration_ms`、`status`、`source_expires_at`（原本を保持できる期限）、`source_delete_status`（削除候補などの状態）、`source_deleted_at`、`retention_policy_version`、`retention_hold`／`retention_hold_until`／`retention_hold_reason_code`／`retention_hold_set_at`／`retention_hold_set_by` |
+| `recordings` | 録音（原本の音声） | `object_path`（Cloud Storage の source バケットの場所）、`mime`、`bytes`、`duration_ms`、`status`、`source_expires_at`（原本を保持できる期限）、`source_delete_status`（削除候補などの状態）、`source_deleted_at`、`source_purge_expected_at`（GCS Soft Deleteを含む完全消去見込み）、`intermediate_expires_at`／`intermediate_delete_status`／`intermediate_deleted_at`（文字起こしなど中間データの期限・削除状態）、`retention_policy_version`、`retention_hold`／`retention_hold_target`／`retention_hold_sync_status`（GCS Object Hold の実状態・目標状態・同期状態）、`retention_hold_until`／`retention_hold_reason_code`／`retention_hold_set_at`／`retention_hold_set_by` |
 | `transcripts` | 文字起こし（原本の文字） | `utterances`（id・時刻・話者の記号・人・文）、`speakers`、`model` |
 | `jobs` | 録音 1 本の処理 | `status`（queued／processing／succeeded／partial／failed）、`step`（transcribe／speakers／write／apply）、`steps`（段ごとの結果・時間・トークン・円）、`lease_until`、`run_token`、`attempts`、`error_kind`、`batch_id`。録音 1 つに 1 つ、同じ書類で処理中は 1 つだけ |
 | `exports` | 出した PDF | `revision_rev`、`template_version_id`、`object_path` |
@@ -49,10 +49,11 @@
 - 一時的な例外では `queued` に戻して Cloud Tasks の再配信または 5 分ごとの見回りで再開する。3 回失敗したら `failed` とし、それ以上は自動実行しない。
 - Worker が取得するたび `run_token` を発行する。段階の更新と完了時に照合し、リースを失った古い実行を拒む。処理中は定期的にリースを延長する。
 - 録音の `applyBatch` とジョブの `succeeded`／`partial` への更新は同じトランザクションで行う。`batches.job_id` は録音処理で一意。反映直後に通信が切れても、次の配信で同じ変更を重ねない。
-- 原本の保持期限は録音時に `recorded_at + 7日` で設定し、録音完了時に再計算する。AI処理が完了したときは `min(現在期限, recorded_at + 7日, 完了時刻 + 72時間)` に短縮し、失敗・再試行では延長しない。正式な書類・要約・監査ログは原本の期限とは別に残る。
+- 原本の保持期限は録音時に `recorded_at + 14日` で設定し、録音完了時に再計算する。AI処理の成功・部分成功・失敗・再試行では期限を短縮・延長しない。正式な書類・監査ログは原本の期限とは別に残す。文字起こしと録音要約の保持・削除方針は別途定める。
 - 録音原本の保持期限はDBで管理する。GCS Soft Deleteは、削除後の誤操作から復旧するための安全措置として3日間（259200秒）に設定する。
 - 録音原本の長期保管は行わず、正式なケア記録および監査ログとは分離して管理する。3日間は現行システムで採用する運用上の復旧期間であり、法令上の保存期間を意味しない。事業要件や運用上の復旧要件が変更された場合は、保持期間を再評価する。
 - `retention_hold` は無期限を許さず、未来の `retention_hold_until` を必須にする。設定・解除は `recording.retention_hold_set`／`recording.retention_hold_released` として、期限・理由・手動解除か期限切れ解除かを `audit_events` に追記する。
+- 保全の確認・設定・解除は、専用の苦情画面ではなく既存の利用者画面に置く管理者限定の保持管理欄で行う。画面には音声本文・文字起こし・GCS の object path を表示せず、録音日時、原本と中間データの期限・削除状態、保全状態だけを表示する。保全終了日時と理由を必須入力にし、解除後は削除ジョブの対象へ戻る。
 - 原本削除は `pending → eligible → requested → deleting → deleted` の順に進める。候補取得時に `requested` へ更新して `recording.delete_requested` を残す。`requested` までは保全設定で `pending` に戻せるが、Storage 削除を始める `deleting` 以降は保全設定を拒否する。候補取得と削除開始はいずれも条件付き更新にし、保全設定との競合で削除してはいけない原本を削除しない。
 - 既存録音への期限付与は小分けにコミットし、候補検索用の索引は `CREATE INDEX CONCURRENTLY` で作る。移行中に旧 API が期限列を指定せず録音を追加しても失敗しないよう、DB の既定値を先に設定してから既存行を補完し、最後に `NOT NULL` を有効にする。
 - 保持期限の変更は `recording.retention_set` として、録音完了時と AI の正式記録反映時に追記する。`recording.retention_set` の detail には録音 ID・旧状態・新状態・契機・ポリシー版だけを入れ、音声・文字起こし・要約・氏名などの中身は入れない。

@@ -284,3 +284,38 @@ test('書く欄が 1 つもない書式は使い始められない（読み取�
   assert.deepEqual(r.body.problems, ['印字欄がない'])
   await call(`/api/office/form-versions/${d.id}`, ADMIN_A, { method: 'DELETE' })
 })
+
+// #214: 位置だけを直しても、対応・元PDF・利用中の版は変えない。
+test('位置と大きさの修正: 全種類を保存し、古い指紋・別事業所・権限・公開済みを保護する', { skip }, async () => {
+  const draft = structuredClone(DRAFT)
+  draft.schemas[0][1] = { ...draft.schemas[0][1], type: 'circleMark' }
+  draft.bindings.p1_開催場所 = { op: 'option@1', ui: 'circle', ref: { key: 'local.meetingPlace' }, is: { eq: 'はい' } } as never
+  draft.localFields[0] = { key: 'local.meetingPlace', label: '開催場所', type: 'enum', choices: ['はい','いいえ'] } as never
+  draft.schemas[0][2] = { ...draft.schemas[0][2], type: 'image' }
+  draft.bindings.p1_余白 = { op: 'diagram@1', ui: 'diagram', ref: { key: 'family.genogram' } } as never
+  const d = await makeDraft(ids.officeA, 'assessment', draft)
+  const before = (await version(d.id)).formVersion
+  const schemas = structuredClone(before.schemas)
+  for (const [i,s] of schemas[0].entries()) { s.position = { x: 90+i, y: 40+i*20 }; s.width = 30; s.height = 6 }
+  const callsBefore = matcher.calls.length
+  const patch = { base: before.contentSha, schemas }
+  const path = `/api/office/form-versions/${d.id}`
+  const update = (token: string, body = patch) => call(path, token, { method:'PATCH', body:JSON.stringify(body) })
+  assert.equal((await update(CARE_A)).status,403)
+  assert.equal((await update(ADMIN_B)).status,404)
+  const r = await update(ADMIN_A)
+  assert.equal(r.status,200,JSON.stringify(r.body))
+  assert.deepEqual(r.body.formVersion.schemas,schemas)
+  for(const key of ['bindings','pages','localFields','basePdfSha256']) assert.deepEqual(r.body.formVersion[key],before[key],key)
+  assert.equal(matcher.calls.length,callsBefore)
+  assert.equal((await update(ADMIN_A)).status,409)
+  const bad = structuredClone(schemas); bad[0][0].position.x = 209
+  const invalid = await update(ADMIN_A,{base:r.body.formVersion.contentSha,schemas:bad})
+  assert.equal(invalid.status,200)
+  assert.ok(invalid.body.problems.some((p:string)=>p.includes('用紙の外')))
+  assert.equal((await publish(d.id)).status,422)
+  const fixed = await update(ADMIN_A,{base:invalid.body.formVersion.contentSha,schemas})
+  assert.equal(fixed.status,200)
+  assert.equal((await publish(d.id)).status,200)
+  assert.equal((await update(ADMIN_A,{base:fixed.body.formVersion.contentSha,schemas})).status,409)
+})

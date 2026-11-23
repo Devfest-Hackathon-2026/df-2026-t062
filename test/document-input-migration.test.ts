@@ -71,7 +71,9 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0034_document_fills.sql',
       '0035_care_plan_shared_services.sql',
       '0035_office_topics_training.sql',
-      '0036_document_review.sql',
+      '0036_recording_retention_14_days.sql',
+      '0037_recording_intermediate_retention.sql',
+      '0038_document_review.sql',
     ])
     const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
     assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
@@ -82,14 +84,28 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       'SELECT extract(epoch FROM source_expires_at - recorded_at) AS seconds FROM recordings WHERE id = $1',
       [recording],
     )).rows[0]
-    assert.equal(Number(backfilled.seconds), 7 * 24 * 60 * 60)
+    assert.equal(Number(backfilled.seconds), 14 * 24 * 60 * 60)
+    const migrated = (await db.query(
+      `SELECT retention_policy_version, source_delete_status, intermediate_delete_status,
+              extract(epoch FROM intermediate_expires_at - recorded_at) AS intermediate_seconds
+         FROM recordings WHERE id = $1`,
+      [recording],
+    )).rows[0]
+    assert.equal(migrated.retention_policy_version, 'recording-retention-v2')
+    assert.equal(migrated.source_delete_status, 'pending')
+    assert.equal(migrated.intermediate_delete_status, 'pending')
+    assert.equal(Number(migrated.intermediate_seconds), 14 * 24 * 60 * 60)
     const oldApiInsert = (await db.query(
       `INSERT INTO recordings (office_id, client_id, document_id, object_path, mime, created_by)
        VALUES ($1,$2,$3,'recordings/old-api.webm','audio/webm',$4)
-       RETURNING extract(epoch FROM source_expires_at - recorded_at) AS seconds`,
+      RETURNING extract(epoch FROM source_expires_at - recorded_at) AS seconds,
+                extract(epoch FROM intermediate_expires_at - recorded_at) AS intermediate_seconds,
+                retention_policy_version`,
       [office, client, document, staff],
     )).rows[0]
-    assert.equal(Number(oldApiInsert.seconds), 7 * 24 * 60 * 60)
+    assert.equal(Number(oldApiInsert.seconds), 14 * 24 * 60 * 60)
+    assert.equal(Number(oldApiInsert.intermediate_seconds), 14 * 24 * 60 * 60)
+    assert.equal(oldApiInsert.retention_policy_version, 'recording-retention-v2')
     assert.deepEqual(await migrate(db), [])
   } finally {
     await db.query(`DROP SCHEMA ${schema} CASCADE`)

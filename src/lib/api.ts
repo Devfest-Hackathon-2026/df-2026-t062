@@ -7,7 +7,7 @@ import type { DiagramDraft } from '../../api/chat.ts'
 import type { DiagramChatField } from '../../core/diagram/fields.ts'
 // api の呼び出し。ログインのトークンを付ける。型は db/repo.ts と同じ形。
 import type { DocumentInputView, DocumentMime } from '../../core/document-input.ts'
-import type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff } from '../../db/repo.ts'
+import type { ClientSummary, DocumentView, JobView, RecordingRetentionListItem, SlotEdit, SlotEditResult, Staff } from '../../db/repo.ts'
 import type { FormKindRow } from '../../db/kinds.ts'
 import type { FormAssetsView, FormKind, FormVersionView } from '../../core/form.ts'
 
@@ -23,8 +23,9 @@ import type { SlotMeaning } from '../../core/slot-meaning.ts'
 import type { OfficeTopicsEdit, TeachDecision, TrainingItem } from '../../core/topics.ts'
 import type { TrainingView } from '../../db/office-topics.ts'
 import type { LocalField } from '../../core/dictionary.ts'
+import type { HoldReasonCode, RecordingRetentionState } from '../../db/recording-retention.ts'
 
-export type { ClientSummary, DocumentView, JobView, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
+export type { ClientSummary, DocumentView, JobView, RecordingRetentionListItem, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
 
 /** 責任者が見る様式の版（GET /api/office/form-versions/:id）。slots は印字欄ごとの入る内容の言葉、review は取り込みが迷った欄 */
 export interface ManagedVersion {
@@ -197,6 +198,12 @@ export const api = {
     req<{ recordingId: string, uploadUrl: string | null }>('POST', `/api/clients/${clientId}/recordings/resumable`, { mime, deviceRecordingId, expiredUploadUrl, documentId }),
   completeRecording: (id: string, durationMs: number, bytes: number) =>
     req<{ jobId: string, status: string }>('POST', `/api/recordings/${id}/complete`, { durationMs, bytes }),
+  recordingRetentions: (clientId: string) =>
+    req<{ recordings: RecordingRetentionListItem[] }>('GET', `/api/office/clients/${clientId}/recordings/retention`),
+  setRecordingRetentionHold: (recordingId: string, holdUntil: string, reasonCode: HoldReasonCode) =>
+    req<{ retention: RecordingRetentionState }>('PUT', `/api/office/recordings/${recordingId}/retention-hold`, { holdUntil, reasonCode }),
+  releaseRecordingRetentionHold: (recordingId: string) =>
+    req<{ retention: RecordingRetentionState }>('DELETE', `/api/office/recordings/${recordingId}/retention-hold`),
   // ---------- 責任者の書類の設定（#102） ----------
   officeForms: () => req<{ kinds: KindFormState[] }>('GET', '/api/office/forms'),
   // ---------- 責任者が書類の種類を足す（#153） ----------
@@ -214,6 +221,8 @@ export const api = {
   startFormImport: (kind: string) => req<{ import: FormImportView, uploadUrl: string | null }>('POST', '/api/office/form-imports', { kind }),
   completeFormImport: (id: string) => req<{ import: FormImportView }>('POST', `/api/office/form-imports/${id}/complete`, {}),
   managedVersion: (id: string) => req<ManagedVersion>('GET', `/api/office/form-versions/${id}`),
+  positionSlots: (id: string, base: string, schemas: ManagedVersion['formVersion']['schemas']) =>
+    req<ManagedVersion>('PATCH', `/api/office/form-versions/${id}`, { base, schemas }),
   managedAssets: (id: string) => req<FormAssetsView>('GET', `/api/office/form-versions/${id}/assets`),
   teachSlot: (id: string, slot: string, base: string, text: string) =>
     req<ManagedVersion & { matched: 'field' | 'local' }>('POST', `/api/office/form-versions/${id}/slots/${encodeURIComponent(slot)}`, { base, text }),

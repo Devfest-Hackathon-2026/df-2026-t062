@@ -832,6 +832,15 @@ export function createApp(deps: ApiDeps) {
     return json(c, { retention })
   }))
 
+  app.get('/api/office/clients/:id/recordings/retention', staffRoute('recording.retention.manage', async (c, staff, db) => {
+    const clientId = c.req.param('id')!
+    const client = await repo.getClient(db, staff.officeId, clientId)
+    await accessAudit(c, db, staff, {
+      clientId: client.id, resourceType: 'recording_retention', accessMode: 'list', action: 'recording.retention.list',
+    })
+    return json(c, { recordings: await repo.listRecordingRetentions(db, staff.officeId, client.id) })
+  }))
+
   app.put('/api/office/recordings/:id/retention-hold', staffRoute('recording.retention.manage', async (c, staff, db) => {
     const input = await body(c, RecordingRetentionHoldInput)
     const holdUntil = new Date(input.holdUntil)
@@ -974,7 +983,7 @@ export function createApp(deps: ApiDeps) {
     const dict = fieldDict(v.localFields)
     return {
       formVersion: { ...forms.viewOf(v), status: v.status, global: v.officeId === null, localFields: v.localFields },
-      problems: checkDraftVersion({ schemas: v.schemas as never, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
+      problems: checkDraftVersion({ schemas: v.schemas as never, pages: v.pages, bindings: v.bindings, localFields: v.localFields as LocalField[] }),
       slots: Object.fromEntries(Object.entries(v.bindings).map(([n, b]) => [n, slotMeaning(b, dict, v.localFields)])),
       review: v.status === 'draft' ? await forms.reviewOf(db, v.id) : [],
     }

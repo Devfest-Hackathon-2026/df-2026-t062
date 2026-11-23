@@ -48,10 +48,11 @@ export function checkBindings(bindings: Bindings, dict: FieldDict = GLOBAL_DICT)
   }
   for (const [slot, b] of Object.entries(bindings)) {
     refOk(slot, b.ref)
+    if (diagramKinds[b.ref.key] && b.op !== 'diagram@1') errors.push(`${slot}: 図の値を文字や印の欄に割り当てることはできません`)
     if (b.op === 'diagram@1' && (!diagramKinds[b.ref.key] || b.ref.path?.length || b.ui !== 'diagram')) errors.push(`${slot}: 図の欄または参照が正しくありません`)
     if (b.op === 'option@1' && !b.edit && !canToggle(b.is)) errors.push(`${slot}: 丸・✓ を付け外ししたときの動き（edit）が決まっていない`)
     if (b.op === 'option@1' && !b.is && !b.if) errors.push(`${slot}: 丸・✓ を付ける条件がない`)
-    if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) refOk(slot, r)
+    if (b.op === 'text@1') for (const alt of b.or ?? []) for (const r of 'concat' in alt ? alt.concat : [alt]) { refOk(slot, r); if (diagramKinds[r.key]) errors.push(`${slot}: 図の値を文字の候補に割り当てることはできません`) }
     if (b.op === 'ageAt@1') { refOk(slot, b.birth); b.at.forEach((r) => refOk(slot, r)) }
   }
   return errors

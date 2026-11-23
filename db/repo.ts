@@ -13,7 +13,7 @@ import { loadFormDef, publishedVersionId } from './forms.ts'
 import { kindOf, primaryKind, visibleKind } from './kinds.ts'
 import { tx, type Db, type Tx } from './pool.ts'
 import { writeBusinessAudit, type AuditContext, type AuditOutcome } from './audit.ts'
-import { setRecordingRetentionOnComplete, setRecordingSuccessRetention } from './recording-retention.ts'
+import { setRecordingRetentionOnComplete } from './recording-retention.ts'
 
 type Q = Db | Tx
 
@@ -245,10 +245,60 @@ export async function getDocument(db: Q, officeId: string, documentId: string): 
 export async function clientTranscripts(db: Q, officeId: string, clientId: string): Promise<{ id: string, recordedAt: string, utterances: { id: string, speaker: string, person?: string | null, text: string }[] }[]> {
   const r = await db.query(
     `SELECT r.id, r.recorded_at, t.utterances FROM transcripts t JOIN recordings r ON r.id = t.recording_id
-     WHERE t.office_id = $1 AND t.client_id = $2 ORDER BY r.recorded_at`,
+     WHERE t.office_id = $1 AND t.client_id = $2
+       AND r.intermediate_delete_status NOT IN ('deleted', 'deleting')
+       AND (r.intermediate_expires_at > now() OR r.retention_hold OR r.retention_hold_target)
+     ORDER BY r.recorded_at`,
     [officeId, clientId],
   )
   return r.rows.map((x) => ({ id: String(x.id), recordedAt: new Date(x.recorded_at).toISOString(), utterances: x.utterances }))
+}
+
+/** 管理者が保持期限と保全状態を確認するための録音一覧。音声の中身や保存先は返さない。 */
+export interface RecordingRetentionListItem {
+  id: string
+  recordedAt: string
+  sourceExpiresAt: string
+  sourcePurgeExpectedAt: string | null
+  sourceDeleteStatus: string
+  sourceDeletedAt: string | null
+  intermediateExpiresAt: string
+  intermediateDeleteStatus: string
+  intermediateDeletedAt: string | null
+  retentionHold: boolean
+  retentionHoldTarget: boolean
+  retentionHoldSyncStatus: string
+  retentionHoldUntil: string | null
+  retentionHoldReasonCode: string | null
+}
+
+export async function listRecordingRetentions(db: Q, officeId: string, clientId: string): Promise<RecordingRetentionListItem[]> {
+  const r = await db.query(
+    `SELECT id, recorded_at, source_expires_at, source_purge_expected_at, source_delete_status, source_deleted_at,
+            intermediate_expires_at, intermediate_delete_status, intermediate_deleted_at,
+            retention_hold, retention_hold_target, retention_hold_sync_status,
+            retention_hold_until, retention_hold_reason_code
+       FROM recordings
+      WHERE office_id = $1 AND client_id = $2
+      ORDER BY recorded_at DESC, id DESC`,
+    [officeId, clientId],
+  )
+  return r.rows.map((row) => ({
+    id: String(row.id),
+    recordedAt: new Date(row.recorded_at).toISOString(),
+    sourceExpiresAt: new Date(row.source_expires_at).toISOString(),
+    sourcePurgeExpectedAt: row.source_purge_expected_at ? new Date(row.source_purge_expected_at).toISOString() : null,
+    sourceDeleteStatus: String(row.source_delete_status),
+    sourceDeletedAt: row.source_deleted_at ? new Date(row.source_deleted_at).toISOString() : null,
+    intermediateExpiresAt: new Date(row.intermediate_expires_at).toISOString(),
+    intermediateDeleteStatus: String(row.intermediate_delete_status),
+    intermediateDeletedAt: row.intermediate_deleted_at ? new Date(row.intermediate_deleted_at).toISOString() : null,
+    retentionHold: Boolean(row.retention_hold),
+    retentionHoldTarget: Boolean(row.retention_hold_target),
+    retentionHoldSyncStatus: String(row.retention_hold_sync_status),
+    retentionHoldUntil: row.retention_hold_until ? new Date(row.retention_hold_until).toISOString() : null,
+    retentionHoldReasonCode: row.retention_hold_reason_code ? String(row.retention_hold_reason_code) : null,
+  }))
 }
 
 /** 同じ利用者のほかの書類（書き方の相談で AI が読む）。同じ事業所の、同じ利用者のものだけ */
@@ -500,7 +550,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
       if (old) {
         const plan: BatchPlan = { changes: old.changes, kept: old.kept, skipped: [] }
         await finishJob(c, input, old.id, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion?.auditContext })
         return { batchId: old.id as string, plan }
       }
     }
@@ -515,7 +564,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     if (!plan.changes.length && !plan.kept.length) {
       if (input.completion) {
         await finishJob(c, input, null, plan)
-        await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
       }
       return { batchId: null, plan }
     }
@@ -530,7 +578,6 @@ export async function applyBatch(db: Db, input: ApplyInput, run: <T>(fn: (c: Tx)
     await c.query('UPDATE documents SET updated_at = now() WHERE id = $1', [d.id])
     if (input.completion) {
       await finishJob(c, input, batch.id, plan)
-      await setRecordingSuccessRetention(c, input.jobId!, { officeId: input.officeId, auditContext: input.completion.auditContext })
     }
     return { batchId: batch.id as string, plan }
   })
