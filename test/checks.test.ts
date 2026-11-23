@@ -22,13 +22,13 @@ test('物差しの形: 62 項目（1〜62 の順）。出典があり、名前�
 test('物差しの形: 書類ごとの数（アセスメント 32・第1表 2・第2表 9・第3表 4・第4表 7・第5表 3・第5表かモニタリング 3・その他 2）', () => {
   const count = (pred: (docs: string[]) => boolean) => set.items.filter((i) => pred(i.docs)).length
   assert.equal(count((d) => d.join() === 'assessment'), 32)
-  assert.equal(count((d) => d.join() === 'carePlan1'), 2)
-  assert.equal(count((d) => d.join() === 'carePlan2'), 9)
-  assert.equal(count((d) => d.join() === 'carePlan3'), 4)
-  assert.equal(count((d) => d.join() === 'carePlan4'), 7)
-  assert.equal(count((d) => d.join() === 'carePlan5'), 3)
-  assert.equal(count((d) => d.join() === 'carePlan5,monitoring'), 3)
-  assert.equal(count((d) => d.join() === 'other'), 2)
+  assert.equal(count((d) => d.join() === 'care_plan_1'), 2)
+  assert.equal(count((d) => d.join() === 'care_plan_2'), 9)
+  assert.equal(count((d) => d.join() === 'care_plan_3'), 4)
+  assert.equal(count((d) => d.join() === 'care_plan_4'), 7)
+  assert.equal(count((d) => d.join() === 'care_plan_5'), 3)
+  assert.equal(count((d) => d.join() === 'care_plan_5,monitoring'), 3)
+  assert.equal(count((d) => d.length === 0), 2)
 })
 
 test('物差しの形: どの項目にも段階 1 と 2 の基準があり、段階は 1・2・3・他 だけ。観点（①②…）は順に並ぶ', () => {
@@ -111,6 +111,9 @@ test('プログラムで判定: 37 の ③ 長期目標の期間は、開始日�
 test('点検できる範囲: 利用者にある書類の種類で決まる。今はアセスメントの 32 項目だけ（第1〜5表の 30 項目は点検していない）', () => {
   assert.deepEqual(inspectableItems(set, new Set(['assessment', 'admission'])).map((i) => Number(i.id)), Array.from({ length: 32 }, (_, n) => n + 1))
   assert.deepEqual(inspectableItems(set, new Set(['admission'])), [])
+  assert.deepEqual(inspectableItems(set, new Set(['care_plan_1'])).map(({ id }) => id), ['33', '34'])
+  assert.deepEqual(inspectableItems(set, new Set(['monitoring'])).map(({ id }) => id), ['58', '59', '60'])
+  assert.deepEqual(inspectableItems(set, new Set(['other'])), [])
 })
 
 test('書類の判定: 段階 1 が 1 つでもあれば要確認、どれも 2 以上なら適合。「他」は満たしている側に数える', () => {

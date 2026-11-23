@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { after, before, beforeEach, test } from 'node:test'
 import type { AddressInfo } from 'node:net'
 import type { Db } from '../db/pool.ts'
+import { checkSet, DEFAULT_CHECK_SET } from '../core/checks/index.ts'
 import type { WorkerDeps } from '../worker/jobs.ts'
 import type { Llm } from '../worker/vertex/gemini.ts'
 
@@ -111,6 +112,16 @@ async function inspect(clientId = ids.kai, token = A) {
 
 const values = async (documentId: string) =>
   (await db.query('SELECT key, value, by, ai_value, batch_id, updated_at FROM field_values WHERE document_id = $1 ORDER BY key', [documentId])).rows
+
+test('物差しは登録済みの書類の種類と、追加予定のモニタリングだけを参照する', { skip }, async () => {
+  const kinds = new Set<string>((await db.query('SELECT key FROM form_kinds')).rows.map(({ key }) => key))
+  for (const item of checkSet(DEFAULT_CHECK_SET).items) {
+    for (const kind of item.docs) {
+      const plannedMonitoring = kind === 'monitoring' && ['58', '59', '60'].includes(item.id)
+      assert.ok(kinds.has(kind) || plannedMonitoring, `${item.id}: ${kind}`)
+    }
+  }
+})
 
 test('点検: 32 項目すべての段階。段階 1 には足りない情報、2 以上には理由を返さない。書類の判定と分類ごとの数', { skip }, async () => {
   const before = await values(ids.kaiDoc)
@@ -264,4 +275,15 @@ test('権限: ほかの事業所の利用者・点検は 404。ログインし�
   assert.equal((await fetch(`${origin}/api/inspections/${r.id}`)).status, 401)
   assert.equal((await call(`/api/clients/${ids.kai}/inspections`, A, { method: 'POST', body: JSON.stringify({ checkSet: 'mhlw-careplan@1999-01' }) })).status, 400)
   assert.equal((await call('/api/inspections/not-a-uuid', A)).status, 404)
+})
+
+test('ケアプランを作成済みでも、現行の点検APIはアセスメントだけを読む', { skip }, async () => {
+  const plan = await call(`/api/clients/${ids.kai}/care-plans`, A, {
+    method: 'POST', body: JSON.stringify({ effectiveFrom: '2026-04-01' }),
+  })
+  assert.equal(plan.status, 201, JSON.stringify(plan.body))
+  const result = await inspect()
+  assert.equal(result.total, 32)
+  const { rows: [stored] } = await db.query('SELECT inputs FROM inspections WHERE id = $1', [result.id])
+  assert.deepEqual(stored.inputs.map(({ kind }: { kind: string }) => kind), ['assessment'])
 })
