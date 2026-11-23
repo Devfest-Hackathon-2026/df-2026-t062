@@ -1,0 +1,645 @@
+
+/* ========================================
+   ネコノテ LP
+   ======================================== */
+
+.landing {
+  min-height: 100vh;
+  background: linear-gradient(
+    120deg,
+    #f7f9ff 0%,
+    #f0f0ff 55%,
+    #f6f2ff 100%
+  );
+  color: #07143f;
+  font-family: "Noto Sans JP", sans-serif;
+  overflow-x: clip;
+}
+
+/* ========================================
+   ヘッダー
+   ======================================== */
+
+.landing-header {
+  height: 85px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 3%;
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid #e8eaf5;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.landing-logo-image {
+  display: block;
+  width: 280px;
+  max-width: 100%;
+  height: auto;
+}
+
+.landing-header-button {
+  padding: 12px 26px;
+  background: #ffffff;
+  border: 1px solid #adc0f8;
+  border-radius: 999px;
+  color: #325bc6;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.landing-header-button:hover {
+  background: #edf3ff;
+}
+
+/* ========================================
+   ファーストビュー
+   ======================================== */
+
+.landing-hero {
+  width: 100%;
+  max-width: 1700px;
+  min-height: 440px;
+  margin: 0 auto;
+  padding: 20px 4% 35px;
+  box-sizing: border-box;
+
+  display: grid;
+  grid-template-columns: minmax(0, 42%) minmax(0, 58%);
+  align-items: center;
+  gap: 0;
+}
+
+.landing-hero-content {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+/* 小さなラベル */
+
+.landing-label {
+  display: inline-block;
+  margin: 0;
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: #e9e7ff;
+  color: #123bc1;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+/* キャッチコピー */
+
+.landing-hero h1 {
+  margin: 20px 0 12px;
+  color: #07143f;
+  font-size: clamp(36px, 3.5vw, 58px);
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+
+.landing-hero h1 span {
+  color: #0861ee;
+}
+
+/* 説明文 */
+
+.landing-description {
+  margin: 0 0 20px;
+  color: #152044;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+/* メインボタン */
+
+.landing-cta {
+  display: block;
+  width: min(100%, 480px);
+  box-sizing: border-box;
+  padding: 15px 24px;
+  border-radius: 12px;
+  background: #0861ee;
+  color: white;
+  text-align: center;
+  text-decoration: none;
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 5px 14px rgba(8, 97, 238, 0.13);
+  transition: background 0.2s, transform 0.2s;
+}
+
+
+.landing-cta:hover {
+  background: #ffffff;
+  color: #0861ee;
+  box-shadow: 0 5px 18px rgba(8, 97, 238, 0.2);
+  transform: translateY(-2px);
+}
+
+
+/* ========================================
+   PC・タブレット画像
+   ======================================== */
+
+.landing-hero-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.landing-hero-image img,
+.landing-devices {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ========================================
+   タブレット対応
+   ======================================== */
+
+@media (max-width: 1100px) {
+  .landing-hero {
+    grid-template-columns: minmax(0, 48%) minmax(0, 52%);
+    padding: 35px 4%;
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(30px, 3.6vw, 45px);
+    white-space: normal;
+  }
+
+  .landing-label {
+    font-size: 13px;
+  }
+
+  .landing-description {
+    font-size: 14px;
+  }
+}
+
+/* ========================================
+   スマートフォン対応
+   ======================================== */
+
+@media (max-width: 768px) {
+  .landing-header {
+    height: 76px;
+    padding: 12px 5%;
+  }
+
+  .landing-logo-image {
+    width: 165px;
+  }
+
+  .landing-header-button {
+    padding: 9px 15px;
+    font-size: 12px;
+  }
+
+  .landing-hero {
+    display: flex;
+    flex-direction: column;
+    min-height: auto;
+    padding: 44px 20px 36px;
+    gap: 30px;
+    text-align: center;
+  }
+
+  .landing-hero-content {
+    width: 100%;
+  }
+
+  .landing-label {
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+
+  .landing-hero h1 {
+    margin: 20px 0 16px;
+    font-size: clamp(30px, 7vw, 42px);
+    white-space: normal;
+  }
+
+  .landing-description {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  .landing-cta {
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .landing-hero-image {
+    width: 100%;
+  }
+
+  .landing-devices {
+    width: 100%;
+    max-width: 550px;
+  }
+}
+
+/* ========================================
+   3つのサポート
+   ======================================== */
+
+.landing-support {
+  width: calc(100% - 80px);
+  max-width: 1600px;
+  margin: 0 auto 35px;
+  padding: 28px 30px;
+  box-sizing: border-box;
+
+  display: grid;
+  grid-template-columns: 180px repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 0;
+
+  background: linear-gradient(
+    100deg,
+    #f0efff 0%,
+    #eeedff 60%,
+    #f3f0ff 100%
+  );
+  border-radius: 60px;
+}
+
+.landing-support-heading {
+  text-align: center;
+}
+
+.landing-support-heading h2 {
+  margin: 0;
+  font-size: 27px;
+  line-height: 1.35;
+  color: #07143f;
+  font-weight: 800;
+}
+
+.landing-support-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 5px 22px;
+  min-width: 0;
+  border-left: 1px solid #b7a4f3;
+}
+
+.landing-support-icon {
+  font-size: 42px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.landing-support-item h3 {
+  margin: 0 0 8px;
+  font-size: 19px;
+  font-weight: 800;
+  color: #101943;
+}
+
+.landing-support-item p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #263451;
+}
+
+/* 中程度の画面幅 */
+@media (max-width: 1100px) {
+  .landing-support {
+    grid-template-columns: 150px repeat(3, minmax(0, 1fr));
+    width: calc(100% - 40px);
+    padding: 22px 16px;
+  }
+
+  .landing-support-item {
+    padding: 5px 12px;
+    gap: 10px;
+  }
+
+  .landing-support-icon {
+    font-size: 30px;
+  }
+
+  .landing-support-item h3 {
+    font-size: 15px;
+  }
+
+  .landing-support-item p {
+    font-size: 12px;
+  }
+}
+
+/* スマートフォン */
+@media (max-width: 768px) {
+  .landing-support {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: calc(100% - 32px);
+    padding: 26px 24px;
+    border-radius: 28px;
+    gap: 20px;
+  }
+
+  .landing-support-heading h2 {
+    font-size: 24px;
+  }
+
+  .landing-support-heading h2 br {
+    display: none;
+  }
+
+  .landing-support-item {
+    border-left: 0;
+    border-top: 1px solid #c5b5f8;
+    padding: 18px 0 0;
+  }
+
+  .landing-support-icon {
+    font-size: 35px;
+  }
+
+  .landing-support-item h3 {
+    font-size: 17px;
+  }
+
+  .landing-support-item p {
+    font-size: 13px;
+  }
+}
+
+/* ========================================
+   ご利用の流れ
+   ======================================== */
+
+.landing-flow {
+  width: calc(100% - 80px);
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 0 55px;
+  box-sizing: border-box;
+}
+
+/* セクションの見出し */
+.landing-flow-heading {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.landing-flow-heading p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 25px;
+  margin: 0 0 5px;
+  color: #0861ee;
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.landing-flow-heading p::before,
+.landing-flow-heading p::after {
+  content: "";
+  width: 55px;
+  height: 2px;
+  background: #a184ed;
+}
+
+.landing-flow-heading h2 {
+  margin: 0;
+  color: #07143f;
+  font-size: 36px;
+  font-weight: 800;
+}
+
+/* 3枚のカード */
+.landing-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 55px;
+}
+
+.landing-flow-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 120px;
+  padding: 18px 22px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #edf0ff;
+  border-radius: 20px;
+  box-shadow: 0 5px 14px rgba(90, 110, 205, 0.10);
+}
+
+/* カード間の矢印 */
+.landing-flow-card:not(:last-child)::after {
+  content: "›";
+  position: absolute;
+  left: calc(100% + 17px);
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9778eb;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* 番号とタイトル */
+.landing-flow-title {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.landing-flow-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 43px;
+  height: 43px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7c91f0, #a66be9);
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.landing-flow-title h3 {
+  margin: 0;
+  color: #07143f;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.landing-flow-text p {
+  margin: 8px 0 0 56px;
+  color: #263451;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.landing-flow-icon {
+  flex-shrink: 0;
+  font-size: 43px;
+}
+
+/* タブレット表示 */
+@media (max-width: 1100px) {
+  .landing-flow {
+    width: calc(100% - 40px);
+  }
+
+  .landing-flow-steps {
+    gap: 30px;
+  }
+
+  .landing-flow-card {
+    padding: 15px;
+  }
+
+  .landing-flow-title {
+    gap: 8px;
+  }
+
+  .landing-flow-title h3 {
+    font-size: 15px;
+  }
+
+  .landing-flow-text p {
+    margin-left: 0;
+    font-size: 12px;
+  }
+
+  .landing-flow-icon {
+    font-size: 30px;
+  }
+
+  .landing-flow-card:not(:last-child)::after {
+    left: calc(100% + 8px);
+    font-size: 32px;
+  }
+}
+
+/* スマートフォン表示 */
+@media (max-width: 768px) {
+  .landing-flow {
+    width: calc(100% - 32px);
+    padding-bottom: 40px;
+  }
+
+  .landing-flow-heading p {
+    gap: 12px;
+    font-size: 17px;
+  }
+
+  .landing-flow-heading p::before,
+  .landing-flow-heading p::after {
+    width: 25px;
+  }
+
+  .landing-flow-heading h2 {
+    font-size: 28px;
+  }
+
+  .landing-flow-steps {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .landing-flow-card {
+    min-height: 110px;
+    padding: 18px;
+  }
+
+  .landing-flow-title h3 {
+    font-size: 17px;
+  }
+
+  .landing-flow-number {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+  }
+
+  .landing-flow-text p {
+    margin-left: 46px;
+    font-size: 13px;
+  }
+
+  .landing-flow-card:not(:last-child)::after {
+    left: 50%;
+    top: calc(100% + 3px);
+    transform: translateX(-50%) rotate(90deg);
+    font-size: 32px;
+  }
+}
+
+/* ===== セクション間の余白を微調整 ===== */
+
+@media (min-width: 1101px) {
+  .landing-hero {
+    min-height: 410px;
+    padding-bottom: 15px;
+  }
+
+  .landing-support {
+    margin-bottom: 22px;
+  }
+
+  .landing-flow-heading {
+    margin-bottom: 18px;
+  }
+}
+.landing-support-icon img {
+  display: block;
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .landing-support-icon img {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ご利用の流れ：アイコン画像 */
+
+.landing-flow-icon img {
+  display: block;
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .landing-flow-icon img {
+    width: 60px;
+    height: 60px;
+  }
+}

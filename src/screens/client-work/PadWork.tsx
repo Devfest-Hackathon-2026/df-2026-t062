@@ -142,13 +142,13 @@ export function PadWork({ clientId }: { clientId: string }) {
   return (
     <div className="pad" style={{ width: '100%', height: '100dvh', boxSizing: 'border-box', overflow: 'hidden', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#E9EBEF', fontSize: 16, lineHeight: 1.6, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', position: 'relative', zIndex: 10 }}>
-        <a className="tb" {...linkProps('/')} onClick={(e) => {
+        <a className="tb" {...linkProps('/app')} onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
           if (state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
             e.preventDefault()
             return
           }
-          linkProps('/').onClick(e)
+          linkProps('/app').onClick(e)
         }} style={{ border: 0, padding: '10px 6px', color: '#2453C4', fontWeight: 500 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者
         </a>

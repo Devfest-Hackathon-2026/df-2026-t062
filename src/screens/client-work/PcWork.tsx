@@ -274,14 +274,14 @@ export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, sta
     <div className="pc pc-work" style={{ fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#F4F5F7', fontSize: 14, lineHeight: 1.6, display: 'flex', flexDirection: 'column' }}>
 
       <div className="pc-work-client" style={{ flex: '0 0 auto', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', padding: '10px 28px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 24px' }}>
-        <a {...linkProps('/')} onClick={(e) => {
+        <a {...linkProps('/app')} onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
           if (planBusy || (carePlanOpen && planDirty && !window.confirm('ケアプランの未保存の入力を破棄して利用者一覧に移動しますか？'))) { e.preventDefault(); return }
           if (!carePlanOpen && state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
             e.preventDefault()
             return
           }
-          linkProps('/').onClick(e)
+          linkProps('/app').onClick(e)
         }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, textDecoration: 'none' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>利用者一覧
         </a>

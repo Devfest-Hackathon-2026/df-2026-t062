@@ -26,7 +26,7 @@ export function OfficeShell({ staffName, active, wide, children }: { staffName: 
       {wide ? <main className="of-wide-main">{children}</main> : (
         <div className="of-app">
           <nav className="of-nav" aria-label="メニュー">
-            <a {...linkProps('/')} aria-current={active === 'clients' ? 'page' : undefined}>{Icon.users}利用者一覧</a>
+            <a {...linkProps('/app')} aria-current={active === 'clients' ? 'page' : undefined}>{Icon.users}利用者一覧</a>
             <a {...linkProps('/office')} aria-current={active === 'forms' ? 'page' : undefined}>{Icon.doc}書類の設定</a>
           </nav>
           <main className="of-main">{children}</main>
