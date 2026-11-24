@@ -72,7 +72,16 @@ test('DBの保持期限前の録音は削除候補にならない', { skip }, as
 test('GCS削除成功後にSoft Delete期限を記録できる', { skip }, async () => {
   const j = await job()
   await db.query(
-    "UPDATE recordings SET recorded_at = now() - interval '8 days', source_expires_at = now() - interval '1 day', source_delete_status = 'pending' WHERE id = $1",
+    `UPDATE recordings
+        SET recorded_at = now() - interval '8 days',
+            source_expires_at = now() - interval '1 day',
+            source_delete_status = 'pending',
+            source_generation = 1,
+            source_metageneration = 1,
+            retention_hold = false,
+            retention_hold_target = false,
+            retention_hold_sync_status = 'synced'
+      WHERE id = $1`,
     [j.recordingId],
   )
 
