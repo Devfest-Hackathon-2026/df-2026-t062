@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import type { AddressInfo } from 'node:net'
+import type { Db } from '../db/pool.ts'
 
 const url = process.env.DATABASE_URL
 const skip = url ? false : 'DATABASE_URL がないので飛ばします'
@@ -14,6 +15,7 @@ const schema = `t_api_${process.pid}`
 
 let origin = ''
 let close = async () => {}
+let dbForTests: Db | null = null
 let ids: { kai: string, sato: string } = { kai: '', sato: '' }
 /** ほかの事業所だけの様式の版（加藤さんの事業所からは見えない） */
 let otherVersion = ''
@@ -21,6 +23,12 @@ let hasPdf = false
 let putFake: (path: string, data: Uint8Array) => Promise<void> = async () => {}
 const TOKEN = 'Bearer dev:kato@example.com'
 const OTHER = 'Bearer dev:other@example.com'
+let failNextEnqueue = false
+const enqueues = new Map<string, number>()
+/** チャットのエージェントに返した道具の答え（search_records） */
+const searchResults: Record<string, unknown>[] = []
+const crossReads: Record<string, unknown>[] = []
+const diagramReads: Record<string, unknown>[] = []
 
 const call = async (path: string, init: RequestInit & { token?: string } = {}) => {
   const res = await fetch(`${origin}${path}`, {
@@ -28,7 +36,7 @@ const call = async (path: string, init: RequestInit & { token?: string } = {}) =
     headers: { Authorization: init.token ?? TOKEN, 'Content-Type': 'application/json', ...(init.headers ?? {}) },
   })
   const type = res.headers.get('content-type') ?? ''
-  return { status: res.status, body: type.includes('json') ? await res.json() : await res.arrayBuffer() }
+  return { status: res.status, headers: res.headers, body: type.includes('json') ? await res.json() : await res.arrayBuffer() }
 }
 
 before(async () => {
@@ -38,6 +46,7 @@ before(async () => {
   await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE; CREATE SCHEMA ${schema}`)
   await admin.end()
   const db = await createPool({ DATABASE_URL: url, DB_SCHEMA: schema })
+  dbForTests = db
   const { migrate } = await import('../db/migrate.ts')
   await migrate(db)
   const { seed } = await import('../db/seed.ts')
@@ -68,12 +77,55 @@ before(async () => {
     hasPdf = true
   }
   putFake = async (path, data) => { await storage.writeOnce('forms', path, data, 'image/png') }
-  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter() }) }
+  const workerDeps = { db: async () => db, storage: () => storage, providers: async () => ({ stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() } }) }
+  const queue = new LocalQueue((id) => runJob(workerDeps, id))
   const server = createApiServer({
     db: async () => db,
     verifier: () => new DevVerifier(),
     storage: () => storage,
-    queue: () => new LocalQueue((id) => runJob(workerDeps, id)),
+    queue: () => ({
+      async enqueue(id) {
+        if (failNextEnqueue) {
+          failNextEnqueue = false
+          throw new Error('queue unavailable')
+        }
+        enqueues.set(id, (enqueues.get(id) ?? 0) + 1)
+        await queue.enqueue(id)
+      },
+      async enqueueFormImport() {},
+      async enqueueInspection() {},
+    }),
+    // 台本: 録音を探してから、用紙を読んで案を出す
+    chat: async () => async ({ contents }) => {
+      if (contents[0].parts[0].text === '#図503検証') throw Object.assign(new Error('private-provider-detail'), { status: 503 })
+      const res = contents.at(-1)!.parts.find((p) => p.functionResponse)?.functionResponse
+      if (contents[0].parts[0].text?.includes('#133図検証')) {
+        if (!res) return [{ functionCall: { name: 'read_form', args: { query: 'health.bodyMap' } } }, { functionCall: { name: 'read_diagram_context', args: { field: 'health.bodyMap' } } }]
+        const context = contents.at(-1)!.parts.find((p) => p.functionResponse?.name === 'read_diagram_context')?.functionResponse?.response
+        if (context) {
+          diagramReads.push(context)
+          const id = (context.messages as { id: string }[]).at(-1)!.id
+          return [{ functionCall: { name: 'propose_edit', args: { key: 'health.bodyMap', baseRevision: 0, value: JSON.stringify({ version: 1, kind: 'body', revision: 1, data: { items: [{ id: 'api-right-knee', kind: 'pain', label: '本人の右膝の痛み', x: 0, y: 0, width: 32, height: 52, rotation: 0, view: 'front', anatomy: { region: 'knee', side: 'right', view: 'front' } }] } }), diagramChanges: { targetIds: ['api-right-knee'], evidence: [{ objectId: 'api-right-knee', sourceIds: [id] }] } } } }]
+        }
+        return [{ text: '右膝の痛みの案を作りました。まだ用紙は変わっていません。' }]
+      }
+      // 台本 2: 「流用」なら、ほかの書類（アセスメント）を読むだけ
+      if (/流用/.test(contents[0].parts[0].text ?? '')) {
+        if (!res) return [{ functionCall: { name: 'read_form', args: { document: 'assessment' } } }]
+        crossReads.push(res.response)
+        return [{ text: '読みました。' }]
+      }
+      if (!res) return [{ functionCall: { name: 'search_records', args: { query: 'リハビリ' } } }]
+      if (res.name === 'search_records') {
+        searchResults.push(res.response)
+        return [{ functionCall: { name: 'read_form', args: {} } }]
+      }
+      if (res.name === 'read_form') {
+        const t = (res.response.filled as { key: string, type: string, value: string }[]).find((f) => f.type === 'longtext')!
+        return [{ functionCall: { name: 'propose_edit', args: { key: t.key, value: `${t.value}（直した）` } } }]
+      }
+      return [{ text: '案を出しました。' }]
+    },
     devAuth: true,
   })
   server.listen(0, '127.0.0.1')
@@ -90,10 +142,103 @@ after(async () => close())
 
 test('ログインしていないと 401、ほかの事業所の利用者は見えない', { skip }, async () => {
   assert.equal((await call('/api/clients', { token: '' })).status, 401)
+  const before = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
+    [ids.kai],
+  )).rows[0].n
+  const securityBefore = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM security_audit_events WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)`,
+    ['dev:other@example.com'],
+  )).rows[0].n
   assert.equal((await call(`/api/clients/${ids.kai}`, { token: OTHER })).status, 404)
+  const after = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM access_audit_events WHERE action = 'client.view' AND client_id = $1`,
+    [ids.kai],
+  )).rows[0].n
+  assert.equal(after, before)
+  const securityAfter = (await dbForTests!.query<{ n: string }>(
+    `SELECT count(*) AS n FROM security_audit_events WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)`,
+    ['dev:other@example.com'],
+  )).rows[0].n
+  assert.equal(Number(securityAfter), Number(securityBefore) + 1)
+  const denial = (await dbForTests!.query<{ outcome: string, reason_code: string, target_id: string | null }>(
+    `SELECT outcome, reason_code, target_id FROM security_audit_events
+      WHERE action = 'auth.denied' AND actor_staff_id = (SELECT id FROM staff WHERE auth_uid = $1)
+      ORDER BY id DESC LIMIT 1`,
+    ['dev:other@example.com'],
+  )).rows[0]
+  assert.deepEqual(denial, { outcome: 'not_found', reason_code: 'resource_not_found_or_out_of_scope', target_id: null })
   const list = (await call('/api/clients', { token: OTHER })).body as { clients: { name: string }[] }
   assert.ok(!list.clients.some((c) => c.name === '甲斐' && false))
   assert.equal(list.clients.length, 4)
+})
+
+test('更新監査のrequest_idが応答のX-Request-Idと一致する', { skip }, async () => {
+  const created = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '監査相関の見本' }) })
+  assert.equal(created.status, 201)
+  const requestId = created.headers.get('x-request-id')
+  assert.match(requestId ?? '', /^[0-9a-f-]{36}$/)
+  const clientId = (created.body as { id: string }).id
+  const audit = await dbForTests!.query<{ request_id: string, correlation_id: string, source: string, route: string }>(
+    `SELECT request_id, correlation_id, source, route
+       FROM audit_events
+      WHERE action = 'client.create' AND client_id = $1
+      ORDER BY id DESC LIMIT 1`,
+    [clientId],
+  )
+  assert.equal(audit.rows[0].request_id, requestId)
+  assert.notEqual(audit.rows[0].correlation_id, requestId)
+  assert.equal(audit.rows[0].source, 'api')
+  assert.equal(audit.rows[0].route, '/api/clients')
+})
+
+test('利用者一覧・詳細の閲覧監査は対象IDと相関IDを保存する', { skip }, async () => {
+  const list = await call('/api/clients')
+  assert.equal(list.status, 200)
+  const listRequestId = list.headers.get('x-request-id')
+  const listAudit = await dbForTests!.query<{ request_id: string, client_id: string | null, result_count: number, displayed_client_ids: string[] }>(
+    `SELECT request_id, client_id, result_count, displayed_client_ids
+       FROM access_audit_events
+      WHERE action = 'client.list' AND route = '/api/clients'
+      ORDER BY id DESC LIMIT 1`,
+  )
+  assert.equal(listAudit.rows[0].request_id, listRequestId)
+  assert.equal(listAudit.rows[0].client_id, null)
+  assert.equal(Number(listAudit.rows[0].result_count), listAudit.rows[0].displayed_client_ids.length)
+  assert.ok(listAudit.rows[0].displayed_client_ids.includes(ids.kai))
+  assert.ok(listAudit.rows[0].displayed_client_ids.includes(ids.sato))
+
+  const detail = await call(`/api/clients/${ids.kai}`)
+  assert.equal(detail.status, 200)
+  const detailRequestId = detail.headers.get('x-request-id')
+  const detailAudit = await dbForTests!.query<{ request_id: string, client_id: string, resource_id: string, action: string, route: string }>(
+    `SELECT request_id, client_id, resource_id, action, route
+       FROM access_audit_events
+      WHERE action = 'client.view' AND client_id = $1
+      ORDER BY id DESC LIMIT 1`,
+    [ids.kai],
+  )
+  assert.equal(detailAudit.rows[0].request_id, detailRequestId)
+  assert.equal(detailAudit.rows[0].client_id, ids.kai)
+  assert.equal(detailAudit.rows[0].resource_id, ids.kai)
+  assert.equal(detailAudit.rows[0].action, 'client.view')
+  assert.equal(detailAudit.rows[0].route, '/api/clients/:id')
+})
+
+test('監査OutcomeのDB制約はnot_foundを許可し、不正値を拒否する', { skip }, async () => {
+  const office = (await dbForTests!.query<{ office_id: string }>('SELECT office_id FROM clients WHERE id = $1', [ids.kai])).rows[0].office_id
+  const security = await dbForTests!.query<{ outcome: string }>(
+    `INSERT INTO security_audit_events (action, outcome, source) VALUES ('staff.lookup', 'not_found', 'test') RETURNING outcome`,
+  )
+  assert.equal(security.rows[0].outcome, 'not_found')
+  await assert.rejects(dbForTests!.query(
+    `INSERT INTO access_audit_events (office_id, resource_type, access_mode, action, outcome, source, route)
+     VALUES ($1, 'client', 'view', 'client.view', 'invalid', 'test', '/test')`,
+    [office],
+  ))
+  await assert.rejects(dbForTests!.query(
+    `INSERT INTO security_audit_events (action, outcome, source) VALUES ('staff.lookup', 'invalid', 'test')`,
+  ))
 })
 
 type Doc = { document: { formVersionId: string, kind: string, fields: Record<string, { value: unknown, by: string }>, saved: Record<string, { value: unknown }> } }
@@ -127,23 +272,70 @@ test('直す → ページを保存 → 版 → PDF。保存していない AI �
   if (hasPdf) {
     assert.equal(pdf.status, 200)
     assert.ok((pdf.body as ArrayBuffer).byteLength > 10000)
+    const exportAudit = await dbForTests!.query<{ document_id: string, resource_id: string, access_mode: string, route: string }>(
+      `SELECT document_id, resource_id, access_mode, route
+         FROM access_audit_events
+        WHERE action = 'document.export' AND document_id = $1
+        ORDER BY id DESC LIMIT 1`,
+      [docId],
+    )
+    assert.deepEqual(exportAudit.rows[0], {
+      document_id: docId,
+      resource_id: docId,
+      access_mode: 'export',
+      route: '/api/documents/:id/pdf',
+    })
   } else assert.equal(pdf.status, 503, '元の PDF が置き場になければ 503')
 })
 
-test('入院時情報提供書を作るとアセスメントから写し、基本情報は両方に入る', { skip }, async () => {
-  const r = await call(`/api/clients/${ids.kai}/documents`, { method: 'POST', body: JSON.stringify({ form: 'admission' }) })
+test('手入力で作った入院時情報提供書にはアセスメントの値が入らず、書類間で同期しない', { skip }, async () => {
+  const made = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '写しの見本' }) })
+  assert.equal(made.status, 201)
+  const { id: clientId, documentId } = made.body as { id: string, documentId: string }
+  const patch = (id: string, key: string, value: unknown, base: unknown) => call(`/api/documents/${id}/fields`, {
+    method: 'PATCH', body: JSON.stringify({ changes: [{ key, value, base }] }),
+  })
+  assert.equal((await patch(documentId, 'person.address', '見本市見本町 1-2-3', null)).status, 200)
+  assert.equal((await patch(documentId, 'person.phone', '000-0000-0000', null)).status, 200)
+  assert.equal((await patch(documentId, 'housing.notes', '段差が多い', null)).status, 200)
+
+  const r = await call(`/api/clients/${clientId}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })
   assert.equal(r.status, 201)
   const admId = (r.body as { id: string }).id
   const adm = (await call(`/api/documents/${admId}`)).body as Doc
   assert.equal(adm.document.kind, 'admission')
-  assert.equal(adm.document.fields['housing.notes'].by, 'ai')
-  const p = await call(`/api/documents/${admId}/fields`, { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'person.phone', value: '000-0000-0000', base: adm.document.fields['person.phone']?.value ?? null }] }) })
+  for (const key of ['person.name', 'person.address', 'person.phone', 'housing.notes']) {
+    assert.equal(adm.document.fields[key], undefined, key)
+  }
+  assert.ok(adm.document.fields['office.name'])
+
+  const p = await patch(admId, 'person.address', '入院先の近く', null)
   assert.equal(p.status, 200)
-  assert.deepEqual((p.body as { syncedTo: string[] }).syncedTo, ['アセスメント'])
+  assert.equal((p.body as Record<string, unknown>).syncedTo, undefined, '「ほかの書類にも入りました」は返さない')
+  assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.address'].value, '見本市見本町 1-2-3')
+  assert.equal((await patch(documentId, 'person.phone', '111-1111-1111', '000-0000-0000')).status, 200)
+  assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.phone'], undefined)
+
+  // 一覧の氏名は、主な書類（アセスメント）の氏名を直したときだけ変わる
+  const listName = async () => ((await call('/api/clients')).body as { clients: { id: string, name: string }[] }).clients.find((c) => c.id === clientId)?.name
+  assert.equal((await patch(admId, 'person.name', '入院時の呼び名', null)).status, 200)
+  assert.equal(await listName(), '写しの見本')
+  assert.equal(((await call(`/api/documents/${documentId}`)).body as Doc).document.fields['person.name'].value, '写しの見本')
+  assert.equal((await patch(documentId, 'person.name', '写しの見本 改', '写しの見本')).status, 200)
+  assert.equal(await listName(), '写しの見本 改')
+  assert.equal(((await call(`/api/documents/${admId}`)).body as Doc).document.fields['person.name'].value, '入院時の呼び名')
+})
+
+test('書類どうしの食い違いを知らせる入口はない', { skip }, async () => {
+  // 甲斐さんの入院時情報提供書（あとのテストでも使う。あればそれを返す）
+  const { id } = (await call(`/api/clients/${ids.kai}/documents`, { method: 'POST', body: JSON.stringify({ kind: 'admission' }) })).body as { id: string }
+  assert.equal((await call(`/api/documents/${id}/sync-differences`)).status, 404)
+  assert.equal((await call(`/api/documents/${id}/sync-decisions`, { method: 'POST', body: JSON.stringify({ key: 'person.lifeHistory', decision: 'keep', source: null, target: null }) })).status, 404)
 })
 
 test('録音を送るとジョブが走り、AI が用紙に書く（ケアマネが直した欄は残す）', { skip }, async () => {
   const { id: docId } = await docOf(ids.sato)
+  assert.equal((await call(`/api/clients/${ids.sato}/recording-consent`, { method: 'POST', body: JSON.stringify({ confirmed: true }) })).status, 201)
   const before = await call(`/api/documents/${docId}/fields`, { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'consulter', value: { name: '自分で書いた', relationship: '子' }, base: null }] }) })
   assert.equal(before.status, 200)
   const start = await call(`/api/clients/${ids.sato}/recordings`, { method: 'POST', body: JSON.stringify({ mime: 'audio/webm' }) })
@@ -154,19 +346,72 @@ test('録音を送るとジョブが走り、AI が用紙に書く（ケアマ�
   assert.equal(up.status, 200)
   const done = await call(`/api/recordings/${recordingId}/complete`, { method: 'POST', body: JSON.stringify({ durationMs: 60000 }) })
   assert.equal(done.status, 202)
-  let job: { status: string, batch: { changes: number, kept: number } | null } | undefined
+  let job: { documentId: string, status: string, batch: { changes: number, kept: number } | null } | undefined
   for (let i = 0; i < 50; i++) {
     job = ((await call(`/api/clients/${ids.sato}/jobs`)).body as { jobs: typeof job[] }).jobs[0]
     if (job && ['succeeded', 'failed', 'partial'].includes(job.status)) break
     await new Promise((r) => setTimeout(r, 100))
   }
   assert.equal(job?.status, 'succeeded')
+  assert.equal(job?.documentId, docId)
   assert.ok((job?.batch?.changes ?? 0) > 30)
   // 氏名・性別（利用者を作るときにケアマネが入れた）と、先に書いた相談者の 3 欄は書き換えない
   assert.equal(job?.batch?.kept, 3)
   const doc = (await call(`/api/documents/${docId}`)).body as { document: { fields: Record<string, { value: { name?: string }, by: string }> } }
   assert.equal(doc.document.fields.consulter.value.name, '自分で書いた')
   assert.equal(doc.document.fields['intake.method'].by, 'ai')
+})
+
+test('録音IDで送信を再開し、同時に完了を再試行してもジョブを一度だけ積む', { skip }, async () => {
+  const client = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '録音復旧の検証' }) })
+  assert.equal(client.status, 201)
+  assert.equal((await call(`/api/clients/${client.body.id}/recording-consent`, { method: 'POST', body: JSON.stringify({ confirmed: true }) })).status, 201)
+  const path = `/api/clients/${client.body.id}/recordings/resumable`
+  const deviceRecordingId = crypto.randomUUID()
+  const start = (expiredUploadUrl?: string, token = TOKEN) => call(path, {
+    method: 'POST', token, body: JSON.stringify({ mime: 'audio/webm', deviceRecordingId, expiredUploadUrl }),
+  })
+  const [first, retry] = await Promise.all([start(), start()])
+  assert.equal(first.status, 201)
+  assert.equal(retry.status, 201)
+  assert.deepEqual(retry.body, first.body)
+  assert.equal((await start(undefined, OTHER)).status, 404)
+  const { recordingId, uploadUrl } = first.body as { recordingId: string, uploadUrl: string }
+  const put = (url: string, range: string, data?: Uint8Array<ArrayBuffer>) =>
+    fetch(`${origin}${url}`, { method: 'PUT', headers: { 'Content-Range': range }, body: data, redirect: 'manual' })
+  const complete = (bytes = 4) => call(`/api/recordings/${recordingId}/complete`, {
+    method: 'POST', body: JSON.stringify({ durationMs: 1000, bytes }),
+  })
+
+  assert.equal((await put(uploadUrl, 'bytes 0-1/4', new Uint8Array([1, 2]))).status, 308)
+  assert.equal((await complete()).status, 409)
+  assert.equal((await put(uploadUrl, 'bytes */4')).headers.get('Range'), 'bytes=0-1')
+  const renewed = await start(uploadUrl)
+  assert.equal(renewed.status, 201)
+  assert.equal(renewed.body.recordingId, recordingId)
+  assert.notEqual(renewed.body.uploadUrl, uploadUrl)
+  assert.deepEqual((await start(uploadUrl)).body, renewed.body)
+  assert.equal((await put(renewed.body.uploadUrl, 'bytes 0-3/4', new Uint8Array([1, 2, 3, 4]))).status, 200)
+  assert.equal((await put(uploadUrl, 'bytes 2-3/4', new Uint8Array([9, 9]))).status, 200)
+  assert.deepEqual((await start()).body, { recordingId, uploadUrl: null })
+  assert.equal((await complete(5)).status, 409)
+
+  failNextEnqueue = true
+  assert.equal((await complete()).status, 500)
+  const [done, repeated] = await Promise.all([complete(), complete()])
+  assert.equal(done.status, 202)
+  assert.equal(repeated.status, 202)
+  assert.equal(repeated.body.jobId, done.body.jobId)
+  assert.equal(enqueues.get(done.body.jobId), 1)
+  const list = await call(`/api/clients/${client.body.id}/jobs`)
+  assert.equal(list.body.jobs.length, 1)
+  assert.deepEqual((await start()).body, { recordingId, uploadUrl: null })
+  for (let i = 0; i < 50; i++) {
+    const jobs = (await call(`/api/clients/${client.body.id}/jobs`)).body.jobs
+    if (jobs[0].status === 'succeeded') return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.fail('再試行で投入したジョブが完了しませんでした')
 })
 
 test('様式の版は、その事業所が見てよいものだけ読める。中身はブラウザが覚えてよい（ETag）', { skip }, async () => {
@@ -183,7 +428,7 @@ test('様式の版は、その事業所が見てよいものだけ読める。�
   assert.equal((await call(`/api/form-versions/${otherVersion}`)).status, 404)
   assert.equal((await call(`/api/form-versions/${otherVersion}`, { token: OTHER })).status, 200)
   const others = (await call('/api/clients', { token: OTHER })).body as { clients: { id: string }[] }
-  const made = await call(`/api/clients/${others.clients[0].id}/documents`, { method: 'POST', token: OTHER, body: JSON.stringify({ form: 'admission' }) })
+  const made = await call(`/api/clients/${others.clients[0].id}/documents`, { method: 'POST', token: OTHER, body: JSON.stringify({ kind: 'admission' }) })
   const otherDoc = (await call(`/api/documents/${(made.body as { id: string }).id}`, { token: OTHER })).body as Doc
   assert.equal(otherDoc.document.formVersionId, otherVersion)
 })
@@ -247,4 +492,236 @@ test('差分の欄の直しは、画面が元にした値が今の値と違え�
   assert.equal(((await call(`/api/documents/${docId}`)).body as Doc).document.fields['person.lifeHistory'].value, cur)
   const ok = await call(`/api/documents/${docId}/fields`, { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'person.lifeHistory', value: '書き直した', base: cur }] }) })
   assert.equal(ok.status, 200)
+})
+
+test('認定調査票は確認した欄だけに出典を記録し、409では一部も反映しない', { skip }, async () => {
+  const made = await call('/api/clients', { method: 'POST', body: JSON.stringify({ name: '検証 太郎' }) })
+  assert.equal(made.status, 201)
+  const path = '/api/documents/' + made.body.documentId
+  const source = { fileName: 'survey-clean.pdf', sha256: 'a'.repeat(64), recordedOn: '2026-11-04' }
+  const post = (changes: { key: string, choice: number, base: unknown }[], token?: string) => call(path + '/survey-import', {
+    method: 'POST', token, body: JSON.stringify({ ...source, changes }),
+  })
+
+  assert.equal((await post([{ key: 'survey.2_2', choice: 2, base: null }], OTHER)).status, 404)
+  assert.equal((await post([{ key: 'survey.2_1', choice: 2, base: null }])).status, 400)
+  const applied = await post([{ key: 'survey.2_2', choice: 2, base: null }])
+  assert.equal(applied.status, 200)
+  const fields = applied.body.document.fields
+  assert.equal(fields['survey.2_2'].value, '見守り等')
+  assert.equal(fields['survey.2_2'].by, 'cm')
+  assert.deepEqual(fields['survey.2_2'].surveySource, { kind: 'survey-import', ...source, page: 2, choice: 2 })
+  assert.equal(fields['survey.2_4'], undefined)
+
+  assert.equal((await post([
+    { key: 'survey.2_4', choice: 2, base: null },
+    { key: 'survey.2_2', choice: 3, base: null },
+  ])).status, 409)
+  assert.equal((await call(path)).body.document.fields['survey.2_4'], undefined)
+
+  const edited = await call(path + '/fields', {
+    method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'survey.2_2', value: '一部介助', base: '見守り等' }] }),
+  })
+  assert.equal(edited.status, 200)
+  assert.equal(edited.body.document.fields['survey.2_2'].surveySource, undefined)
+
+  assert.equal((await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 6 }) })).status, 200)
+  assert.equal((await call(path + '/fields', {
+    method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'survey.2_2', value: null, base: '一部介助' }] }),
+  })).status, 200)
+  assert.equal((await post([{ key: 'survey.2_2', choice: 2, base: null }])).status, 409)
+  const cleared = (await call(path)).body.document
+  assert.equal(cleared.fields['survey.2_2'], undefined)
+  assert.equal(cleared.saved['survey.2_2'].value, '一部介助')
+
+})
+
+test('書き方の相談: エージェントが録音を探し、用紙を読んで案を出す。作業ログを 1 行ずつ流す。用紙は変えない', { skip }, async () => {
+  // 佐藤さんには、上のテストで送った録音（fake の文字起こし）がある
+  const { id: docId } = await docOf(ids.sato)
+  const before = (await call(`/api/documents/${docId}`)).body as Doc
+  const ask = (messages: unknown, token?: string) => call(`/api/documents/${docId}/chat`, { method: 'POST', token, body: JSON.stringify({ messages }) })
+
+  // 答えは 1 行 1 つの JSON（NDJSON）。道具を使うたびに step を流し、最後に done
+  const res = await fetch(`${origin}/api/documents/${docId}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', text: '相談内容の書き方は？' }, { role: 'pet', text: '本人の言葉で書きます。' }, { role: 'user', text: '相談内容を直して' }] }) })
+  assert.equal(res.status, 200)
+  assert.match(res.headers.get('content-type') ?? '', /application\/x-ndjson/)
+  const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(events.map((e) => e.type), ['step', 'step', 'step', 'done'])
+  const body = events.at(-1) as { reply: string, steps: string[], proposals: { key: string, label: string, before: string | null, after: string }[] }
+  assert.deepEqual(events.slice(0, -1).map((e) => e.text), body.steps)
+  assert.equal(body.reply, '案を出しました。')
+  assert.equal(body.steps.length, 3)
+  assert.match(body.steps[0], /^録音を探しました「リハビリ」（[1-9]\d* 件）$/, '録音の発言を探せる')
+  assert.equal(body.proposals.length, 1)
+  const [p] = body.proposals
+  assert.equal(p.before, before.document.fields[p.key].value)
+  assert.notEqual(p.after, p.before)
+  assert.equal((searchResults.at(-1)!.hits as { id: string }[])[0].id.startsWith('r1-'), true)
+  assert.deepEqual(((await call(`/api/documents/${docId}`)).body as Doc).document.fields, before.document.fields)
+
+  const documentAudits = await dbForTests!.query<{ resource_id: string, action: string }>(
+    `SELECT resource_id, action FROM access_audit_events
+      WHERE request_id = (SELECT request_id FROM access_audit_events WHERE action = 'transcript.view' AND document_id = $1 ORDER BY id DESC LIMIT 1)
+      ORDER BY id`,
+    [docId],
+  )
+  assert.ok(documentAudits.rows.some((row) => row.resource_id === docId && row.action === 'document.view'))
+  assert.ok(documentAudits.rows.some((row) => row.action === 'transcript.view'))
+
+  assert.equal((await ask([{ role: 'user', text: 'a' }], OTHER)).status, 404)
+  assert.equal((await ask([])).status, 400)
+  assert.equal((await ask([{ role: 'pet', text: '最後がペット' }])).status, 400)
+})
+
+test('書き方の相談: 入院時情報提供書から、同じ利用者のアセスメントを読める', { skip }, async () => {
+  // 甲斐さんには、上のテストで作った入院時情報提供書がある
+  const adm = await docOf(ids.kai, 'admission')
+  const assessment = ((await call(`/api/documents/${(await docOf(ids.kai)).id}`)).body as Doc).document
+  const res = await fetch(`${origin}/api/documents/${adm.id}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', text: 'アセスメントから流用して' }] }) })
+  const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(events.map((e) => e.steps ?? e.text), ['用紙を読みました（アセスメント）', ['用紙を読みました（アセスメント）']])
+  const read = crossReads.at(-1) as { document: string, filled: { key: string, value: string }[] }
+  assert.equal(read.document, 'アセスメント')
+  const lifeHistory = read.filled.find((f) => f.key === 'person.lifeHistory')
+  assert.equal(lifeHistory?.value, assessment.fields['person.lifeHistory'].value, 'アセスメントの値を読む')
+})
+
+test('図: 他欄を保持して更新・ページ保存でき、古いbaseや不正なrevisionでは何も上書きしない（#101）', { skip }, async () => {
+  const { blank } = await import('../core/diagram/model.ts')
+  const { nextDiagram } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const drawing = blank()
+  drawing.house.items.push({ id: 'fixture-bed', kind: 'bed', label: '検証用ベッド', x: 40, y: 40, width: 100, height: 70, rotation: 0 })
+  const value = nextDiagram('house', drawing, 0)
+  const patch = (next: unknown, base: unknown) => call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'housing.floorPlan', value: next, base }] }) })
+  const first = await patch(value, null)
+  assert.equal(first.status, 200)
+  const updated = (first.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) assert.deepEqual(updated.fields[key], field)
+  assert.equal(updated.saved['housing.floorPlan'], undefined)
+  assert.equal((await patch({ ...value, revision: 2 }, null)).status, 409)
+  assert.equal((await patch({ ...value, revision: 9 }, value)).status, 400)
+  assert.equal((await patch(value, { ...value, data: { items: drawing.house.items } })).status, 400)
+  assert.equal((await patch(null, value)).status, 400)
+  assert.equal((await patch(nextDiagram('family', blank(), 1), value)).status, 400)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 3 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved['housing.floorPlan'].value, value)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['housing.floorPlan'].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+})
+
+test('身体図チャット: 根拠取得→構造化案→明示反映→保存→PDF。未反映時・競合時は他欄を保持（#132・#133）', { skip }, async () => {
+  const { bodyAnchor } = await import('../core/diagram/body.ts')
+  const { diagramSchema } = await import('../core/diagram/fields.ts')
+  const { id } = await docOf(ids.sato)
+  const path = `/api/documents/${id}`
+  const before = ((await call(path)).body as Doc).document
+  const question = '#133図検証：本人の右膝が痛いです。この情報で身体図を作って'
+  const res = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: question }] }) })
+  assert.equal(res.status, 200)
+  const events = (await res.text()).trim().split('\n').map((line) => JSON.parse(line))
+  const done = events.at(-1)
+  assert.equal(done.type, 'done')
+  assert.equal(done.proposals.length, 1)
+  const proposal = done.proposals[0]
+  assert.equal(proposal.before, null)
+  const value = diagramSchema.parse(proposal.after)
+  assert.equal(value.kind, 'body')
+  if (value.kind !== 'body') return
+  assert.equal(value.data.items[0].sources![0].quote, question)
+  assert.equal(value.data.items[0].x + 16, bodyAnchor({ region: 'knee', side: 'right', view: 'front' })!.x)
+  assert.equal((diagramReads.at(-1)!.visitNotes as { available: boolean }).available, false)
+  assert.deepEqual(((await call(path)).body as Doc).document.fields, before.fields)
+  const changes = [{ key: proposal.key, value: proposal.after, base: proposal.before }]
+  const applied = await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })
+  assert.equal(applied.status, 200)
+  const current = (applied.body as Doc).document
+  for (const [key, field] of Object.entries(before.fields)) if (key !== proposal.key) assert.deepEqual(current.fields[key], field)
+  assert.equal(current.saved[proposal.key], undefined)
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes }) })).status, 409)
+  const bad = structuredClone(value); bad.data.items[0].view = 'back'
+  assert.equal((await call(path + '/fields', { method: 'PATCH', body: JSON.stringify({ changes: [{ key: proposal.key, value: { ...bad, revision: 2 }, base: value }] }) })).status, 400)
+  const saved = await call(path + '/save', { method: 'POST', body: JSON.stringify({ scope: 'page', page: 4 }) })
+  assert.equal(saved.status, 200)
+  assert.deepEqual((saved.body as Doc).document.saved[proposal.key].value, value)
+  if (hasPdf) assert.equal((await call(path + '/pdf')).status, 200)
+  const wrongDraft = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', text: '修正して' }], draft: { key: 'family.genogram', after: value } }) })
+  assert.equal(wrongDraft.status, 400)
+  const wrongTarget = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'family.genogram', messages: [{ role: 'user', text: '修正して' }], draft: { key: 'health.bodyMap', after: value } }) })
+  assert.equal(wrongTarget.status, 400)
+  const unsupported = await call(path + '/chat', { method: 'POST', body: JSON.stringify({ diagramField: 'housing.floorPlan', messages: [{ role: 'user', text: '作って' }] }) })
+  assert.equal(unsupported.status, 400)
+  const failed = await fetch(`${origin}${path}/chat`, { method: 'POST', headers: { Authorization: TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ diagramField: 'health.bodyMap', messages: [{ role: 'user', text: '#図503検証' }] }) })
+  const failureEvents = (await failed.text()).trim().split('\n').map((line) => JSON.parse(line))
+  assert.deepEqual(failureEvents.at(-1), { type: 'error', code: 'overloaded' })
+  assert.ok(!failureEvents.some((e) => e.type === 'done'))
+  assert.ok(!JSON.stringify(failureEvents).includes('private-provider-detail'))
+  assert.deepEqual(((await call(path)).body as Doc).document.fields['health.bodyMap'].value, value)
+})
+
+test('保存・確認・確定を分離: AIの再更新、確認保護、古い画面、正式保存版を通して検証する（#16）', {skip}, async()=>{
+ const repo=await import('../db/repo.ts')
+ const {tx}=await import('../db/pool.ts')
+ const db=dbForTests!
+ const staff=(await repo.staffByAuth(db,'dev:kato@example.com'))!
+ const client=await repo.createClient(db,staff,{name:'架空 確認用'})
+ const {id}=await docOf(client.id)
+ const path=`/api/documents/${id}`
+ const get=async()=>((await call(path)).body as any).document
+ const post=(suffix:string,data:unknown,token=TOKEN)=>call(path+suffix,{method:'POST',body:JSON.stringify(data),token})
+ const key='person.lifeHistory'
+ const ai=(value:string)=>repo.applyBatch(db,{officeId:staff.officeId,documentId:id,kind:'recording',label:'架空検証',proposed:{[key]:{value}}})
+ const review=(doc:any,keys=Object.keys(doc.fields),reviewed=true)=>post('/review',{formVersionId:doc.formVersionId,reviewed,fields:keys.map(key=>({key,base:doc.fields[key].value,valueVersion:doc.fields[key].valueVersion}))})
+ await ai('架空の生活歴A')
+ await post('/save',{scope:'document'})
+ let doc=await get()
+ assert.equal(doc.confirmation,undefined)
+ assert.equal(doc.fields[key].reviewedAt,undefined)
+ const stale=doc
+ await ai('架空の生活歴B')
+ assert.equal((await review(stale,[key])).status,409)
+ doc=await get()
+ assert.equal((await review({...doc,formVersionId:crypto.randomUUID()},[key])).status,409)
+ assert.equal((await review(doc,[key])).status,200)
+ doc=await get()
+ assert.equal(doc.fields[key].by,'ai','確認しても作者を手入力に偽装しない')
+ assert.ok(doc.fields[key].reviewedAt)
+ assert.deepEqual((await ai('上書き禁止')).plan.kept,[{key,reason:'reviewed'}])
+ assert.equal((await get()).fields[key].value,'架空の生活歴B')
+ await assert.rejects(tx(db,c=>repo.writeField(c,staff.officeId,client.id,id,key,'別経路のAI','ai',null)),repo.Conflict)
+ assert.equal((await post('/confirm',{baseRev:doc.rev})).status,409)
+ assert.equal((await review(doc,[key],false)).status,200)
+ assert.equal((await ai('架空の生活歴C')).plan.changes.length,1)
+ doc=await get()
+ const beforeABA=doc
+ const edit=async(value:string)=>{const d=await get();return call(path+'/fields',{method:'PATCH',body:JSON.stringify({changes:[{key,base:d.fields[key].value,value}]})})}
+ await edit('変更後の生活歴');await edit('架空の生活歴C')
+ assert.equal((await review(beforeABA,[key])).status,409,'値が元に戻っていても古い確認は拒否する')
+ doc=await get()
+ assert.equal(doc.fields[key].reviewedAt,undefined)
+ assert.equal((await review(doc)).status,200)
+ assert.equal((await post('/confirm',{baseRev:doc.rev})).status,409,'未保存の現在値は確定しない')
+ assert.equal((await post('/save',{scope:'document'})).status,200)
+ doc=await get()
+ assert.ok(doc.fields[key].reviewedAt,'保存は確認を消さない')
+ assert.equal((await post('/confirm',{baseRev:doc.rev-1})).status,409)
+ assert.equal((await post('/confirm',{baseRev:doc.rev})).status,200)
+ const confirmed=(await get()).confirmation
+ assert.equal(confirmed.rev,doc.rev)
+ assert.equal((await post('/confirm',{baseRev:doc.rev})).status,200)
+ assert.deepEqual((await get()).confirmation,confirmed,'二重確定で担当者や日時を変えない')
+ assert.equal((await post('/review',{formVersionId:doc.formVersionId,reviewed:true,fields:Object.entries(doc.fields).map(([key,f]:[string,any])=>({key,base:f.value,valueVersion:f.valueVersion}))},OTHER)).status,404)
+ assert.equal((await post('/confirm',{baseRev:doc.rev},OTHER)).status,404)
+ assert.equal((await post('/review',{reviewed:true,fields:[]})).status,400)
+ const old=(await repo.latestRevision(db,staff.officeId,id))
+ await edit('正式版の後の編集')
+ assert.equal((await get()).fields[key].reviewedAt,undefined)
+ assert.deepEqual((await get()).confirmation,confirmed)
+ assert.deepEqual(await repo.latestRevision(db,staff.officeId,id),old)
+ await assert.rejects(db.query('UPDATE document_confirmations SET confirmed_at=now() WHERE document_id=$1',[id]),/immutable/)
 })

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 .env
 .env.*
@@ -26,3 +26,10 @@ __pycache__/
 forms/tools/templates/*/layout.json
 forms/tools/out/
 public/forms/
+
+# Playwright reports and screenshots
+/playwright-report/
+/test-results/
+
+# 本プロジェクトで作成した原紙のみ公開する（他の様式の利用条件は維持）。
+!forms/originals/monitoring.pdf

@@ -34,6 +34,15 @@ override_resource {
 }
 
 override_resource {
+  target          = google_service_account.recording_cleanup
+  override_during = plan
+  values = {
+    email = "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com"
+    name  = "projects/mock-project/serviceAccounts/cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com"
+  }
+}
+
+override_resource {
   target          = google_service_account.tasks_invoker
   override_during = plan
   values = {
@@ -55,9 +64,13 @@ run "private_service_with_scoped_deployer" {
   command = plan
 
   variables {
-    project_id                 = "mock-project"
-    github_repository_id       = "1447301909"
-    github_repository_owner_id = "234936919"
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    recording_cleanup_alerts_enabled    = true
+    ai_job_alerts_enabled               = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
   assert {
@@ -122,10 +135,14 @@ run "private_service_with_scoped_deployer" {
       toset([for e in google_cloud_run_v2_service.api.template[0].containers[0].env : e.name]) == toset([
         "AUTH_MODE", "FIREBASE_PROJECT_ID", "STORAGE_MODE", "GCS_SOURCE_BUCKET", "GCS_OUTPUT_BUCKET", "GCS_WORK_BUCKET", "GCS_FORMS_BUCKET",
         "QUEUE_MODE", "TASKS_QUEUE", "WORKER_URL", "TASKS_INVOKER_SA", "CLOUD_SQL_INSTANCE", "DB_USER", "DB_NAME",
+        "AI_PROVIDER", "GOOGLE_CLOUD_PROJECT", "GEMINI_MODEL", "GEMINI_LOCATION",
       ]) &&
       local.api_env["AUTH_MODE"] == "firebase" &&
       local.api_env["WORKER_URL"] == "https://t062-worker-123456789012.asia-northeast1.run.app" &&
-      local.api_env["DB_USER"] == "cloud-run-api-runtime@mock-project.iam"
+      local.api_env["DB_USER"] == "cloud-run-api-runtime@mock-project.iam" &&
+      local.api_env["AI_PROVIDER"] == local.worker_env["AI_PROVIDER"] &&
+      local.api_env["GEMINI_MODEL"] == local.worker_env["GEMINI_MODEL"] &&
+      local.api_env["GEMINI_LOCATION"] == local.worker_env["GEMINI_LOCATION"]
     )
     error_message = "The API environment must carry the variables the code reads."
   }
@@ -158,9 +175,11 @@ run "private_service_with_scoped_deployer" {
       google_sql_user.api.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
       google_sql_user.api.name == "cloud-run-api-runtime@mock-project.iam" &&
       google_sql_user.worker.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
-      google_sql_user.worker.name == "cloud-run-worker-runtime@mock-project.iam"
+      google_sql_user.worker.name == "cloud-run-worker-runtime@mock-project.iam" &&
+      google_sql_user.recording_cleanup.type == "CLOUD_IAM_SERVICE_ACCOUNT" &&
+      google_sql_user.recording_cleanup.name == "cloud-run-recording-cleanup@mock-project.iam"
     )
-    error_message = "The API and worker must be IAM database users without passwords."
+    error_message = "The API, worker and recording cleanup must be IAM database users without passwords."
   }
 
   assert {
@@ -186,9 +205,22 @@ run "private_service_with_scoped_deployer" {
       google_storage_bucket.forms.name == "mock-project-t062-forms" &&
       length(google_storage_bucket.forms.cors) == 0 &&
       length(google_storage_bucket.forms.lifecycle_rule) == 0 &&
-      !contains([for e in google_cloud_run_v2_service.worker.template[0].containers[0].env : e.name], "GCS_FORMS_BUCKET")
+      local.worker_env["GCS_FORMS_BUCKET"] == "mock-project-t062-forms"
     )
-    error_message = "The forms bucket keeps form PDFs and page images with no CORS or expiry, and only the API reads it."
+    error_message = "The forms bucket keeps form PDFs and page images with no expiry (the worker removes uploaded imports), and the worker converts uploaded PDFs."
+  }
+
+  assert {
+    condition = (
+      local.forms_imports_condition == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-forms/objects/imports/\") || resource.name.extract(\"projects/_/buckets/mock-project-t062-forms/objects/offices/{office}/imports/\") != \"\"" &&
+      google_storage_bucket_iam_member.api_forms_imports.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.api_forms_imports.condition[0].expression == local.forms_imports_condition &&
+      google_storage_bucket_iam_member.worker_forms_read.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.worker_forms_create.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.worker_forms_imports.role == "roles/storage.objectAdmin" &&
+      google_storage_bucket_iam_member.worker_forms_imports.condition[0].expression == local.forms_imports_condition
+    )
+    error_message = "Only uploaded imports may be created by the API and deleted by the worker; the worker may only add new form assets."
   }
 
   assert {
@@ -212,6 +244,78 @@ run "private_service_with_scoped_deployer" {
 
   assert {
     condition = (
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].service_account == "cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
+      google_service_account_iam_member.deployer_uses_recording_cleanup_runtime.role == "roles/iam.serviceAccountUser" &&
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].timeout == "900s" &&
+      google_cloud_run_v2_job.recording_cleanup.template[0].template[0].max_retries == 0 &&
+      google_cloud_scheduler_job.recording_cleanup.schedule == "*/15 * * * *" &&
+      google_cloud_scheduler_job.recording_cleanup.paused &&
+      google_cloud_scheduler_job.recording_cleanup.http_target[0].oauth_token[0].service_account_email == "tasks-invoker@mock-project.iam.gserviceaccount.com"
+    )
+    error_message = "The recording cleanup Job must use its dedicated service account and run every 15 minutes through Scheduler."
+  }
+
+  assert {
+    condition = (
+      google_storage_bucket.source.soft_delete_policy[0].retention_duration_seconds == 259200 &&
+      length(google_storage_bucket.source.lifecycle_rule) == 0 &&
+      google_storage_bucket_iam_member.recording_cleanup_source.condition[0].expression == "resource.name.startsWith(\"projects/_/buckets/mock-project-t062-source/objects/recordings/\")"
+    )
+    error_message = "The source bucket must use three-day Soft Delete and keep Lifecycle disabled until readiness is verified."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_success.name == "recording_cleanup_success_count" &&
+      google_logging_metric.recording_cleanup_failure.name == "recording_cleanup_failure_count" &&
+      google_logging_metric.recording_cleanup_overdue.name == "recording_cleanup_overdue_count" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.name == "recording_cleanup_hold_mismatch_count" &&
+      google_logging_metric.recording_cleanup_final_failure.name == "recording_cleanup_final_failure_count" &&
+      google_logging_metric.recording_cleanup_failure_rate_breach.name == "recording_cleanup_failure_rate_breach_count" &&
+      google_logging_metric.recording_cleanup_duration.name == "recording_cleanup_duration" &&
+      length(google_monitoring_alert_policy.recording_cleanup_overdue.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_final_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_mismatch.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_hold_sync_failure.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_no_success.notification_channels) == 1 &&
+      length(google_monitoring_alert_policy.recording_cleanup_scheduler_error.notification_channels) == 1 &&
+      google_monitoring_dashboard.recording_cleanup.dashboard_json != ""
+    )
+    error_message = "Recording cleanup metrics, alert policies and a privacy-safe dashboard must be managed by Terraform."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.recording_cleanup_overdue.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_stuck.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_duration.value_extractor == "EXTRACT(jsonPayload.duration_ms)" &&
+      google_monitoring_alert_policy.recording_cleanup_overdue.enabled &&
+      google_monitoring_alert_policy.recording_cleanup_overdue.conditions[0].condition_threshold[0].duration == "900s" &&
+      google_monitoring_alert_policy.recording_cleanup_no_success.conditions[0].condition_absent[0].duration == "7200s"
+    )
+    error_message = "Monitoring must extract aggregate values and preserve the documented alert thresholds."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.ai_job_success.name == "ai_job_success_count" &&
+      google_logging_metric.ai_job_failure.name == "ai_job_failure_count" &&
+      google_logging_metric.ai_job_duration.name == "ai_job_duration" &&
+      google_logging_metric.ai_job_queue_wait.name == "ai_job_queue_wait" &&
+      google_logging_metric.ai_job_backlog_age.name == "ai_job_backlog_age_seconds" &&
+      google_monitoring_alert_policy.ai_job_failure.enabled &&
+      google_monitoring_alert_policy.ai_job_backlog.enabled &&
+      google_monitoring_alert_policy.ai_job_processing_stuck.enabled &&
+      google_monitoring_alert_policy.ai_job_cost.enabled &&
+      length(google_monitoring_alert_policy.ai_job_failure.notification_channels) == 1 &&
+      google_monitoring_dashboard.ai_jobs.dashboard_json != ""
+    )
+    error_message = "AI job metrics, alerts and a privacy-safe dashboard must be managed by Terraform."
+  }
+
+  assert {
+    condition = (
       google_identity_platform_config.auth.sign_in[0].email[0].enabled &&
       google_identity_platform_config.auth.client[0].permissions[0].disabled_user_signup
     )
@@ -223,12 +327,22 @@ run "private_service_with_scoped_deployer" {
       google_service_account_iam_member.api_signs_as_itself.role == "roles/iam.serviceAccountTokenCreator" &&
       google_service_account_iam_member.api_acts_as_tasks_invoker.role == "roles/iam.serviceAccountUser" &&
       google_cloud_tasks_queue_iam_member.api_enqueues.role == "roles/cloudtasks.enqueuer" &&
-      google_storage_bucket_iam_member.api_source.role == "roles/storage.objectAdmin" &&
+      google_storage_bucket_iam_member.api_source_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.api_source_creator.role == "roles/storage.objectCreator" &&
+      google_storage_bucket_iam_member.api_document_inputs_cleanup.role == "roles/storage.objectAdmin" &&
       google_storage_bucket_iam_member.api_output.role == "roles/storage.objectAdmin" &&
       google_storage_bucket_iam_member.api_forms.role == "roles/storage.objectViewer" &&
       google_storage_bucket_iam_member.worker_source.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.speech_source_bucket_viewer.role == "roles/storage.bucketViewer" &&
+      google_storage_bucket_iam_member.speech_source_object_viewer.role == "roles/storage.objectViewer" &&
+      google_storage_bucket_iam_member.speech_source_object_viewer.member == "serviceAccount:service-123456789012@gcp-sa-speech.iam.gserviceaccount.com" &&
       google_storage_bucket_iam_member.worker_work.role == "roles/storage.objectAdmin" &&
+      toset(google_project_iam_custom_role.recording_cleanup_object_control.permissions) == toset(["storage.objects.get", "storage.objects.delete", "storage.objects.update"]) &&
+      google_storage_bucket_iam_member.recording_cleanup_source.member == "serviceAccount:cloud-run-recording-cleanup@mock-project.iam.gserviceaccount.com" &&
       google_project_iam_member.worker_vertex.role == "roles/aiplatform.user" &&
+      google_project_iam_member.api_vertex.role == "roles/aiplatform.user" &&
+      google_project_iam_member.api_firebaseauth_admin.role == "roles/firebaseauth.admin" &&
+      google_project_iam_member.api_firebaseauth_admin.member == "serviceAccount:cloud-run-api-runtime@mock-project.iam.gserviceaccount.com" &&
       google_project_iam_member.worker_speech.role == "roles/speech.client"
     )
     error_message = "Runtime roles must stay as scoped as designed."
@@ -238,6 +352,74 @@ run "private_service_with_scoped_deployer" {
     condition     = length(google_billing_budget.monthly) == 0
     error_message = "No budget is created without billing_account_id."
   }
+}
+
+run "recording_cleanup_scheduler_can_be_enabled_explicitly" {
+  command = plan
+
+  variables {
+    project_id                         = "mock-project"
+    github_repository_id               = "1447301909"
+    github_repository_owner_id         = "234936919"
+    app_origins                        = []
+    recording_cleanup_scheduler_paused = false
+  }
+
+  assert {
+    condition     = !google_cloud_scheduler_job.recording_cleanup.paused
+    error_message = "The recording cleanup Scheduler must be resumable only through an explicit Terraform variable."
+  }
+}
+
+run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
+  command = plan
+
+  variables {
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = false
+    recording_cleanup_alerts_enabled    = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
+  }
+
+  assert {
+    condition = (
+      one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.age]) == 30 &&
+      one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.with_state]) == "LIVE" &&
+      toset(one([for c in google_storage_bucket.source.lifecycle_rule[0].condition : c.matches_prefix])) == toset(["recordings/"]) &&
+      one([for a in google_storage_bucket.source.lifecycle_rule[0].action : a.type]) == "Delete"
+    )
+    error_message = "The enabled source Lifecycle must be a 30-day LIVE recordings-only safety net."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_bucket.output.lifecycle_rule) == 0 &&
+      length(google_storage_bucket.work.lifecycle_rule) == 1 &&
+      length(google_storage_bucket.forms.lifecycle_rule) == 0
+    )
+    error_message = "The source Lifecycle safety net must not be applied to output or forms, and must not replace work cleanup."
+  }
+}
+
+run "source_lifecycle_safety_net_rejects_paused_scheduler" {
+  command = plan
+
+  variables {
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = true
+    recording_cleanup_alerts_enabled    = false
+    monitoring_notification_channel_ids = []
+  }
+
+  expect_failures = [terraform_data.recording_cleanup_alert_configuration]
 }
 
 run "source_bucket_cors_and_budget" {
@@ -260,6 +442,15 @@ run "source_bucket_cors_and_budget" {
       google_storage_bucket.source.cors[0].max_age_seconds == 3600
     )
     error_message = "The source bucket must allow resumable uploads from the app origins."
+  }
+
+  assert {
+    condition = (
+      length(google_storage_bucket.forms.cors) == 1 &&
+      toset(google_storage_bucket.forms.cors[0].origin) == toset(["https://mock-project.web.app", "http://localhost:5173"]) &&
+      toset(google_storage_bucket.forms.cors[0].method) == toset(["PUT", "POST", "OPTIONS"])
+    )
+    error_message = "The forms bucket must allow resumable uploads of form PDFs from the app origins."
   }
 
   assert {

@@ -1,0 +1,1559 @@
+{
+  "対象月_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.monthDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "対象月_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.monthDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "事業所名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.name"
+    }
+  },
+  "担当者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.careManagerName"
+    }
+  },
+  "作成日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "作成日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "作成日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "plan.createdDate"
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "時間帯": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "time"
+      ]
+    }
+  },
+  "内容": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "content"
+      ]
+    }
+  },
+  "事業所": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "provider"
+      ]
+    }
+  },
+  "予定1": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p1"
+      ]
+    }
+  },
+  "実績1": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a1"
+      ]
+    }
+  },
+  "予定2": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p2"
+      ]
+    }
+  },
+  "実績2": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a2"
+      ]
+    }
+  },
+  "予定3": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p3"
+      ]
+    }
+  },
+  "実績3": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a3"
+      ]
+    }
+  },
+  "予定4": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p4"
+      ]
+    }
+  },
+  "実績4": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a4"
+      ]
+    }
+  },
+  "予定5": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p5"
+      ]
+    }
+  },
+  "実績5": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a5"
+      ]
+    }
+  },
+  "予定6": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p6"
+      ]
+    }
+  },
+  "実績6": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a6"
+      ]
+    }
+  },
+  "予定7": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p7"
+      ]
+    }
+  },
+  "実績7": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a7"
+      ]
+    }
+  },
+  "予定8": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p8"
+      ]
+    }
+  },
+  "実績8": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a8"
+      ]
+    }
+  },
+  "予定9": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p9"
+      ]
+    }
+  },
+  "実績9": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a9"
+      ]
+    }
+  },
+  "予定10": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p10"
+      ]
+    }
+  },
+  "実績10": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a10"
+      ]
+    }
+  },
+  "予定11": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p11"
+      ]
+    }
+  },
+  "実績11": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a11"
+      ]
+    }
+  },
+  "予定12": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p12"
+      ]
+    }
+  },
+  "実績12": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a12"
+      ]
+    }
+  },
+  "予定13": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p13"
+      ]
+    }
+  },
+  "実績13": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a13"
+      ]
+    }
+  },
+  "予定14": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p14"
+      ]
+    }
+  },
+  "実績14": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a14"
+      ]
+    }
+  },
+  "予定15": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p15"
+      ]
+    }
+  },
+  "実績15": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a15"
+      ]
+    }
+  },
+  "予定16": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p16"
+      ]
+    }
+  },
+  "実績16": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a16"
+      ]
+    }
+  },
+  "予定17": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p17"
+      ]
+    }
+  },
+  "実績17": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a17"
+      ]
+    }
+  },
+  "予定18": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p18"
+      ]
+    }
+  },
+  "実績18": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a18"
+      ]
+    }
+  },
+  "予定19": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p19"
+      ]
+    }
+  },
+  "実績19": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a19"
+      ]
+    }
+  },
+  "予定20": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p20"
+      ]
+    }
+  },
+  "実績20": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a20"
+      ]
+    }
+  },
+  "予定21": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p21"
+      ]
+    }
+  },
+  "実績21": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a21"
+      ]
+    }
+  },
+  "予定22": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p22"
+      ]
+    }
+  },
+  "実績22": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a22"
+      ]
+    }
+  },
+  "予定23": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p23"
+      ]
+    }
+  },
+  "実績23": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a23"
+      ]
+    }
+  },
+  "予定24": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p24"
+      ]
+    }
+  },
+  "実績24": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a24"
+      ]
+    }
+  },
+  "予定25": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p25"
+      ]
+    }
+  },
+  "実績25": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a25"
+      ]
+    }
+  },
+  "予定26": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p26"
+      ]
+    }
+  },
+  "実績26": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a26"
+      ]
+    }
+  },
+  "予定27": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p27"
+      ]
+    }
+  },
+  "実績27": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a27"
+      ]
+    }
+  },
+  "予定28": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p28"
+      ]
+    }
+  },
+  "実績28": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a28"
+      ]
+    }
+  },
+  "予定29": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p29"
+      ]
+    }
+  },
+  "実績29": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a29"
+      ]
+    }
+  },
+  "予定30": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p30"
+      ]
+    }
+  },
+  "実績30": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a30"
+      ]
+    }
+  },
+  "予定31": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "p31"
+      ]
+    }
+  },
+  "実績31": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "a31"
+      ]
+    }
+  },
+  "予定合計": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "totalPlan"
+      ]
+    }
+  },
+  "実績合計": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "totalActual"
+      ]
+    }
+  },
+  "明細案内": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.legend"
+    }
+  },
+  "明細": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.details"
+    }
+  },
+  "曜日1": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        0,
+        "label"
+      ]
+    }
+  },
+  "曜日2": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        1,
+        "label"
+      ]
+    }
+  },
+  "曜日3": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        2,
+        "label"
+      ]
+    }
+  },
+  "曜日4": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        3,
+        "label"
+      ]
+    }
+  },
+  "曜日5": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        4,
+        "label"
+      ]
+    }
+  },
+  "曜日6": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        5,
+        "label"
+      ]
+    }
+  },
+  "曜日7": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        6,
+        "label"
+      ]
+    }
+  },
+  "曜日8": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        7,
+        "label"
+      ]
+    }
+  },
+  "曜日9": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        8,
+        "label"
+      ]
+    }
+  },
+  "曜日10": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        9,
+        "label"
+      ]
+    }
+  },
+  "曜日11": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        10,
+        "label"
+      ]
+    }
+  },
+  "曜日12": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        11,
+        "label"
+      ]
+    }
+  },
+  "曜日13": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        12,
+        "label"
+      ]
+    }
+  },
+  "曜日14": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        13,
+        "label"
+      ]
+    }
+  },
+  "曜日15": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        14,
+        "label"
+      ]
+    }
+  },
+  "曜日16": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        15,
+        "label"
+      ]
+    }
+  },
+  "曜日17": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        16,
+        "label"
+      ]
+    }
+  },
+  "曜日18": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        17,
+        "label"
+      ]
+    }
+  },
+  "曜日19": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        18,
+        "label"
+      ]
+    }
+  },
+  "曜日20": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        19,
+        "label"
+      ]
+    }
+  },
+  "曜日21": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        20,
+        "label"
+      ]
+    }
+  },
+  "曜日22": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        21,
+        "label"
+      ]
+    }
+  },
+  "曜日23": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        22,
+        "label"
+      ]
+    }
+  },
+  "曜日24": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        23,
+        "label"
+      ]
+    }
+  },
+  "曜日25": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        24,
+        "label"
+      ]
+    }
+  },
+  "曜日26": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        25,
+        "label"
+      ]
+    }
+  },
+  "曜日27": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        26,
+        "label"
+      ]
+    }
+  },
+  "曜日28": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        27,
+        "label"
+      ]
+    }
+  },
+  "曜日29": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        28,
+        "label"
+      ]
+    }
+  },
+  "曜日30": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        29,
+        "label"
+      ]
+    }
+  },
+  "曜日31": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.weekdays",
+      "path": [
+        30,
+        "label"
+      ]
+    }
+  },
+  "保険者番号": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insurerNumber"
+      ]
+    }
+  },
+  "保険者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insurerName"
+      ]
+    }
+  },
+  "被保険者番号": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "insuredNumber"
+      ]
+    }
+  },
+  "届出日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "届出日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "届出日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "submittedDate"
+      ]
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "フリガナ": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "furigana"
+      ]
+    }
+  },
+  "性別": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "sex"
+      ]
+    }
+  },
+  "変更日": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevelChangeDate"
+      ]
+    }
+  },
+  "区分支給限度基準額": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitUnits"
+      ]
+    }
+  },
+  "前月までの短期入所利用日数": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "previousShortStayDays"
+      ]
+    }
+  },
+  "短期入所利用日数": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "shortStayDays"
+      ]
+    }
+  },
+  "福祉用具名称": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "equipmentName"
+      ]
+    }
+  },
+  "TAISコード": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "taisCode"
+      ]
+    }
+  },
+  "福祉用具届出コード": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monthly.printRows",
+      "path": [
+        0,
+        "notificationCode"
+      ]
+    }
+  },
+  "要介護状態区分_1": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護1"
+    }
+  },
+  "要介護状態区分_2": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護2"
+    }
+  },
+  "要介護状態区分_3": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護3"
+    }
+  },
+  "要介護状態区分_4": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護4"
+    }
+  },
+  "要介護状態区分_5": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "careLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護5"
+    }
+  },
+  "変更後の要介護状態区分_1": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護1"
+    }
+  },
+  "変更後の要介護状態区分_2": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護2"
+    }
+  },
+  "変更後の要介護状態区分_3": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護3"
+    }
+  },
+  "変更後の要介護状態区分_4": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護4"
+    }
+  },
+  "変更後の要介護状態区分_5": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "changedCareLevel"
+      ]
+    },
+    "is": {
+      "eq": "要介護5"
+    }
+  },
+  "限度額適用開始月_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitFrom"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "限度額適用開始月_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitFrom"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "限度額適用終了月_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitTo"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "限度額適用終了月_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "limitTo"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "生年月日_y": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "y",
+    "year": "short"
+  },
+  "生年月日_m": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "m",
+    "year": "short"
+  },
+  "生年月日_d": {
+    "op": "date@1",
+    "ui": "text",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "birthDate"
+      ]
+    },
+    "part": "d",
+    "year": "short"
+  },
+  "認定区分_認定済": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "certificationStatus"
+      ]
+    },
+    "is": {
+      "eq": "認定済"
+    }
+  },
+  "認定区分_申請中": {
+    "op": "option@1",
+    "ui": "circle",
+    "ref": {
+      "key": "monthly.header",
+      "path": [
+        "certificationStatus"
+      ]
+    },
+    "is": {
+      "eq": "申請中"
+    }
+  }
+}

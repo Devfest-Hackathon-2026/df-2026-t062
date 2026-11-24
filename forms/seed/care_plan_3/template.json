@@ -1,0 +1,147 @@
+{
+  "basePdf": "base.pdf",
+  "schemas": [
+    [
+      {
+        "name": "利用者名",
+        "type": "text",
+        "position": {
+          "x": 29,
+          "y": 25.4
+        },
+        "width": 29,
+        "height": 5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_y",
+        "type": "text",
+        "position": {
+          "x": 234,
+          "y": 15.2
+        },
+        "width": 10,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_m",
+        "type": "text",
+        "position": {
+          "x": 250,
+          "y": 15.2
+        },
+        "width": 8,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "作成年月日_d",
+        "type": "text",
+        "position": {
+          "x": 265,
+          "y": 15.2
+        },
+        "width": 8,
+        "height": 4.5,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "週間枠",
+        "type": "text",
+        "position": {
+          "x": 47.2,
+          "y": 39.5
+        },
+        "width": 184.9,
+        "height": 114.6,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "日常生活活動",
+        "type": "text",
+        "position": {
+          "x": 234,
+          "y": 40
+        },
+        "width": 45,
+        "height": 112,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      },
+      {
+        "name": "週単位以外",
+        "type": "text",
+        "position": {
+          "x": 49,
+          "y": 165
+        },
+        "width": 229,
+        "height": 11,
+        "fontSize": 8,
+        "lineHeight": 1.15,
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "fontName": "BIZUDPGothic",
+        "dynamicFontSize": {
+          "min": 6,
+          "max": 8,
+          "fit": "both"
+        }
+      }
+    ]
+  ]
+}

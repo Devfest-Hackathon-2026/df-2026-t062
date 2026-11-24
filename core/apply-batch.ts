@@ -1,29 +1,36 @@
 // AI の書き込み（録音のあとなど）を、今の用紙にどう入れるかを決める。DB には触らない（DB は api/worker の applyBatch）。
 // 書き換えの決まり（AI基盤の設計 6 章）:
 //   - 空の欄 → 書く（add）
-//   - AI が書いた欄 → 新しい値なら書き換える（update）。保存のあとでも書き換える
+//   - AI が書いた欄 → 新しい値なら書き換える（update）。保存のあとでも書き換える（人間が確認した値を除く）
 //   - ケアマネが書いた・直した欄 → 書き換えない（kept）
 //   - 同じ値なら書き込みに入れない。AI は欄を空にしない
-//   - ケアマネの判断・事業所の設定・その場で聞く欄は、AI は書かない
-import { aiMayWrite } from './fields.ts'
+//   - ケアマネの判断・事業所の設定・その場で聞く欄は、AI は書かない。その様式だけの欄は書く（説明書きがなくても。#152）
+import { aiMayWrite, GLOBAL_DICT, type FieldDict } from './dictionary.ts'
 import type { Who } from './slots.ts'
 
 export interface CurrentField {
   value: unknown
   by: Who
+  reviewed?: boolean
 }
+
+/**
+ * 値の根拠。2 層改は根拠の発言の id の配列。録音からの書き込み（要約から書く）は、もとにした要約の行（recording_summaries.id）。
+ * 根拠はケアマネに見せない（docs/再設計/17 の「書く・全体のまとめ」）
+ */
+export type Cite = string[] | { kind: 'summary', ids: string[] }
 
 export interface BatchChange {
   key: string
   op: 'add' | 'update'
   before: unknown
   after: unknown
-  cite?: string[]
+  cite?: Cite
 }
 
 export interface BatchPlan {
   changes: BatchChange[]
-  kept: { key: string, reason: 'cm' }[]
+  kept: { key: string, reason: 'cm' | 'reviewed' }[]
   skipped: { key: string, reason: 'not-ai-field' | 'same' | 'empty' }[]
 }
 
@@ -49,15 +56,18 @@ export function sameValue(a: unknown, b: unknown): boolean {
  */
 export function planBatch(
   current: Record<string, CurrentField | undefined>,
-  proposed: Record<string, { value: unknown, cite?: string[] }>,
+  proposed: Record<string, { value: unknown, cite?: Cite }>,
   /** プログラムが決める欄（アセスメント実施日など）。AI の欄でなくても書く（ケアマネの値は守る） */
   systemKeys: ReadonlySet<string> = new Set(),
+  /** 書類の様式の版の欄の辞書（その様式だけの欄を見分ける） */
+  dict: FieldDict = GLOBAL_DICT,
 ): BatchPlan {
   const plan: BatchPlan = { changes: [], kept: [], skipped: [] }
   for (const [key, p] of Object.entries(proposed)) {
-    if (!aiMayWrite(key) && !systemKeys.has(key)) { plan.skipped.push({ key, reason: 'not-ai-field' }); continue }
+    if (!aiMayWrite(key, dict) && !systemKeys.has(key)) { plan.skipped.push({ key, reason: 'not-ai-field' }); continue }
     if (isEmpty(p.value)) { plan.skipped.push({ key, reason: 'empty' }); continue }
     const cur = current[key]
+    if (cur?.reviewed) { plan.kept.push({ key, reason: 'reviewed' }); continue }
     if (cur && !isEmpty(cur.value) && cur.by === 'cm') { plan.kept.push({ key, reason: 'cm' }); continue }
     if (cur && sameValue(cur.value, p.value)) { plan.skipped.push({ key, reason: 'same' }); continue }
     const before = cur && !isEmpty(cur.value) ? cur.value : null

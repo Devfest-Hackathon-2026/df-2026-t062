@@ -10,7 +10,12 @@ export function defaultProviders(env: NodeJS.ProcessEnv = process.env): Promise<
       return m.vertexProviders(env)
     }
     const f = await import('./fake.ts')
-    return { stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), writer: new f.FakeWriter() }
+    return {
+      stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, inspect: f.fakeInspect,
+      recording: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() },
+      documentRead: f.fakeDocumentRead, documentFill: f.fakeDocumentFill,
+      documentWrite: { summarizer: new f.FakeSummarizer(), writer: new f.FakeTopicWriter() },
+    }
   })()
   return cached
 }

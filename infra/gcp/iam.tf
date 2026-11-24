@@ -70,7 +70,7 @@ resource "google_cloud_run_v2_service_iam_member" "deployer_updates_worker" {
   member   = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
-# Release verification calls /healthz on the new private worker revision.
+# Release verification calls /health on the new private worker revision.
 resource "google_cloud_run_v2_service_iam_member" "deployer_invokes_worker" {
   location = google_cloud_run_v2_service.worker.location
   name     = google_cloud_run_v2_service.worker.name
@@ -91,6 +91,26 @@ resource "google_service_account_iam_member" "deployer_uses_worker_runtime" {
   member             = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
+resource "google_service_account_iam_member" "deployer_uses_recording_cleanup_runtime" {
+  service_account_id = google_service_account.recording_cleanup.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "deployer_updates_recording_cleanup" {
+  location = google_cloud_run_v2_job.recording_cleanup.location
+  name     = google_cloud_run_v2_job.recording_cleanup.name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "tasks_invoker_runs_recording_cleanup" {
+  location = google_cloud_run_v2_job.recording_cleanup.location
+  name     = google_cloud_run_v2_job.recording_cleanup.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.tasks_invoker.email}"
+}
+
 # --- api の実行用サービスアカウント ---
 
 # Cloud SQL に接続する（Connector）。両方ともプロジェクト単位のロールで、インスタンス単位には絞れない
@@ -106,10 +126,34 @@ resource "google_project_iam_member" "api_sql_instance_user" {
   member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
-resource "google_storage_bucket_iam_member" "api_source" {
+resource "google_storage_bucket_iam_member" "api_source_viewer" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_storage_bucket_iam_member" "api_source_creator" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "recordings-create-only"
+    description = "API may create only new recording objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
+}
+
+resource "google_storage_bucket_iam_member" "api_document_inputs_cleanup" {
   bucket = google_storage_bucket.source.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "document-inputs-only"
+    description = "API may remove only stale document input objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/document-inputs/\")"
+  }
 }
 
 resource "google_storage_bucket_iam_member" "api_output" {
@@ -123,6 +167,19 @@ resource "google_storage_bucket_iam_member" "api_forms" {
   bucket = google_storage_bucket.forms.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# 上げる PDF の送信 URL を作る（imports/ の下に新しく置くだけ。上書き・削除はできない）
+resource "google_storage_bucket_iam_member" "api_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
 }
 
 # 録音の送信 URL・様式の画像の期限つきの URL の署名（自分自身の鍵で署名する）
@@ -160,16 +217,128 @@ resource "google_project_iam_member" "worker_sql_instance_user" {
   member  = "serviceAccount:${google_service_account.worker.email}"
 }
 
+resource "google_project_iam_member" "recording_cleanup_sql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.recording_cleanup.email}"
+}
+
+resource "google_project_iam_member" "recording_cleanup_sql_instance_user" {
+  project = var.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "serviceAccount:${google_service_account.recording_cleanup.email}"
+}
+
+resource "google_project_iam_custom_role" "recording_cleanup_object_control" {
+  role_id     = "recordingCleanupObjectControl"
+  title       = "Recording cleanup object control"
+  description = "Read metadata and delete live recording objects; never create or restore"
+  permissions = [
+    "storage.objects.get",
+    "storage.objects.delete",
+    "storage.objects.update",
+  ]
+}
+
+resource "google_project_iam_custom_role" "recording_hold_object_control" {
+  role_id     = "recordingHoldObjectControl"
+  title       = "Recording hold object control"
+  description = "Read and update temporary hold metadata on recording objects"
+  permissions = [
+    "storage.objects.get",
+    "storage.objects.update",
+  ]
+}
+
+resource "google_storage_bucket_iam_member" "recording_cleanup_source" {
+  bucket = google_storage_bucket.source.name
+  role   = google_project_iam_custom_role.recording_cleanup_object_control.name
+  member = "serviceAccount:${google_service_account.recording_cleanup.email}"
+
+  condition {
+    title       = "recordings-prefix-only"
+    description = "Cleanup Job may control only recording source objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
+}
+
+resource "google_storage_bucket_iam_member" "worker_source_hold_control" {
+  bucket = google_storage_bucket.source.name
+  role   = google_project_iam_custom_role.recording_hold_object_control.name
+  member = "serviceAccount:${google_service_account.worker.email}"
+
+  condition {
+    title       = "recordings-hold-only"
+    description = "Worker may update metadata only for recording objects"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${local.buckets.source}/objects/recordings/\")"
+  }
+}
+
 resource "google_storage_bucket_iam_member" "worker_source" {
   bucket = google_storage_bucket.source.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.worker.email}"
 }
 
+# BatchRecognize reads the gs:// input as the Speech-to-Text service agent,
+# not as the worker runtime identity. Grant access only on the source bucket.
+resource "google_storage_bucket_iam_member" "speech_source_bucket_viewer" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.bucketViewer"
+  member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-speech.iam.gserviceaccount.com"
+}
+
+resource "google_storage_bucket_iam_member" "speech_source_object_viewer" {
+  bucket = google_storage_bucket.source.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-speech.iam.gserviceaccount.com"
+}
+
 resource "google_storage_bucket_iam_member" "worker_work" {
   bucket = google_storage_bucket.work.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# 様式の取り込み: 上げたままの PDF を読み、元の PDF とページの画像を pdf/<sha256>/ に新しく置く（上書きはしない）
+resource "google_storage_bucket_iam_member" "worker_forms_read" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+resource "google_storage_bucket_iam_member" "worker_forms_create" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.worker.email}"
+}
+
+# 変換が済んだ・失敗して 7 日たった上げたままの PDF を消す（imports/ の下だけ）
+resource "google_storage_bucket_iam_member" "worker_forms_imports" {
+  bucket = google_storage_bucket.forms.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.worker.email}"
+
+  condition {
+    title       = "form-imports-only"
+    description = "imports/ と offices/<office_id>/imports/ の下だけ"
+    expression  = local.forms_imports_condition
+  }
+}
+
+# 書き方の相談で、api が Gemini を呼ぶ
+resource "google_project_iam_member" "api_vertex" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# 責任者が職員を登録する・サイト管理者が最初の責任者を登録するときに、api が Identity Platform のアカウントを作る（#109）。
+# 画面からのアカウント作成は禁止のまま（identity.tf）。プロジェクト単位のロールで、アカウントごとには絞れない
+resource "google_project_iam_member" "api_firebaseauth_admin" {
+  project = var.project_id
+  role    = "roles/firebaseauth.admin"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
 }
 
 resource "google_project_iam_member" "worker_vertex" {

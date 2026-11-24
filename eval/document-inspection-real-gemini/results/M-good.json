@@ -1,0 +1,111 @@
+{
+  "id": "M-good",
+  "synthetic": true,
+  "dry": false,
+  "why": "事業所の当月連絡・個別計画受領、具体的変化、ケアマネから主治医への報告を明記。",
+  "elapsedMs": 2339,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:54.091Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 5993,
+    "promptSha256": "0fe381e30cdb7bbf08f41e72e03303cf121feb2295a733ff9ed0bd53a6ebf4bc",
+    "schemaSha256": "41d5741a75125584a5a1d14b4c04ce17925f00c4b56ec98f239c1c3035bc554d",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 2335,
+    "responseId": "fu0Ea8DoFbefvdAPoruWmAo",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 1645,
+      "candidatesTokenCount": 118,
+      "totalTokenCount": 1763,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 1645
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 118
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"58\": {\n      \"level\": \"3\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"59\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"60\": {\n      \"level\": \"2\",\n      \"met\": {\n        \"①\": true,\n        \"②\": false\n      },\n      \"missing\": null\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "58",
+        "level": "3",
+        "met": {},
+        "missing": null,
+        "fieldKey": "monitoring.serviceContacts",
+        "documentId": "M-good",
+        "by": "ai"
+      },
+      {
+        "item": "59",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "monitoring.changes",
+        "documentId": "M-good",
+        "by": "ai"
+      },
+      {
+        "item": "60",
+        "level": "2",
+        "met": {
+          "①": true,
+          "②": false
+        },
+        "missing": null,
+        "fieldKey": "monitoring.medicalReport",
+        "documentId": "M-good",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 1645,
+      "cachedTokens": 0,
+      "outputTokens": 118,
+      "thinkingTokens": 0,
+      "yen": 0.265729
+    },
+    "ruleItems": 0,
+    "aiItems": 3
+  },
+  "comparisons": [
+    {
+      "id": "58",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "59",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "60",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

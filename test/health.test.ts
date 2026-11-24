@@ -25,6 +25,7 @@ test('returns the live API status as uncached JSON', async () => {
   const response = await fetch(`${origin}/api/health.json?check=1`)
   assert.equal(response.status, 200)
   assert.match(response.headers.get('content-type') ?? '', /^application\/json\b/)
+  assert.match(response.headers.get('x-request-id') ?? '', /^[0-9a-f-]{36}$/)
   assert.equal(response.headers.get('cache-control'), 'no-store')
   assert.deepEqual(await response.json(), { status: 'ok', source: 'api' })
 })

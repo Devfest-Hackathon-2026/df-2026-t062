@@ -1,0 +1,596 @@
+import {useInspectionContext,focusInspectionField,type OnInspectionContext} from '../inspection/context.ts'
+import {GLOBAL_DICT} from '../../../core/dictionary.ts'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { DocumentOutput } from '../document/DocumentOutput.tsx'
+import type { CarePlanView, CarePlanSummary, NeedInput, ServiceInput, SlotInput, AiDraftDetail } from '../../../db/care-plans.ts'
+import { api, ApiError } from '../../lib/api.ts'
+import { downloadBlob } from '../../lib/download.ts'
+import { FormPage } from '../document/FormPage.tsx'
+import { SheetToolbar } from '../document/SheetToolbar.tsx'
+import { FieldConflicts } from '../document/FieldConflicts.tsx'
+import { useDocument } from '../document/useDocument.ts'
+import { DailyActivities, activityRows } from './DocumentFields.tsx'
+import type { PaperTextField } from '../care-paper/PaperText.tsx'
+import { OfficialPlanSheet, type PaperNeedTarget } from './OfficialPlanSheet.tsx'
+import { OfficialCareWorkspace } from '../care-paper/OfficialCareWorkspace.tsx'
+import { savePlanEdits, documentDirty } from './save.ts'
+import './care-plan.css'
+
+const isPlanKind = (key: string) => ['care_plan_1', 'care_plan_2', 'care_plan_3'].includes(key)
+export { isPlanKind }
+const names = ['第1表・基本情報と方針', '第2表・ニーズとサービス', '第3表・週間計画']
+const days = ['月', '火', '水', '木', '金', '土', '日']
+const planDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
+const statusText = (status: string) => status === 'draft' ? '下書き' : status === 'confirmed' ? '確定済み' : '旧版'
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+const serviceTextKeys: Record<string, 'content' | 'kind' | 'provider' | 'frequency' | 'periodText' | undefined> = {
+  サービス内容: 'content', サービス種別: 'kind', 提供事業所: 'provider', 頻度: 'frequency', サービス期間: 'periodText',
+}
+const message = (error: unknown) => {
+  if (error instanceof ApiError) {
+    if (error.code === 'conflict') return '別の画面で更新されています。入力を控えてから「読み直す」を押してください。入力は自動で上書きしません。'
+    if (error.code === 'unsaved_changes') return '保存していない変更があります。第1〜3表を保存してから、もう一度お試しください。'
+    if (error.code === 'not_draft') return 'この計画は確定済みです。読み直し、訂正は改定版を作って行ってください。'
+    if (error.code === 'overflow') return `用紙の印字欄「${(error.details as { slots?: string[] }).slots?.join('、') ?? ''}」に収まりません。入力を確認して保存し直してください。確定済みの場合は改定版で訂正してください。`
+    if (error.code === 'form_unavailable') return 'PDFの元の用紙がまだ用意されていません。管理者に確認してください。'
+    if (error.code === 'validation_failed') {
+      const detail = error.details as { problems?: { path: string, reason: string }[] }
+      const labels: Record<string, string> = { overlap: '時間帯が重なっています', duplicate: '同じ項目が重複しています', invalid_time: '曜日・開始・終了・翌日終了を確認してください', invalid_other: '週単位以外の予定には内容を入力してください', period_order: '期間の開始・終了を確認してください', unknown_service: 'サービスを選び直してください', inconsistent_shared_service: '紐づけたサービスの内容に違いがあります。内容を確認してください' }
+      return `入力を確認してください。${detail.problems?.map((p) => labels[p.reason] ?? 'ニーズ・目標・サービスの必須欄を確認してください').filter((v, i, a) => a.indexOf(v) === i).join('。') ?? ''}`
+    }
+  }
+  return error instanceof Error ? error.message : '操作を完了できませんでした。入力を残したまま再試行できます。'
+}
+
+function Modal({ title, onClose, children }: { title: string, onClose: () => void, children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = ref.current!
+    dialog.showModal()
+    return () => dialog.close()
+  }, [])
+  return <dialog ref={ref} aria-label={title} className="cp-dialog" onCancel={(e) => { e.preventDefault(); onClose() }}>
+    <header><h2>{title}</h2><button className="btn" onClick={onClose} type="button">閉じる</button></header>{children}
+  </dialog>
+}
+
+function serviceChoices(needs: NeedInput[]) {
+  const choices = new Map<string, { id: string, service: ServiceInput, goals: string[], label: string }>()
+  for (const need of needs) {
+    for (const goal of need.shortGoals ?? []) {
+      for (const service of goal.services ?? []) {
+        if (!service.id) continue
+        const choice = choices.get(service.id) ?? { id: service.id, service, goals: [], label: '' }
+        choice.goals.push(goal.goal)
+        choices.set(service.id, choice)
+      }
+    }
+  }
+  for (const choice of choices.values()) {
+    const { service, goals } = choice
+    const details = [service.provider || '事業所未入力', service.frequency, goals.filter(Boolean).join('／')].filter(Boolean)
+    choice.label = `${service.content}（${details.join('・')}）`
+  }
+  return [...choices.values()]
+}
+
+export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, onClick: () => void }) {
+  return <button type="button" className="btn cp-history-trigger" aria-haspopup="dialog" disabled={disabled} onClick={onClick}>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.7-6.4L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></svg>計画の履歴
+  </button>
+}
+
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false, continuous=false,onInspectionContextChange }: {
+  onInspectionContextChange?:OnInspectionContext,
+  clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
+  onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean, selectedTable?:number, hideNavigation?:boolean, continuous?:boolean,
+}) {
+  const [plans, setPlans] = useState<CarePlanSummary[]>([])
+  const [selected, setSelected] = useState<CarePlanView | null>(null)
+  const [listLoaded,setListLoaded]=useState(false)
+  const work=useRef<HTMLDivElement>(null)
+  useEffect(()=>{
+    const root=work.current,header=root?.querySelector<HTMLElement>(':scope > .cp-header')
+    if(!root||!header)return
+    const observer=new ResizeObserver(()=>root.style.setProperty('--cp-header-height',`${header.getBoundingClientRect().height}px`));observer.observe(header);return()=>observer.disconnect()
+  },[!!selected,continuous])
+  const [busy, setBusy] = useState(false)
+  const [childBusy, setChildBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [copyFrom, setCopyFrom] = useState<CarePlanSummary>()
+  const request = useRef(0)
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => { onBusyChange?.(busy || childBusy) }, [busy, childBusy, onBusyChange])
+  const loadList = () => api.carePlans(clientId).then((r) => { setPlans(r.plans); return r.plans })
+  const openHistory = () => { setHistoryOpen(true); void loadList().catch((e) => setError(message(e))) }
+  useEffect(() => {
+    if (!historyRequest) return
+    let alive = true
+    setHistoryOpen(true); setCreating(false)
+    api.carePlans(clientId).then(r => { if (alive) setPlans(r.plans) }).catch(e => { if (alive) setError(message(e)) })
+    return () => { alive = false }
+  }, [historyRequest, clientId])
+
+  useEffect(() => {
+    let alive = true
+    api.carePlans(clientId).then(async (r) => {
+      if (!alive) return
+      setPlans(r.plans)
+      if (r.plans[0]) {
+        const result = await api.carePlan(r.plans[0].id)
+        if (alive) setSelected(result.plan)
+      } else if(!hideNavigation) setCreating(true)
+      if(alive)setListLoaded(true)
+    }).catch((e) => { if (alive) setError(message(e)) })
+    return () => { alive = false }
+  }, [clientId])
+  const mayLeave = () => !dirty || window.confirm('保存していない入力があります。入力を破棄して移動しますか？')
+  const choose = async (id: string) => {
+    if (id === selected?.id) { setHistoryOpen(false); return }
+    if (!mayLeave()) return
+    const token = ++request.current
+    setBusy(true); setError('')
+    try { const r = await api.carePlan(id); if (request.current === token) { setSelected(r.plan); setDirty(false); setHistoryOpen(false) } }
+    catch (e) { setError(message(e)) } finally { if (request.current === token) setBusy(false) }
+  }
+  const displayedPlan = plans.find(p => p.id === selected?.id)
+  const controls = <header className="cp-header">
+      {!embedded && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { if (mayLeave()) onBack() }}>← 書類に戻る</button>}
+      {!embedded && <h1>{clientName} さん <small>ケアプラン</small></h1>}
+      {!embedded && selected && <PlanHistoryButton disabled={busy || childBusy} onClick={openHistory} />}
+      {!selected && <button type="button" className="btn" disabled={busy || childBusy} onClick={() => { setCopyFrom(undefined); setCreating(true) }}>＋ 計画を作る</button>}
+    </header>
+  return <div ref={work} className={`pc cp-work ${touch ? 'cp-touch' : ''} ${embedded ? 'cp-embedded' : ''}`}>
+
+    {(!embedded || !selected) && controls}
+    {error && <div role="alert" className="cp-error">{error}</div>}
+    {historyOpen && active && <Modal title="計画の履歴" onClose={() => setHistoryOpen(false)}>
+      <div className="cp-history-list">
+        {plans.map((p) => <button type="button" className="cp-history-item" key={p.id}
+          aria-current={p.id === selected?.id ? 'true' : undefined} disabled={busy || childBusy}
+          onClick={() => void choose(p.id)}>
+          <span><strong>第{p.version}版</strong><span className={`cp-status cp-${p.status}`}>{statusText(p.status)}</span>{p.id === selected?.id && <small>表示中</small>}</span>
+          <span>{p.effectiveFrom} 〜 {p.effectiveTo ?? '終了日未設定'}</span>
+        </button>)}
+      </div>
+      {!plans.length && <p>計画の履歴はありません。</p>}
+      {displayedPlan && <div className="cp-history-footer">
+        <button type="button" className="btn" disabled={busy || childBusy || dirty || displayedPlan.status === 'draft'}
+          title={displayedPlan.status === 'draft' ? '計画を確定すると改定版を作れます' : dirty ? '先に入力内容を保存してください' : undefined}
+          onClick={() => { setCopyFrom(displayedPlan); setHistoryOpen(false); setCreating(true) }}>この計画から改定版を作る</button>
+      </div>}
+      {error && <p role="alert" className="cp-error">{error}</p>}
+    </Modal>}
+    {creating && active && <Modal title={copyFrom ? '改定版を作る' : '新しいケアプラン'} onClose={() => setCreating(false)}>
+      <form onSubmit={async (e) => {
+        e.preventDefault()
+        if (!mayLeave()) return
+        setBusy(true); setError('')
+        try {
+          const r = await api.createCarePlan(clientId, {
+            effectiveFrom: copyFrom?.effectiveFrom ?? planDate.format(new Date()),
+            effectiveTo: copyFrom?.effectiveTo ?? null,
+            copyFromPlanId: copyFrom?.id,
+          })
+          setSelected(r.plan); setDirty(false); setCreating(false); await loadList()
+        } catch (e) { setError(message(e)) } finally { setBusy(false) }
+      }}>
+        <p>第1〜3表を一緒に作ります。AIを使わず、手入力で作成できます。</p>
+        {error && <p role="alert" className="cp-error">{error}</p>}
+        <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
+      </form>
+    </Modal>}
+    {selected ? <PlanEditor onInspectionContextChange={onInspectionContextChange} key={selected.id} initial={selected} continuous={continuous} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+      onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
+      : listLoaded && hideNavigation ? <>{(continuous?[0,1,2]:[selectedTable]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={selectedTable===i}><OfficialCareWorkspace formKind={`care_plan_${i+1}`} onStart={() => { setCopyFrom(undefined); setCreating(true) }} values={{}} title={names[i]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace></section>)}</> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
+  </div>
+}
+
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false, continuous=false,onInspectionContextChange }: {
+  onInspectionContextChange?:OnInspectionContext,
+  selectedTable?:number,hideNavigation?:boolean,continuous?:boolean,
+  outputTarget?: HTMLElement | null,
+  initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
+  onBusy: (busy: boolean) => void, onUpdated: () => void,
+}) {
+  const [plan, setPlan] = useState(initial)
+  const [needs, setNeeds] = useState<NeedInput[]>(initial.needs)
+  const [slots, setSlots] = useState<SlotInput[]>(initial.slots)
+  const [active, setActive] = useState(0)
+  useEffect(()=>{setActive(selectedTable)},[selectedTable])
+  const [zoom, setZoom] = useState(100)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  const [needIndex, setNeedIndex] = useState<number | null>(null)
+  const [slotIndex, setSlotIndex] = useState<number | null>(null)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [activitiesOpen, setActivitiesOpen] = useState(false)
+  const [needsOpen, setNeedsOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiDraft, setAiDraft] = useState<AiDraftDetail>()
+  const [aiNeeds, setAiNeeds] = useState<Set<string>>(new Set())
+  const gate = useRef(false)
+  const preserveNoticeOnDirty = useRef(false)
+  const first = useDocument(plan.documents.find((d) => d.formNo === 1)?.documentId)
+  const second = useDocument(plan.documents.find((d) => d.formNo === 2)?.documentId)
+  const third = useDocument(plan.documents.find((d) => d.formNo === 3)?.documentId)
+  const documents = [first, second, third]
+  const ready = documents.every((d) => !!d.doc && !!d.form)
+  const structuralDirty = !same(needs, plan.needs) || !same(slots, plan.slots)
+  const firstDirty = documents.some(documentDirty)
+  const dirty = structuralDirty || firstDirty || plan.hasUnsavedChanges
+  const readOnly = plan.status !== 'draft'
+  useEffect(() => {
+    onDirty(dirty)
+    if (dirty && !preserveNoticeOnDirty.current) setNotice('')
+    preserveNoticeOnDirty.current = false
+  }, [dirty, onDirty])
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  const run = async (operation: () => Promise<void>) => {
+    if (gate.current) return
+    gate.current = true; setBusy(true); onBusy(true); setError(''); setNotice('')
+    try { await operation() } catch (e) { setError(message(e)) }
+    finally { gate.current = false; setBusy(false); onBusy(false) }
+  }
+  const refresh = async () => {
+    const result = await api.carePlan(plan.id)
+    setPlan(result.plan); setNeeds(result.plan.needs); setSlots(result.plan.slots)
+    setAiNeeds(new Set())
+    await Promise.all(documents.map((d) => d.reload()))
+    onUpdated()
+  }
+  const save = () => void run(async () => {
+    if (documents.some((d) => d.reasons.size)) throw new Error('入力欄に表示された理由を確認してください。')
+    const result = await savePlanEdits({
+      flush: async () => {
+        for (const document of documents) if (!await document.flush()) return false
+        return true
+      },
+      needs: async () => {
+        if (same(needs, plan.needs)) return plan.lockVersion
+        const r = await api.carePlanNeeds(plan.id, plan.lockVersion, needs)
+        setPlan(r.plan); setNeeds(r.plan.needs)
+        return r.plan.lockVersion
+      },
+      schedule: async (version) => {
+        if (same(slots, plan.slots)) return version
+        const r = await api.carePlanSchedule(plan.id, version, slots)
+        setPlan(r.plan); setSlots(r.plan.slots)
+        return r.plan.lockVersion
+      },
+      save: (version) => api.saveCarePlan(plan.id, version),
+    })
+    setPlan(result.plan); setNeeds(result.plan.needs); setSlots(result.plan.slots)
+    setAiNeeds(new Set())
+    await Promise.all(documents.map((d) => d.reload())); onUpdated(); setNotice('第1〜3表を保存しました')
+  })
+  const inspectionRoot=useRef<HTMLDivElement>(null)
+  const flushInspection=async()=>{
+    if(gate.current)return false
+    gate.current=true;setBusy(true);onBusy(true);setError('')
+    try{
+      const result=await savePlanEdits({
+        flush:async()=>{for(const d of documents)if(!await d.flush())return false;return true},
+        needs:async()=>{if(same(needs,plan.needs))return plan.lockVersion;const r=await api.carePlanNeeds(plan.id,plan.lockVersion,needs);setPlan(r.plan);setNeeds(r.plan.needs);return r.plan.lockVersion},
+        schedule:async version=>{if(same(slots,plan.slots))return version;const r=await api.carePlanSchedule(plan.id,version,slots);setPlan(r.plan);setSlots(r.plan.slots);return r.plan.lockVersion},
+        save:async version=>{const r=await api.carePlan(plan.id);if(r.plan.lockVersion!==version)throw new Error('入力が変わりました。確認してから点検してください。');return r},
+      })
+      setPlan(result.plan);setNeeds(result.plan.needs);setSlots(result.plan.slots)
+      return true
+    }catch(e){setError(message(e));return false}finally{gate.current=false;setBusy(false);onBusy(false)}
+  }
+  useInspectionContext(onInspectionContextChange,ready?plan.documents.find(d=>d.formNo===active+1)?.documentId:undefined,flushInspection,key=>{
+    if(key==='plan.needs')setNeedsOpen(true)
+    else if(key==='plan.weekly'||key==='plan.nonWeeklyServices')setScheduleOpen(true)
+    else if(key==='dailySchedule')setActivitiesOpen(true)
+    else focusInspectionField(inspectionRoot.current,GLOBAL_DICT.get(key)?.label??key,key)
+  })
+  const replaceNeeds = (next: NeedInput[], confirmAction?: string) => {
+    const ids = new Set(next.flatMap((n) => (n.shortGoals ?? []).flatMap((g) => (g.services ?? []).map((s) => s.id))))
+    const removedSlots = slots.filter((slot) => !ids.has(slot.serviceId) && slot.serviceId)
+    const prompt = [confirmAction, removedSlots.length ? `紐づく第3表の予定も${removedSlots.length}件削除されます。` : ''].filter(Boolean).join('\n')
+    if (prompt && !window.confirm(prompt)) return false
+    const removed = new Set(removedSlots)
+    if (removed.size) setSlots(slots.filter((slot) => !removed.has(slot)))
+    setNotice('')
+    setNeeds(next)
+    return true
+  }
+  const updateNeed = (index: number, mutate: (need: NeedInput) => void) => {
+    const next = structuredClone(needs)
+    mutate(next[index])
+    replaceNeeds(next)
+  }
+  const updateService = (index: number, goalIndex: number, serviceIndex: number, change: Partial<ServiceInput>) => {
+    const next = structuredClone(needs)
+    const target = next[index].shortGoals![goalIndex].services![serviceIndex]
+    Object.assign(target, change)
+    if (target.id) {
+      for (const need of next) for (const goal of need.shortGoals ?? []) for (const service of goal.services ?? []) {
+        if (service.id === target.id) Object.assign(service, change)
+      }
+    }
+    setNeeds(next)
+  }
+  const needText = ({ needIndex, goalIndex, serviceIndex }: PaperNeedTarget, slot: string): PaperTextField | undefined => {
+    const need = needs[needIndex]
+    const goal = goalIndex === undefined ? undefined : need.shortGoals?.[goalIndex]
+    const service = serviceIndex === undefined ? undefined : goal?.services?.[serviceIndex]
+    const changeNeed = (change: (n: NeedInput) => void) => updateNeed(needIndex, change)
+    if (slot === 'ニーズ') return { label: '生活全般の解決すべき課題（ニーズ）', value: need.need, multiline: true, onChange: value => changeNeed(n => { n.need = value }) }
+    if (slot === '長期目標') return { label: '長期目標', value: need.longGoal.goal, multiline: true, onChange: value => changeNeed(n => { n.longGoal.goal = value }) }
+    if (slot === '長期期間') return { label: '長期目標の期間', value: need.longGoal.periodText ?? '', onChange: value => changeNeed(n => { n.longGoal.periodText = value || null }) }
+    if (goal && goalIndex !== undefined) {
+      if (slot === '短期目標') return { label: '短期目標 ' + (goalIndex + 1), value: goal.goal, multiline: true, onChange: value => changeNeed(n => { n.shortGoals![goalIndex].goal = value }) }
+      if (slot === '短期期間') return { label: '短期目標の期間', value: goal.periodText ?? '', onChange: value => changeNeed(n => { n.shortGoals![goalIndex].periodText = value || null }) }
+    }
+    if (!service || goalIndex === undefined || serviceIndex === undefined) return
+    const key = serviceTextKeys[slot]
+    if (key) return {
+      label: slot === '提供事業所' ? 'サービス提供を行う事業所（※2）' : slot,
+      value: service[key] ?? '', multiline: key === 'content',
+      onChange: value => updateService(needIndex, goalIndex, serviceIndex, { [key]: value }),
+    }
+  }
+  const openNeed = ({ needIndex }: PaperNeedTarget) => setNeedIndex(needIndex)
+  const updateSlot = (index: number, change: Partial<SlotInput>) => {
+    setNotice(''); setSlots((old) => old.map((s, i) => i === index ? { ...s, ...change } : s))
+  }
+  const services = serviceChoices(plan.needs)
+  const linkChoices = serviceChoices(needs)
+  const saved = plan.documents.every((d) => d.latestRevision > 0)
+  const saveStatus = dirty ? '保存していない変更があります' : saved ? 'すべて保存済み' : 'まだ保存されていません'
+  const output = <DocumentOutput status={<>第1〜3表 · {saveStatus}</>} disabled={busy || !ready || dirty || !saved}
+    onExport={() => void run(async () => {
+      const blob = await api.carePlanPdf(plan.id, 'all'); downloadBlob(blob, `${clientName}_ケアプラン_第${plan.version}版.pdf`)
+    })} />
+  return <>
+    {outputTarget && createPortal(output, outputTarget)}
+    <div ref={inspectionRoot} className={`cp-layout${hideNavigation?' cp-layout-single':''}`}>
+      {!hideNavigation&&<nav className="cp-nav" aria-label="ケアプランの表"><div className="cp-nav-title">ケアプラン用紙</div>{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
+
+      </nav>}
+      <main className="cp-canvas">
+        <div className="cp-context-bar">
+          <div className="cp-context-meta" role="group" aria-label="表示中の計画">
+            <strong>第{plan.version}版</strong><span className={`cp-status cp-${plan.status}`}>{statusText(plan.status)}</span>
+            <span>{plan.effectiveFrom} 〜 {plan.effectiveTo ?? '終了日未設定'}</span>
+          </div>
+        </div>
+        <SheetToolbar title={names[active]} page={`${active + 1} / 3 表`} zoom={zoom} onZoom={setZoom}
+          aiLabel="AI原案から" status={saveStatus}
+          saveHint="第1〜3表の変更をまとめて保存します" disabled={busy || readOnly || !ready} onSave={save}
+          actions={<><button type="button" className="btn" disabled={busy || !ready || readOnly || dirty || !saved} onClick={() => setConfirming(true)}>計画を確定</button>{!outputTarget&&output}</>} />
+        <div className="cp-sheet-scroll">
+          {readOnly && <div className="cp-info">この計画は{statusText(plan.status)}のため編集できません。訂正する場合は改定版を作ってください。
+            {plan.confirmation && <span> 確定日時：{new Date(plan.confirmation.confirmedAt).toLocaleString('ja-JP')}</span>}
+          </div>}
+          {error && <div role="alert" className="cp-error">{error}</div>}
+          {documents.map((d, i) => d.error && <div key={i} role="alert" className="cp-error">第{i + 1}表の入力を送信できませんでした。入力を確認してください。</div>)}
+          {notice && <div role="status" className="cp-notice">{notice}</div>}
+          {!ready && <div role="status" className="cp-info">第1〜3表の入力を読み込んでいます…</div>}
+          {dirty && <div className="cp-info">保存すると、確定・PDF出力・AI原案を利用できます。保存と確定は別の操作です。</div>}
+          {documents.map((d, i) => <FieldConflicts key={i} state={d} />)}
+        {(continuous || active === 0) && <section className="cp-plan-paper" data-care-table="1" data-current={active===0}>
+          <div className="cp-first-scroll"><div className="cp-first" style={{ width: `${zoom}%`, maxWidth: Math.round(1120 * zoom / 100) }}>
+            {first.pages.map((page) => <FormPage key={page.no} page={page} state={first} touch={touch} disabled={busy || readOnly} batchLabel="ケアプランのAI原案" combinedSave />)}
+          </div></div>
+        </section>}
+        {(continuous?[1,2]:active>0?[active]:[]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={active===i}><h2>{names[i]}</h2>
+          <OfficialPlanSheet state={i === 1 ? second : third} needs={needs} slots={slots} touch={touch}
+            busy={busy} readOnly={readOnly} zoom={zoom} changed={structuralDirty} aiChanged={i === 1 && aiNeeds.size > 0}
+            onNeed={openNeed} onNeeds={() => setNeedsOpen(true)}
+            onSchedule={() => setScheduleOpen(true)} onActivities={() => setActivitiesOpen(true)}
+            needText={needText}
+            activityText={hour => {
+              const rows = activityRows(third)
+              const activity = rows.find(row => String(row.time) === hour)
+              if (activity) return { label: `${hour}:00 本人の生活リズム`, value: String(activity.rhythm ?? ''), onChange: value =>
+                third.setValue('dailySchedule', rows.map(row => row === activity ? { ...row, rhythm: value } : row)) }
+            }}
+            otherNotes={slots.flatMap((slot, index) => slot.scheduleType === 'other'
+              ? [{ label: `週単位以外の内容 ${index + 1}`, value: slot.note ?? '', onChange: (note: string) => updateSlot(index, { note }) }]
+              : [])} />
+        </section>)}
+        </div>
+      </main>
+    </div>
+    {needsOpen && <Modal title="第2表・ニーズの追加と選択" onClose={() => setNeedsOpen(false)}>
+      {needs.map((n, i) => <div className="cp-paper-actions" key={n.id ?? i}>
+        <button className="btn" disabled={busy} onClick={() => { setNeedsOpen(false); openNeed({ needIndex: i }) }}>{i + 1} {n.need || '未入力'}</button>
+        {!readOnly && [-1, 1].map((d) => <button type="button" className="btn" key={d} disabled={busy || i + d < 0 || i + d >= needs.length} aria-label={`ニーズ${i + 1}を${d < 0 ? '上' : '下'}へ`} onClick={() => {
+          const next = [...needs]; [next[i], next[i + d]] = [next[i + d], next[i]]; setNeeds(next)
+        }}>{d < 0 ? '↑' : '↓'}</button>)}
+      </div>)}
+      <button className="btn" disabled={busy || readOnly} onClick={() => {
+        setNeeds([...needs, { need: '', longGoal: { goal: '' }, shortGoals: [] }]); setNeedsOpen(false); openNeed({ needIndex: needs.length })
+      }}>＋ ニーズを追加</button>
+    </Modal>}
+    {scheduleOpen && <Modal title="第3表・予定の追加と選択" onClose={() => setScheduleOpen(false)}>
+      <p>第2表でサービスを追加したら、一度保存してから予定を作れます。入力途中の予定もここから再開できます。</p>
+      {slots.map((s, i) => <p key={s.id ?? i}><button className="btn" disabled={busy} onClick={() => { setScheduleOpen(false); setSlotIndex(i) }}>
+        {s.scheduleType === 'weekly' ? `${days[(s.weekday ?? 1) - 1]} ${s.start || '開始未入力'}–${s.endsNextDay ? '翌' : ''}${s.end || '終了未入力'}` : `週単位以外：${s.note || '未入力'}`} {services.find((v) => v.id === s.serviceId)?.label}
+      </button></p>)}
+      <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
+        setSlots([...slots, { serviceId: '', scheduleType: 'weekly', weekday: 1, start: '', end: '', endsNextDay: false }]); setScheduleOpen(false); setSlotIndex(slots.length)
+      }}>＋ 予定を追加</button>
+      <button className="btn" disabled={busy || readOnly || !services.length} onClick={() => {
+        setSlots([...slots, { serviceId: '', scheduleType: 'other', note: '' }]); setScheduleOpen(false); setSlotIndex(slots.length)
+      }}>＋ 週単位以外を追加</button>
+    </Modal>}
+    {activitiesOpen && <Modal title="第3表・主な日常生活上の活動" onClose={() => setActivitiesOpen(false)}>
+      <DailyActivities state={third} disabled={busy || readOnly} />
+    </Modal>}
+    {needIndex !== null && needs[needIndex] && <Modal title={`第2表・ニーズ ${needIndex + 1}`} onClose={() => setNeedIndex(null)}>
+      <p>目標やサービスを追加したら、用紙の欄に直接入力できます。</p>
+      {!readOnly && <button className="btn" type="button" disabled={busy} onClick={() => { setNeedIndex(null); setNeedsOpen(true) }}>ニーズ一覧</button>}
+      <fieldset disabled={readOnly || busy}>
+        <NeedFields need={needs[needIndex]} linkChoices={linkChoices} update={(change) => updateNeed(needIndex, change)}
+          updateService={(goal, service, change) => updateService(needIndex, goal, service, change)} />
+        <button className="btn cp-danger" onClick={() => {
+          if (replaceNeeds(needs.filter((_, i) => i !== needIndex), 'このニーズと、その目標を削除しますか？')) setNeedIndex(null)
+        }}>このニーズを削除</button>
+      </fieldset>
+    </Modal>}
+    {slotIndex !== null && slots[slotIndex] && <Modal title="第3表・予定の編集" onClose={() => setSlotIndex(null)}>
+      <fieldset disabled={readOnly || busy}>
+        <label>第2表のサービス<select value={slots[slotIndex].serviceId} onChange={(e) => updateSlot(slotIndex, { serviceId: e.target.value })}>
+          <option value="">サービスを選ぶ</option>{services.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select></label>
+        {slots[slotIndex].scheduleType === 'weekly' ? <>
+          <label>曜日<select value={slots[slotIndex].weekday ?? 1} onChange={(e) => updateSlot(slotIndex, { weekday: Number(e.target.value) })}>{days.map((day, i) => <option value={i + 1} key={day}>{day}曜日</option>)}</select></label>
+          <div className="cp-fields"><label>開始<input type="time" value={slots[slotIndex].start ?? ''} onChange={(e) => updateSlot(slotIndex, { start: e.target.value })} /></label>
+            <label>終了<input type="time" value={slots[slotIndex].end ?? ''} onChange={(e) => updateSlot(slotIndex, { end: e.target.value })} /></label></div>
+          <label className="cp-check"><input type="checkbox" checked={slots[slotIndex].endsNextDay ?? false} onChange={(e) => updateSlot(slotIndex, { endsNextDay: e.target.checked })} />終了は翌日</label>
+        </> : <p>内容は用紙の「週単位以外」欄に入力できます。</p>}
+        <PeriodFields value={slots[slotIndex]} update={(change) => updateSlot(slotIndex, change)} />
+        <button className="btn cp-danger" onClick={() => { setSlots(slots.filter((_, i) => i !== slotIndex)); setSlotIndex(null) }}>この予定を削除</button>
+      </fieldset>
+      <p>各表の「保存」で、第1〜3表をまとめて保存します。</p>
+    </Modal>}
+    {confirming && <Modal title="計画を確定しますか？" onClose={() => setConfirming(false)}>
+      <p>第1〜3表の保存済みの内容を確定します。確定後は編集できません。訂正は改定版を作って行います。</p>
+      <p>{plan.effectiveFrom} 〜 {plan.effectiveTo ?? '終了日未設定'}・第{plan.version}版</p>
+      <button className="btn btn-p" disabled={busy || dirty} onClick={() => void run(async () => {
+        const r = await api.confirmCarePlan(plan.id, plan.lockVersion); setPlan(r.plan); setConfirming(false); onUpdated(); setNotice('計画を確定しました')
+      })}>第1〜3表を確定する</button>
+      {error && <p role="alert" className="cp-error">{error}</p>}
+    </Modal>}
+    {aiOpen && <Modal title="保存済みアセスメントからAI原案を作る" onClose={() => { if (!busy) setAiOpen(false) }}>
+      <AiDraftPanel clientId={plan.clientId} planFrom={plan.effectiveFrom} planTo={plan.effectiveTo} draft={aiDraft} busy={busy} onGenerate={(documentId, revisionId) => void run(async () => {
+        const r = await api.carePlanAi(plan.id, documentId, revisionId); setAiDraft(r.draft)
+        setPlan((old) => ({ ...old, aiDraft: r.draft }))
+      })} onApply={() => void run(async () => {
+        if (!aiDraft || !await first.flush()) throw new Error('第1表の入力を確認してください。')
+        const r = await api.applyCarePlanAi(plan.id, aiDraft.id, plan.lockVersion)
+        preserveNoticeOnDirty.current = true
+        setPlan(r.plan); setNeeds(r.plan.needs); setSlots(r.plan.slots); await first.reload()
+        setAiNeeds(new Set(r.applied.needs))
+        setAiDraft({ ...aiDraft, status: r.plan.aiDraft?.id === aiDraft.id ? r.plan.aiDraft.status : 'partially_applied' })
+        const count = r.applied.fields.length + r.applied.needs.length + r.applied.slots.length
+        setAiOpen(false)
+        setNotice(count ? `AI原案を${count}項目入力しました。${r.applied.skipped.length ? `${r.applied.skipped.length}項目は入力していません。` : ''}内容を確認し、第1〜3表を保存してください。`
+          : '原案は入力されませんでした。人の入力・既存の内容などを優先しています。手入力はそのまま続けられます。')
+      })} />
+      {error && <p role="alert" className="cp-error">{error}</p>}
+    </Modal>}
+  </>
+}
+
+function AiDraftPanel({ clientId, planFrom, planTo, draft, busy, onGenerate, onApply }: {
+  clientId: string, planFrom: string, planTo: string | null, draft?: AiDraftDetail, busy: boolean,
+  onGenerate: (documentId: string, revisionId: number) => void, onApply: () => void,
+}) {
+  const [sources, setSources] = useState<{ documentId: string, id: number, rev: number, savedAt: string }[]>([])
+  const [selected, setSelected] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let alive = true
+    api.client(clientId).then(async ({ client }) => {
+      const groups = await Promise.all(client.documents.filter((d) => d.kind === 'assessment').map(async (d) =>
+        (await api.revisions(d.id)).revisions.map((r) => ({ ...r, documentId: d.id }))))
+      if (alive) setSources(groups.flat())
+    }).catch((e) => { if (alive) setError(message(e)) })
+    return () => { alive = false }
+  }, [clientId])
+  const asRecord = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
+  const records = (v: unknown) => (Array.isArray(v) ? v : []).filter((r) => r && typeof r === 'object' && !Array.isArray(r)).map(asRecord)
+  const text = (v: unknown) => typeof v === 'string' ? v : ''
+  const proposal = asRecord(draft?.proposal)
+  const hasCandidate = Object.values(asRecord(proposal.plan1)).some((value) => text(value).trim())
+    || records(proposal.needs).some((need) => text(need.need).trim() && text(asRecord(need.longGoal).goal).trim())
+  return <>
+    <p>AI原案はまだ確定した計画ではありません。参照元は保存済みの版に固定され、その後のアセスメント変更は自動反映しません。</p>
+    {error && <p role="alert" className="cp-error">{error}</p>}
+    <label>参照するアセスメント<select disabled={busy} value={selected} onChange={(e) => setSelected(e.target.value)}>
+      <option value="">保存版を選ぶ</option>{sources.map((s, i) => <option key={s.id} value={String(i)}>保存版 {s.rev}・{new Date(s.savedAt).toLocaleString('ja-JP')}</option>)}
+    </select></label>
+    {!sources.length && <p>保存済みアセスメントが必要です。アセスメント画面で保存してからお試しください。</p>}
+    <button className="btn" disabled={busy || selected === ''} onClick={() => { const source = sources[Number(selected)]; onGenerate(source.documentId, source.id) }}>{busy ? '処理中…' : '原案を作る'}</button>
+    {draft?.status === 'failed' && <p role="alert" className="cp-error">AI原案を作れませんでした。手入力はそのまま続けられます。</p>}
+    {draft && draft.status !== 'failed' && <>
+      <h3>AI原案（未確定）</h3><p>参照：保存版 {draft.sourceRevisionRev}・生成日時 {new Date(draft.referencedAt).toLocaleString('ja-JP')}</p>
+      {Object.entries(asRecord(proposal.plan1)).map(([key, value]) => <div className="cp-service" key={key}><strong>{key === 'plan.overallPolicy' ? '総合的な援助の方針' : key === 'plan.intentionAnalysis' ? '意向を踏まえた課題分析' : '第1表の候補'}</strong><p>{typeof value === 'string' ? value : '候補を確認してください'}</p></div>)}
+      {records(proposal.needs).map((n, i) => <div className="cp-service" key={i}>
+        <strong>{text(n.need)}</strong><p>長期目標：{text(asRecord(n.longGoal).goal)}</p>
+        {records(n.shortGoals).map((g, j) => <div key={j}>
+          <p>短期目標：{text(g.goal)}</p>
+          {records(g.services).map((s, k) => <div key={k}>
+            <strong>{text(s.content)}</strong>
+            <p>保険給付：{s.insured === true ? '対象' : s.insured === false ? '対象外' : '区分が未確認のため、このサービスは入力されません'}</p>
+            <p>種別：{text(s.kind) || '未入力'} ／ 事業所：{text(s.provider) || '未入力'} ／ 頻度：{text(s.frequency) || '未入力'}</p>
+            <p>期間：{text(s.periodFrom) || planFrom}〜{text(s.periodTo) || planTo || '終了日なし'}{text(s.periodText) && `（${text(s.periodText)}）`}</p>
+          </div>)}
+        </div>)}
+      </div>)}
+      {records(proposal.slots).map((slot, i) => {
+        const ref = asRecord(slot.serviceRef)
+        const service = records(records(records(proposal.needs)[Number(ref.need)]?.shortGoals)[Number(ref.shortGoal)]?.services)[Number(ref.service)]
+        return <div className="cp-service" key={`slot${i}`}><strong>第3表の候補：{text(service?.content) || '対応するサービスを確認してください'}</strong>
+          <p>{slot.scheduleType === 'other' ? text(slot.note) : `${days[Number(slot.weekday) - 1] ?? '曜日未確認'} ${text(slot.start)}〜${slot.endsNextDay ? '翌' : ''}${text(slot.end)}`}</p></div>
+      })}
+      {records(draft.conflicts).map((conflict, i) => <p key={i} className="cp-error">確認が必要な点：{text(conflict.reason)}</p>)}
+      <p>人が直した欄・既存のニーズは上書きしません。入力後も編集できます。保存・確定は別の操作です。</p>
+      {!hasCandidate && <p>入力できる候補がありません。</p>}
+      <button className="btn btn-p" disabled={busy || draft.status !== 'proposed' || !hasCandidate} onClick={onApply}>この原案を入力する</button>
+    </>}
+  </>
+}
+
+type Period = { periodFrom?: string | null, periodTo?: string | null }
+function PeriodFields({ value, update }: { value: Period, update: (change: Partial<Period>) => void }) {
+  return <div className="cp-fields">
+    <label>開始日（任意）<input type="date" value={value.periodFrom ?? ''} onChange={(e) => update({ periodFrom: e.target.value || null })} /></label>
+    <label>終了日（任意）<input type="date" value={value.periodTo ?? ''} onChange={(e) => update({ periodTo: e.target.value || null })} /></label>
+  </div>
+}
+
+function NeedFields({ need, update, updateService, linkChoices }: {
+  need: NeedInput,
+  update: (mutate: (need: NeedInput) => void) => void,
+  updateService: (goalIndex: number, serviceIndex: number, change: Partial<ServiceInput>) => void,
+  linkChoices: ReturnType<typeof serviceChoices>,
+}) {
+  return <>
+    <strong>{need.need || 'ニーズ未入力'}</strong>
+    <PeriodFields value={need.longGoal} update={(p) => update((n) => Object.assign(n.longGoal, p))} />
+    {need.shortGoals?.map((goal, j) => {
+      const linkedIds = new Set(goal.services?.map((service) => service.id))
+      const available = linkChoices.filter((choice) => !linkedIds.has(choice.id))
+      return <section className="cp-goal" key={goal.id ?? j}>
+        <strong>{goal.goal || `短期目標 ${j + 1}`}</strong>
+        <PeriodFields value={goal} update={(p) => update((n) => Object.assign(n.shortGoals![j], p))} />
+        {goal.services?.map((s, k) => {
+          const shared = linkChoices.some((choice) => choice.id === s.id && choice.goals.length > 1)
+          return <section className="cp-service" key={s.id ?? k}>
+            <strong>{s.content || 'サービス内容未入力'}</strong>
+            {shared && <small>他の目標にも紐づいています。サービス内容の変更はすべての紐づけに反映されます。</small>}
+            <label className="cp-check"><input type="checkbox" checked={s.insured ?? false} onChange={(e) => updateService(j, k, { insured: e.target.checked })} />保険給付の対象（※1 対象内は○）</label>
+            <PeriodFields value={s} update={(p) => updateService(j, k, p)} />
+            <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals![j].services!.splice(k, 1) })}>{shared ? 'この目標との紐づけを外す' : 'サービスを削除'}</button>
+          </section>
+        })}
+        <button className="btn" onClick={() => update((n) => { (n.shortGoals![j].services ??= []).push({ content: '', insured: false }) })}>＋ サービスを追加</button>
+        {available.length > 0 && <label>既存のサービスを紐づける<select value="" onChange={(e) => {
+          const selected = available.find((choice) => choice.id === e.target.value)
+          if (selected) update((n) => { (n.shortGoals![j].services ??= []).push({ ...selected.service }) })
+        }}>
+          <option value="">他の目標のサービスを選ぶ</option>
+          {available.map((choice) => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+        </select></label>}
+        <button className="btn cp-danger" onClick={() => update((n) => { n.shortGoals!.splice(j, 1) })}>短期目標を削除</button>
+      </section>
+    })}
+    <button className="btn" onClick={() => update((n) => { (n.shortGoals ??= []).push({ goal: '', services: [] }) })}>＋ 短期目標を追加</button>
+  </>
+}

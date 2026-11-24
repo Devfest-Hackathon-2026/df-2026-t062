@@ -4467,6 +4467,17 @@
      "max": 8.5,
      "fit": "horizontal"
     }
+   },
+   {
+    "name": "p2_家族構成図",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 12.629,
+     "y": 34.396
+    },
+    "width": 74.612,
+    "height": 56.092
    }
   ],
   [
@@ -6959,6 +6970,17 @@
      "max": 9,
      "fit": "vertical"
     }
+   },
+   {
+    "name": "p3_家屋見取図",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 118.039,
+     "y": 153.882
+    },
+    "width": 79.763,
+    "height": 103.54
    }
   ],
   [
@@ -8774,6 +8796,17 @@
      "max": 9,
      "fit": "vertical"
     }
+   },
+   {
+    "name": "p4_障害等の部位",
+    "type": "image",
+    "content": "",
+    "position": {
+     "x": 112.642,
+     "y": 23.001
+    },
+    "width": 85.725,
+    "height": 77.435
    }
   ],
   [
@@ -18005,7 +18038,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 146.08,
+     "x": 142.1,
      "y": 84.92
     },
     "width": 3.55,
@@ -18023,7 +18056,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 142.1,
+     "x": 146.08,
      "y": 84.92
     },
     "width": 3.55,
@@ -18113,7 +18146,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 146.08,
+     "x": 142.1,
      "y": 102.19
     },
     "width": 3.55,
@@ -18131,7 +18164,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 142.1,
+     "x": 146.08,
      "y": 102.19
     },
     "width": 3.55,
@@ -18149,7 +18182,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 146.08,
+     "x": 142.1,
      "y": 107.86
     },
     "width": 3.55,
@@ -18167,7 +18200,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 142.1,
+     "x": 146.08,
      "y": 107.86
     },
     "width": 3.55,
@@ -18257,7 +18290,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 146.08,
+     "x": 142.1,
      "y": 125.14
     },
     "width": 3.55,
@@ -18275,7 +18308,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 142.1,
+     "x": 146.08,
      "y": 125.14
     },
     "width": 3.55,
@@ -18293,7 +18326,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 146.08,
+     "x": 142.1,
      "y": 130.89
     },
     "width": 3.55,
@@ -18311,7 +18344,7 @@
     "type": "text",
     "content": "",
     "position": {
-     "x": 142.1,
+     "x": 146.08,
      "y": 130.89
     },
     "width": 3.55,

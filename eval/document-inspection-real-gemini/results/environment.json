@@ -1,0 +1,18 @@
+{
+  "evaluatedCommit": "34b8c0d4c7d1813fca25491da6628d35fb95fc2d",
+  "createdAt": "2026-11-24T01:50:20.162Z",
+  "provider": "vertex",
+  "model": "gemini-3.8-flash",
+  "location": "global",
+  "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+  "auth": "既存ADC（秘密を記録しない）",
+  "maxRequests": 12,
+  "upperUsd": 3.48912,
+  "productionHashes": {
+    "worker/inspect/index.ts": "840784d01ce563b71293b617a45f3e1859b49f5f3574fec9142d90031d7e0161",
+    "worker/inspect/prompt.ts": "594a9d8a8d680c86d22263e6925ce4b346ecfffd33fc756fddc14df02f39854d",
+    "worker/vertex/gemini.ts": "e7290d2da41191c090548db5e592e376b683be52e398e2f26ebd320bb4eb548a",
+    "core/checks/rules.ts": "c78b3cef2bf2083b69a20e07126eed1398658c9cfb8c9cf32657de6d29af7d5b",
+    "core/checks/mhlw-careplan.json": "412dd327f23398f4787456febe26c633cc6e75fa6a39f47e40884ce62975dc09"
+  }
+}

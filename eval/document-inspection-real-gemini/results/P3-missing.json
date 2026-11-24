@@ -1,0 +1,131 @@
+{
+  "id": "P3-missing",
+  "synthetic": true,
+  "dry": false,
+  "why": "第2表にサービス・本人・家族役割があるのに第3表に一切ない。",
+  "elapsedMs": 2949,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:38.115Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 8705,
+    "promptSha256": "a8900b456e3801220fdabbd09ad7e4fede2b38099c24584f44b6a1dc8734e771",
+    "schemaSha256": "29e5ce74a673324f8f33262a7b2077e344dc2cb544b0e64dbc22942064c9e605",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 2927,
+    "responseId": "bu0Ea63gEcyevdAPmaaTgAc",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2565,
+      "candidatesTokenCount": 218,
+      "totalTokenCount": 2783,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2565
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 218
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"44\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"第3表に介護保険サービスの予定が記載されていない\"\n    },\n    \"45\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"第3表にインフォーマルサポートの記載がない\"\n    },\n    \"46\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"第3表に一日の生活リズムや活動の記載がない\"\n    },\n    \"47\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"第3表に第2表記載の家族の役割が記載されていない\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "44",
+        "level": "1",
+        "met": {},
+        "missing": "第3表に介護保険サービスの予定が記載されていない",
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-missing",
+        "by": "ai"
+      },
+      {
+        "item": "45",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "第3表にインフォーマルサポートの記載がない",
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-missing",
+        "by": "ai"
+      },
+      {
+        "item": "46",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "第3表に一日の生活リズムや活動の記載がない",
+        "fieldKey": "dailySchedule",
+        "documentId": "P3-missing",
+        "by": "ai"
+      },
+      {
+        "item": "47",
+        "level": "1",
+        "met": {},
+        "missing": "第3表に第2表記載の家族の役割が記載されていない",
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-missing",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2565,
+      "cachedTokens": 0,
+      "outputTokens": 218,
+      "thinkingTokens": 0,
+      "yen": 0.434509
+    },
+    "ruleItems": 0,
+    "aiItems": 4
+  },
+  "comparisons": [
+    {
+      "id": "44",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "45",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "46",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "47",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

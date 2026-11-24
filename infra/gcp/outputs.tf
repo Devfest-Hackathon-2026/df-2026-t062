@@ -28,6 +28,11 @@ output "migrate_job" {
   value       = google_cloud_run_v2_job.migrate.name
 }
 
+output "recording_cleanup_job" {
+  description = "録音原本のCleanup Job名。"
+  value       = google_cloud_run_v2_job.recording_cleanup.name
+}
+
 output "worker_url" {
   description = "api・Cloud Tasks・Scheduler が使う worker の URL（組み立てた値）。worker_uri と同じことを確かめる。"
   value       = local.worker_url
@@ -71,5 +76,17 @@ output "bootstrap_sql" {
     ALTER SCHEMA public OWNER TO app;
     ALTER ROLE "${local.api_db_user}" SET role = 'app';
     ALTER ROLE "${local.worker_db_user}" SET role = 'app';
+
+    CREATE ROLE recording_cleanup NOLOGIN;
+    GRANT recording_cleanup TO "${local.cleanup_db_user}";
+    ALTER ROLE "${local.cleanup_db_user}" SET role = 'recording_cleanup';
+    GRANT USAGE ON SCHEMA public TO recording_cleanup;
+    GRANT SELECT, UPDATE ON recordings TO recording_cleanup;
+    GRANT SELECT ON jobs TO recording_cleanup;
+    GRANT SELECT, DELETE ON transcripts, recording_summaries TO recording_cleanup;
+    GRANT SELECT, UPDATE ON care_record_drafts TO recording_cleanup;
+    GRANT INSERT (office_id, staff_id, client_id, document_id, action, outcome, request_id, correlation_id, trace_id, source, route, schema_version, detail)
+      ON audit_events TO recording_cleanup;
+    GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO recording_cleanup;
   EOT
 }

@@ -7,7 +7,7 @@ import type { FormKind } from '../core/form.ts'
 import { checkBindings, editSlot, keysOf, renderAll, renderSlot, specOf, type Binding, type Values } from '../core/binding.ts'
 import { choicesOf } from '../core/fields.ts'
 
-const IDS: FormKind[] = ['assessment', 'admission']
+const IDS = ['assessment', 'admission'] as const
 const FORMS = { assessment: readSeed('assessment'), admission: readSeed('admission') }
 const json = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), 'utf8'))
 const gold = (v: string): Values => { const raw = json(`../eval/scenario/gold/用紙/アセスメント_${v}.json`); delete raw._comment; return raw }
@@ -78,6 +78,7 @@ for (const id of IDS) {
 /** 印字欄に打つ見本の文字（その欄で持てる値になるもの）。表示が打った文字と違う欄は [打つ文字, 表示] */
 function sampleText(b: Binding): string | [string, string] | null {
   switch (b.op) {
+    case 'diagram@1': return null
     case 'option@1': return b.ui === 'circle' ? 'true' : '✓'
     case 'era@1': return 'true'
     case 'symbol@1': return b.options[0].text
@@ -177,4 +178,10 @@ test('住宅改修は、行があって量が 0 なら「なし」', () => {
 test('1 日のスケジュールの生活リズムは、頭の記号を印にする', () => {
   const v = apply({}, editSlot(A, {}, 'p11_7時_生活リズム', '□○ 起床'))
   assert.deepEqual(v['dailySchedule'], [{ time: '7', rhythmMark: ['□起床', '○排尿'], rhythm: '起床' }])
+})
+
+test('範囲の条件（between）: 始め以上・終わり未満。同じ桁の文字（時刻 HH:mm など）で比べる。#147', async () => {
+  const { test: holds } = await import('../core/binding.ts')
+  const t = { between: ['09:00', '10:00'] as [string, string] }
+  assert.deepEqual(['08:59', '09:00', '09:30', '10:00', '', null, 9].map((v) => holds(v, t)), [false, true, true, false, false, false, false])
 })

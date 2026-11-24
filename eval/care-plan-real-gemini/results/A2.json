@@ -1,0 +1,222 @@
+{
+  "key": "A2",
+  "scenario": "A",
+  "repeat": 2,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:16:56.230Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 3180,
+    "promptSha256": "5da594621f5809f21dd336fa7eb054104eb11446cfea4b1987b7e4107da953ae",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 9218,
+    "responseId": "CNIBa5eBHpGcvdAPjKPG4Ao",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 758,
+      "candidatesTokenCount": 446,
+      "totalTokenCount": 2033,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 758
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 446
+        }
+      ],
+      "thoughtsTokenCount": 829
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\n  \"plan1\": {\n    \"plan.intentionAnalysis\": \"本人は自宅で暮らし続けたい、毎週月曜日の入浴を安心して続けたいと希望している。同居の娘も本人の在宅希望を尊重し朝食準備や夕食の声かけを行っているが、昼間は仕事で不在である。身体面では屋内の歩行器移動や立ち上がり時に見守りを要し、浴槽をまたぐ際に介助が必要な状態である。\",\n    \"plan.overallPolicy\": \"本人・家族の在宅生活継続の意向に基づき、安全に入浴ができるよう訪問介護による入浴介助を継続し、在宅生活の安定を図る。\"\n  },\n  \"needs\": [\n    {\n      \"need\": \"浴槽をまたぐ際に介助が必要であり、安全に入浴を継続したい\",\n      \"longGoal\": {\n        \"goal\": \"安全に入浴を継続することができる\",\n        \"periodText\": \"\"\n      },\n      \"shortGoals\": [\n        {\n          \"goal\": \"介助を受けて転倒なく安全に入浴することができる\",\n          \"periodText\": \"\",\n          \"services\": [\n            {\n              \"content\": \"入浴介助\",\n              \"insured\": true,\n              \"kind\": \"訪問介護\",\n              \"provider\": \"架空事業所ひかり\",\n              \"frequency\": \"週1回（月曜日）\",\n              \"periodText\": \"\"\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"slots\": [\n    {\n      \"serviceRef\": {\n        \"need\": 0,\n        \"shortGoal\": 0,\n        \"service\": 0\n      },\n      \"scheduleType\": \"weekly\",\n      \"weekday\": 1,\n      \"start\": \"09:00\",\n      \"end\": \"10:00\",\n      \"endsNextDay\": false\n    }\n  ],\n  \"conflicts\": []\n}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 9231,
+    "draft": {
+      "id": "19743ee6-a21e-4b47-a2bd-7125cfaad6e7",
+      "planId": "4790c4ca-4d25-4f9b-8dc8-525eb343a7bc",
+      "status": "proposed",
+      "sourceDocumentId": "bba1c7f0-a513-479b-8dc7-34812c5f6022",
+      "sourceRevisionId": 1,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:17:05.450Z",
+      "proposal": {
+        "needs": [
+          {
+            "need": "浴槽をまたぐ際に介助が必要であり、安全に入浴を継続したい",
+            "longGoal": {
+              "goal": "安全に入浴を継続することができる",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "介助を受けて転倒なく安全に入浴することができる",
+                "services": [
+                  {
+                    "kind": "訪問介護",
+                    "content": "入浴介助",
+                    "insured": true,
+                    "provider": "架空事業所ひかり",
+                    "frequency": "週1回（月曜日）",
+                    "periodText": ""
+                  }
+                ],
+                "periodText": ""
+              }
+            ]
+          }
+        ],
+        "plan1": {
+          "plan.overallPolicy": "本人・家族の在宅生活継続の意向に基づき、安全に入浴ができるよう訪問介護による入浴介助を継続し、在宅生活の安定を図る。",
+          "plan.intentionAnalysis": "本人は自宅で暮らし続けたい、毎週月曜日の入浴を安心して続けたいと希望している。同居の娘も本人の在宅希望を尊重し朝食準備や夕食の声かけを行っているが、昼間は仕事で不在である。身体面では屋内の歩行器移動や立ち上がり時に見守りを要し、浴槽をまたぐ際に介助が必要な状態である。"
+        },
+        "slots": [
+          {
+            "end": "10:00",
+            "start": "09:00",
+            "weekday": 1,
+            "serviceRef": {
+              "need": 0,
+              "service": 0,
+              "shortGoal": 0
+            },
+            "endsNextDay": false,
+            "scheduleType": "weekly"
+          }
+        ],
+        "conflicts": []
+      },
+      "conflicts": [],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 19,
+    "applied": {
+      "fields": [
+        "plan.intentionAnalysis"
+      ],
+      "needs": [
+        "070037bc-7234-4d36-b372-559516b05f70"
+      ],
+      "slots": [
+        "f023d293-7477-4739-8b02-474710563cc5"
+      ],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "human_value"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証A",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）",
+      "plan.intentionAnalysis": "本人は自宅で暮らし続けたい、毎週月曜日の入浴を安心して続けたいと希望している。同居の娘も本人の在宅希望を尊重し朝食準備や夕食の声かけを行っているが、昼間は仕事で不在である。身体面では屋内の歩行器移動や立ち上がり時に見守りを要し、浴槽をまたぐ際に介助が必要な状態である。"
+    },
+    "needs": [
+      {
+        "id": "070037bc-7234-4d36-b372-559516b05f70",
+        "need": "浴槽をまたぐ際に介助が必要であり、安全に入浴を継続したい",
+        "longGoal": {
+          "id": "36698e31-0cea-4ba1-bddb-40ed0ec18548",
+          "goal": "安全に入浴を継続することができる",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "50873016-0581-4e48-8671-1b0e9f1afa76",
+            "goal": "介助を受けて転倒なく安全に入浴することができる",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": [
+              {
+                "id": "8e9644aa-d94c-4caf-b295-4067e30c73b8",
+                "content": "入浴介助",
+                "insured": true,
+                "kind": "訪問介護",
+                "provider": "架空事業所ひかり",
+                "frequency": "週1回（月曜日）",
+                "periodText": "",
+                "periodFrom": "2026-11-01",
+                "periodTo": "2027-10-31"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "slots": [
+      {
+        "id": "f023d293-7477-4739-8b02-474710563cc5",
+        "serviceId": "8e9644aa-d94c-4caf-b295-4067e30c73b8",
+        "scheduleType": "weekly",
+        "weekday": 1,
+        "start": "09:00",
+        "end": "10:00",
+        "endsNextDay": false,
+        "note": null,
+        "periodFrom": null,
+        "periodTo": null
+      }
+    ]
+  },
+  "expected": {
+    "focus": [
+      "在宅生活の希望",
+      "入浴時の介助",
+      "娘の支援と昼間の不在",
+      "立ち上がりの見守り"
+    ],
+    "services": [
+      "入浴介助／訪問介護／架空事業所ひかり／週1回",
+      "家族の朝食準備と夕食の声かけ（保険サービスとは未確認）"
+    ],
+    "slots": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "10:00",
+        "service": "入浴"
+      }
+    ],
+    "conflictsRequired": false
+  }
+}

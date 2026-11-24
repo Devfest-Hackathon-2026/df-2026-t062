@@ -1,0 +1,37 @@
+.care-record-editor:has(.care-paper-workspace){display:flex;flex-direction:column;padding:0;overflow:hidden}
+.care-paper-workspace{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+.care-paper-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 16px;border-bottom:1px solid #e1e4ea;background:#fff}
+.care-paper-toolbar>strong{margin-right:auto}.care-paper-toolbar [role=group]{display:flex;align-items:center;gap:8px}
+.care-paper-toolbar button{min-height:32px!important;padding:5px 10px!important}
+.care-paper-scroll{flex:1;min-height:0;overflow:auto;background:#e9ebef;padding:16px}
+.care-paper-size{margin:0 auto 20px;min-width:0}.care-paper-page{position:relative;container-type:inline-size;background:white;box-shadow:0 3px 10px #14203026}
+.care-paper-image{width:100%;height:100%;display:block;pointer-events:none}
+.care-paper-workspace .care-paper-page .care-paper-field{position:absolute;box-sizing:border-box;min-height:0!important;margin:0;padding:0!important;border:0;border-radius:0;background:rgba(36,83,196,.055);box-shadow:inset 0 0 0 1px rgba(36,83,196,.2);font-family:inherit;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere;cursor:pointer}
+.care-paper-field:hover{outline:2px solid #2453c4;outline-offset:-2px}.care-record-work .care-paper-changed{background:rgba(255,196,0,.35)}
+.care-paper-printed{position:absolute;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere}
+.care-paper-operations{padding:16px;margin-bottom:16px;max-height:min(48dvh,520px);overflow:auto;border:1px solid #c9cfda;border-radius:8px;background:#fff;font-size:14px}
+.care-paper-operations>header{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:-16px;background:#fff;z-index:1;padding:8px 0;margin-bottom:14px}
+.care-record-work:has(.care-paper-workspace) .care-record-columns{grid-template-columns:210px minmax(0,1fr);padding:12px;gap:12px}
+@media(max-width:900px){.care-record-work:has(.care-paper-workspace) .care-record-columns{display:grid;grid-template-columns:170px minmax(0,1fr);overflow:hidden}.care-record-work:has(.care-paper-workspace) .care-record-list{height:auto;max-height:none;padding:10px}.care-record-work:has(.care-paper-workspace) .care-record-editor{min-height:0;overflow:hidden}.care-paper-scroll{padding:10px}}
+@media(max-width:620px){.care-record-work:has(.care-paper-workspace) .care-record-columns{grid-template-columns:1fr;grid-template-rows:150px minmax(0,1fr)}.care-paper-operations{padding:12px}}
+
+.care-paper-status{font-size:12px;color:#5a6270}
+.paper-text{box-sizing:border-box;resize:none;cursor:text!important}
+.paper-text:focus{outline:2px solid #2453c4;outline-offset:-2px;z-index:2;background:#fff!important}
+.care-record-work textarea.paper-text{overflow:auto}
+.paper-details{position:absolute;box-sizing:border-box;overflow:auto;padding:8px;background:#fff;font-size:13px!important;line-height:1.4!important}
+.paper-details textarea{width:100%;box-sizing:border-box;resize:vertical}
+.paper-details pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.care-paper-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid #c9cfda;border-radius:12px;padding:20px;color:#1f2430;background:#fff;font-family:'Noto Sans JP',system-ui,sans-serif}
+.care-paper-dialog::backdrop{background:#17213966}
+.care-paper-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.care-paper-dialog .care-record-list{max-height:none;height:auto;border:0;padding:0}
+.care-paper-dialog label{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;font-size:14px}
+.care-paper-dialog input,.care-paper-dialog select,.care-paper-dialog textarea{box-sizing:border-box;width:100%;min-width:0;font:inherit;padding:10px;border:1px solid #c9cfda;border-radius:8px;background:#fff}
+.care-paper-dialog button{cursor:pointer;min-height:36px}
+.care-paper-dialog .care-record-list li button{display:flex;flex-direction:column;width:100%;text-align:left;padding:12px;margin-bottom:8px;background:#fff;border:1px solid #c9cfda;border-radius:8px}
+.care-paper-dialog .care-record-list li button[aria-pressed=true]{border-color:#2453c4;background:#f0f4ff}
+.care-paper-dialog :focus-visible{outline:2px solid #2453c4;outline-offset:2px}
+
+.cp-work .care-paper-workspace .care-paper-page .care-paper-field{border:0;border-radius:0}
+.care-paper-workspace .care-paper-page .care-paper-mark-selected{border:1px solid #1452a3;border-radius:50%;background:transparent;box-shadow:none}

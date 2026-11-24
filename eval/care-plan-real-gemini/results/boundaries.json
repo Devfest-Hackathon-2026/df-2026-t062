@@ -1,0 +1,221 @@
+{
+  "synthetic": true,
+  "realModelCalls": 0,
+  "results": [
+    {
+      "kind": "invalid_json",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "failed",
+      "errorKind": "invalid_json",
+      "applyStatus": 400,
+      "persistedSlots": [],
+      "persistedServices": [],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    },
+    {
+      "kind": "api_error",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "failed",
+      "errorKind": "ai_failed",
+      "applyStatus": 400,
+      "persistedSlots": [],
+      "persistedServices": [],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    },
+    {
+      "kind": "bad_time",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "proposed",
+      "errorKind": null,
+      "applyStatus": 200,
+      "applied": {
+        "fields": [
+          "plan.overallPolicy",
+          "plan.intentionAnalysis"
+        ],
+        "needs": [
+          "b9772061-41f7-4d9c-ac07-f275010d8e21"
+        ],
+        "slots": [],
+        "skipped": [
+          {
+            "target": "slots[0]",
+            "reason": "invalid_time"
+          }
+        ]
+      },
+      "persistedSlots": [],
+      "persistedServices": [
+        {
+          "id": "a9b9d6e3-6daf-40a4-94db-bf46d707e0e2",
+          "content": "入浴介助",
+          "insured": true,
+          "kind": "訪問介護",
+          "provider": "架空事業所ひかり",
+          "frequency": "週1回",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        }
+      ],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    },
+    {
+      "kind": "bad_ref",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "proposed",
+      "errorKind": null,
+      "applyStatus": 200,
+      "applied": {
+        "fields": [
+          "plan.overallPolicy",
+          "plan.intentionAnalysis"
+        ],
+        "needs": [
+          "d7a056a0-04ff-4fff-a59a-ac5f2be0de2a"
+        ],
+        "slots": [],
+        "skipped": [
+          {
+            "target": "slots[0]",
+            "reason": "service_not_created"
+          }
+        ]
+      },
+      "persistedSlots": [],
+      "persistedServices": [
+        {
+          "id": "99a42a86-7122-4777-b061-a67422102512",
+          "content": "入浴介助",
+          "insured": true,
+          "kind": "訪問介護",
+          "provider": "架空事業所ひかり",
+          "frequency": "週1回",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        }
+      ],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    },
+    {
+      "kind": "duplicate_slot",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "proposed",
+      "errorKind": null,
+      "applyStatus": 200,
+      "applied": {
+        "fields": [
+          "plan.overallPolicy",
+          "plan.intentionAnalysis"
+        ],
+        "needs": [
+          "805f4cd1-c5b0-4bdc-9f87-95c0a55299d3"
+        ],
+        "slots": [
+          "b5f50e0a-f4f7-40cb-8327-0eb6b996cdaa"
+        ],
+        "skipped": [
+          {
+            "target": "slots[1]",
+            "reason": "duplicate"
+          }
+        ]
+      },
+      "persistedSlots": [
+        {
+          "id": "b5f50e0a-f4f7-40cb-8327-0eb6b996cdaa",
+          "serviceId": "35bf1db4-1331-4e64-b568-55b08cd0e1f3",
+          "scheduleType": "weekly",
+          "weekday": 1,
+          "start": "09:00",
+          "end": "10:00",
+          "endsNextDay": false,
+          "note": null,
+          "periodFrom": null,
+          "periodTo": null
+        }
+      ],
+      "persistedServices": [
+        {
+          "id": "35bf1db4-1331-4e64-b568-55b08cd0e1f3",
+          "content": "入浴介助",
+          "insured": true,
+          "kind": "訪問介護",
+          "provider": "架空事業所ひかり",
+          "frequency": "週1回",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        }
+      ],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    },
+    {
+      "kind": "invalid_nested_services",
+      "source": "recorded A1 + fault injection; no model call",
+      "generationStatus": 201,
+      "draftStatus": "proposed",
+      "errorKind": null,
+      "applyStatus": 200,
+      "applied": {
+        "fields": [
+          "plan.overallPolicy",
+          "plan.intentionAnalysis"
+        ],
+        "needs": [
+          "38af32e3-de65-4cba-91aa-58e21da9fb35"
+        ],
+        "slots": [
+          "c36c01c8-9dea-486c-b54d-fc185edb3792"
+        ],
+        "skipped": []
+      },
+      "persistedSlots": [
+        {
+          "id": "c36c01c8-9dea-486c-b54d-fc185edb3792",
+          "serviceId": "7d33e5e3-fb66-4beb-8d00-f8b7bcea7053",
+          "scheduleType": "weekly",
+          "weekday": 1,
+          "start": "09:00",
+          "end": "10:00",
+          "endsNextDay": false,
+          "note": null,
+          "periodFrom": null,
+          "periodTo": null
+        }
+      ],
+      "persistedServices": [
+        {
+          "id": "7d33e5e3-fb66-4beb-8d00-f8b7bcea7053",
+          "content": "入浴介助",
+          "insured": true,
+          "kind": "訪問介護",
+          "provider": "架空事業所ひかり",
+          "frequency": "週1回",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        }
+      ],
+      "manualEditStatus": 200,
+      "manualSaveStatus": 200,
+      "stillDraft": true
+    }
+  ]
+}

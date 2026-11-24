@@ -40,7 +40,7 @@ export async function seed(db: Db, opts: { email?: string, authUid?: string, off
   const kai = await createClient(db, staff, { name: '甲斐', sex: '男', status: '入院中' })
   clients.kai = kai.id
   const v1 = load('../eval/scenario/gold/用紙/アセスメント_v1.json')
-  await applyBatch(db, { officeId: staff.officeId, documentId: kai.assessmentId, kind: 'seed', label: 'AI 書き込み 1・1/21 病院の面談', proposed: toProposed(v1), system: { 'assessment.initialDate': v1['assessment.initialDate'] } })
+  await applyBatch(db, { officeId: staff.officeId, documentId: kai.documentId, kind: 'seed', label: 'AI 書き込み 1・1/21 病院の面談', proposed: toProposed(v1), system: { 'assessment.initialDate': v1['assessment.initialDate'] } })
   await db.query('UPDATE clients SET next_visit_at = $2 WHERE id = $1', [kai.id, tomorrow(14)])
 
   // 山田さん・田中さん（保存済み）
@@ -52,8 +52,8 @@ export async function seed(db: Db, opts: { email?: string, authUid?: string, off
     const c = await createClient(db, staff, { name, sex: '女', status: '在宅' })
     clients[key] = c.id
     const values: Record<string, unknown> = { ...sample, ...extra, 'person.name': name }
-    await applyBatch(db, { officeId: staff.officeId, documentId: c.assessmentId, kind: 'seed', label: '見本のデータ', proposed: toProposed(values), system: Object.fromEntries(['assessment.initialDate', 'assessment.updateDate'].filter((k) => values[k]).map((k) => [k, values[k]])) })
-    await saveDocument(db, staff, c.assessmentId, { scope: 'document' })
+    await applyBatch(db, { officeId: staff.officeId, documentId: c.documentId, kind: 'seed', label: '見本のデータ', proposed: toProposed(values), system: Object.fromEntries(['assessment.initialDate', 'assessment.updateDate'].filter((k) => values[k]).map((k) => [k, values[k]])) })
+    await saveDocument(db, staff, c.documentId, { scope: 'document' })
     await db.query('UPDATE clients SET next_visit_at = $2 WHERE id = $1', [c.id, visit])
   }
 

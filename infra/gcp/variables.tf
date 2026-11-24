@@ -70,6 +70,12 @@ variable "migrate_job_name" {
   default     = "t062-migrate"
 }
 
+variable "recording_cleanup_job_name" {
+  description = "録音原本の保全・削除を行うCloud Run Job名。"
+  type        = string
+  default     = "t062-recording-cleanup"
+}
+
 variable "sql_instance_name" {
   description = "Cloud SQL インスタンス名。削除後 1 週間ほど同じ名前を再利用できない。"
   type        = string
@@ -146,10 +152,16 @@ variable "gemini_location" {
   default     = "global"
 }
 
-variable "stt_location" {
-  description = "worker の STT_LOCATION（Speech-to-Text のロケーション）。"
+variable "document_input_approved_location" {
+  description = "記入済み原本を処理する確認済みの地域。gemini_location と同じ値で有効。空なら読取を停止する。"
   type        = string
-  default     = "asia-northeast1"
+  default     = ""
+}
+
+variable "stt_location" {
+  description = "worker の STT_LOCATION（Speech-to-Text のロケーション）。Chirp 3 の日本語は東京では断られるようになり、使えるのは us・eu だけなので us（2026-11-10）。"
+  type        = string
+  default     = "us"
 }
 
 variable "worker_speech_role" {
@@ -164,6 +176,47 @@ variable "reconcile_schedule" {
   default     = "*/5 * * * *"
 }
 
+variable "recording_cleanup_schedule" {
+  description = "録音原本の保全同期・未完了upload整理・削除Jobのcron。"
+  type        = string
+  default     = "*/15 * * * *"
+}
+
+variable "recording_cleanup_scheduler_job_name" {
+  description = "Cloud Scheduler job name for the recording cleanup invocation."
+  type        = string
+  default     = "t062-recording-cleanup"
+}
+
+variable "recording_cleanup_scheduler_paused" {
+  description = "Keep the recording cleanup Scheduler paused until production readiness has been approved."
+  type        = bool
+  default     = true
+}
+
+variable "source_recording_lifecycle_enabled" {
+  description = "readiness確認後だけ有効化するsource録音のLifecycle安全弁。"
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_notification_channel_ids" {
+  description = "Cloud Monitoring notification channel IDs. Keep addresses and webhooks outside this repository."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_environment" {
+  description = "Environment label used by recording cleanup metrics and alerts."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,31}$", var.monitoring_environment))
+    error_message = "Use a lowercase environment label with letters, digits and hyphens."
+  }
+}
+
 variable "billing_account_id" {
   description = "予算アラートを作る請求先アカウント ID（例: 012345-6789AB-CDEF01）。null のときは予算を作らない。"
   type        = string
@@ -174,4 +227,49 @@ variable "budget_amount_jpy" {
   description = "予算アラートの月額（円）。billing_account_id を指定したときだけ使う。"
   type        = number
   default     = 10000
+}
+
+variable "recording_cleanup_alerts_enabled" {
+  description = "録音Cleanupの監視アラートを有効化するか"
+  type        = bool
+  default     = false
+}
+
+variable "ai_job_alerts_enabled" {
+  description = "AI非同期ジョブの監視アラートを有効化するか"
+  type        = bool
+  default     = false
+}
+
+variable "ai_job_backlog_age_threshold_seconds" {
+  description = "AIジョブの最古queued滞留を通知する秒数"
+  type        = number
+  default     = 900
+
+  validation {
+    condition     = var.ai_job_backlog_age_threshold_seconds >= 60
+    error_message = "AI job backlog threshold must be at least 60 seconds."
+  }
+}
+
+variable "ai_job_processing_age_threshold_seconds" {
+  description = "AIジョブの最古processing滞留を通知する秒数"
+  type        = number
+  default     = 1800
+
+  validation {
+    condition     = var.ai_job_processing_age_threshold_seconds >= 60
+    error_message = "AI job processing threshold must be at least 60 seconds."
+  }
+}
+
+variable "ai_job_cost_alert_yen" {
+  description = "24時間の推定AI費用アラート閾値（円）。正式請求額ではない。"
+  type        = number
+  default     = 5000
+
+  validation {
+    condition     = var.ai_job_cost_alert_yen > 0
+    error_message = "AI job cost alert threshold must be positive."
+  }
 }

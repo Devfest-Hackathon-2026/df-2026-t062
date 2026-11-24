@@ -14,8 +14,9 @@ locals {
   worker_url = "https://${var.worker_service_name}-${data.google_project.this.number}.${var.region}.run.app"
 
   # IAM 認証の DB ユーザー名は、サービスアカウントのメールから ".gserviceaccount.com" を除いたもの。
-  api_db_user    = trimsuffix(google_service_account.runtime.email, ".gserviceaccount.com")
-  worker_db_user = trimsuffix(google_service_account.worker.email, ".gserviceaccount.com")
+  api_db_user     = trimsuffix(google_service_account.runtime.email, ".gserviceaccount.com")
+  worker_db_user  = trimsuffix(google_service_account.worker.email, ".gserviceaccount.com")
+  cleanup_db_user = trimsuffix(google_service_account.recording_cleanup.email, ".gserviceaccount.com")
 
   api_env = {
     AUTH_MODE           = "firebase"
@@ -32,31 +33,50 @@ locals {
     CLOUD_SQL_INSTANCE  = google_sql_database_instance.main.connection_name
     DB_USER             = local.api_db_user
     DB_NAME             = google_sql_database.app.name
-  }
-
-  worker_env = {
+    # 書き方の相談（POST /api/documents/:id/chat）は api から Gemini を呼ぶ。worker と同じモデル・場所を使う
     AI_PROVIDER          = var.ai_provider
     GOOGLE_CLOUD_PROJECT = var.project_id
     GEMINI_MODEL         = var.gemini_model
     GEMINI_LOCATION      = var.gemini_location
-    STT_LOCATION         = var.stt_location
-    STORAGE_MODE         = "gcs"
-    GCS_SOURCE_BUCKET    = google_storage_bucket.source.name
-    GCS_OUTPUT_BUCKET    = google_storage_bucket.output.name
-    GCS_WORK_BUCKET      = google_storage_bucket.work.name
-    QUEUE_MODE           = "tasks"
-    TASKS_QUEUE          = google_cloud_tasks_queue.jobs.id
-    WORKER_URL           = local.worker_url
-    TASKS_INVOKER_SA     = google_service_account.tasks_invoker.email
-    CLOUD_SQL_INSTANCE   = google_sql_database_instance.main.connection_name
-    DB_USER              = local.worker_db_user
-    DB_NAME              = google_sql_database.app.name
   }
+
+  worker_env = {
+    DOCUMENT_INPUT_APPROVED_LOCATION = var.document_input_approved_location
+    AI_PROVIDER                      = var.ai_provider
+    GOOGLE_CLOUD_PROJECT             = var.project_id
+    GEMINI_MODEL                     = var.gemini_model
+    GEMINI_LOCATION                  = var.gemini_location
+    STT_LOCATION                     = var.stt_location
+    STORAGE_MODE                     = "gcs"
+    GCS_SOURCE_BUCKET                = google_storage_bucket.source.name
+    GCS_OUTPUT_BUCKET                = google_storage_bucket.output.name
+    GCS_WORK_BUCKET                  = google_storage_bucket.work.name
+    GCS_FORMS_BUCKET                 = google_storage_bucket.forms.name
+    QUEUE_MODE                       = "tasks"
+    TASKS_QUEUE                      = google_cloud_tasks_queue.jobs.id
+    WORKER_URL                       = local.worker_url
+    TASKS_INVOKER_SA                 = google_service_account.tasks_invoker.email
+    CLOUD_SQL_INSTANCE               = google_sql_database_instance.main.connection_name
+    DB_USER                          = local.worker_db_user
+    DB_NAME                          = google_sql_database.app.name
+  }
+
+  # 様式の置き場の中で、上げたままの PDF の場所（imports/<id>.pdf と offices/<office_id>/imports/<id>.pdf）だけに当てる IAM の条件
+  forms_objects           = "projects/_/buckets/${local.buckets.forms}/objects"
+  forms_imports_condition = "resource.name.startsWith(\"${local.forms_objects}/imports/\") || resource.name.extract(\"${local.forms_objects}/offices/{office}/imports/\") != \"\""
 
   # DB 移行のジョブは api の実行用サービスアカウント（= DB ユーザー）で動く
   migrate_env = {
     CLOUD_SQL_INSTANCE = google_sql_database_instance.main.connection_name
     DB_USER            = local.api_db_user
+    DB_NAME            = google_sql_database.app.name
+  }
+
+  cleanup_env = {
+    STORAGE_MODE       = "gcs"
+    GCS_SOURCE_BUCKET  = google_storage_bucket.source.name
+    CLOUD_SQL_INSTANCE = google_sql_database_instance.main.connection_name
+    DB_USER            = local.cleanup_db_user
     DB_NAME            = google_sql_database.app.name
   }
 }

@@ -53,20 +53,36 @@ GitHubのデプロイ用サービスアカウントには、対象のArtifact Re
 
 | ファイル | 作るもの | 要点 |
 |---|---|---|
-| `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー2つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
-| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。`forms` は様式の元の PDF とページの画像（`pdf/<元の PDF の sha256>/…`）。api は読むだけで、画面には期限つきの URL で渡す |
+| `sql.tf` | Cloud SQL（PostgreSQL 17、Enterprise、`db-f1-micro`）、DB `careman`、IAM DBユーザー3つ | 自動バックアップ7世代、PITR、`deletion_protection`（Terraformとの両方）、`cloudsql.iam_authentication=on`、パスワードなし。接続はCloud SQL Connector（VPCなし） |
+| `storage.tf` | バケット4つ `<project_id>-t062-source / output / work / forms` | 均一アクセス、公開アクセス防止を強制、バージョニングなし。`source` はSoft Delete 3日、Lifecycleはreadiness確認後にだけ`recordings/`のlive objectへ14日安全弁を付ける。`work` は30日で削除。`source` は `app_origins` からの録音の直接送信用CORS（PUT/POST/GET/OPTIONS、maxAge 3600）。 |
+| `monitoring.tf` | 録音削除のLog-based Metrics、Alert、Dashboard | Cleanup Jobの成功・失敗・再試行・最終失敗・期限超過・DB/GCS保全不一致・滞留を集計する。通知先は `monitoring_notification_channel_ids` で外部から渡し、メールアドレスやWebhookをリポジトリへ保存しない。 |
 | `queue.tf` | Cloud Tasksキュー `t062-jobs`、Schedulerジョブ `t062-reconcile` | 同時配信3、最大5回まで間隔を広げて再試行。Schedulerは5分ごとにworkerの `/tasks/reconcile` をOIDCつきでPOST |
-| `worker.tf` | workerのCloud Runサービス、DB移行のCloud Runジョブ | workerは非公開（`invoker_iam_disabled=false`）、タイムアウト1800秒、最小0・最大2、1 CPU・1Gi。移行ジョブはapiの実行用サービスアカウントで動き、DB の移行と様式の登録（`node db/migrate.ts --forms`）を流す |
-| `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは管理者が作る |
+| `worker.tf` | workerのCloud Runサービス、DB移行Job、録音Cleanup Job | Cleanup Jobは専用サービスアカウント、1 task、900秒、max retries 0で`node worker/recording-cleanup.ts`を実行する。 |
+| `identity.tf` | Identity Platform設定 | メールとパスワードだけを有効、画面からのアカウント作成は禁止（`disabled_user_signup`）。アカウントは、責任者が職員を登録するとき・サイト管理者が最初の責任者を登録するときに api が作る（本人はパスワードを決めるメールから決める） |
 | `budget.tf` | 予算アラート（任意） | `billing_account_id` を指定したときだけ作る |
 | `main.tf` | apiを更新、サービスアカウント追加 | apiは公開（`invoker_iam_disabled=true`。アプリがFirebaseのIDトークンを検証する）、1Gi、タイムアウト900秒、環境変数つき |
+
+録音削除のアラートは、誤って通知先なしで本番適用しないよう、既定では無効です。本番で有効化するときは、Secretやコードへ宛先を保存せず、Cloud Monitoringで通知チャネルを作成してから、`terraform.tfvars` などの環境管理対象へ次を設定します。
+
+```hcl
+recording_cleanup_alerts_enabled      = true
+monitoring_notification_channel_ids   = ["projects/<project-id>/notificationChannels/<channel-id>"]
+monitoring_environment                 = "production"
+recording_cleanup_scheduler_job_name   = "t062-recording-cleanup"
+recording_cleanup_scheduler_paused    = false
+```
+
+通知チャネルIDが空のままアラートを有効化した場合、Terraformのpreconditionで適用を停止します。通知チャネルの作成・変更はTerraformの対象外とし、宛先の変更時はCloud Monitoring側の管理記録と監視Runbookを更新します。
+
+`recording_cleanup_scheduler_paused` の既定値は `true` です。正式イメージのデプロイ、DBマイグレーション、readiness確認、通知確認が完了し、責任者が稼働を承認した後だけ、本番の環境設定で `false` にします。手動の `gcloud scheduler jobs resume` だけで運用せず、Terraformの設定と実リソースを一致させます。
 
 ### サービスアカウントと権限
 
 | サービスアカウント | 付与する権限 |
 |---|---|
-| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読むだけ）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
-| `cloud-run-worker-runtime`（worker） | `cloudsql.client` と `cloudsql.instanceUser`、`source` に `storage.objectViewer`、`work` に `storage.objectAdmin`、`aiplatform.user`、Speech-to-Text（既定は `roles/speech.client`。workerが認識器を作る場合は変数 `worker_speech_role` を `roles/speech.editor` にする）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
+| `cloud-run-api-runtime`（api、移行ジョブ） | `cloudsql.client` と `cloudsql.instanceUser`（プロジェクト単位）、`source` と `output` に `storage.objectAdmin`、`forms` に `storage.objectViewer`（読む）と、上げた PDF の場所（`imports/`・`offices/<office_id>/imports/`）だけに条件つきの `storage.objectCreator`（送信 URL を作る。上書き・削除はできない）、自分自身に `iam.serviceAccountTokenCreator`（録音の送信 URL と、様式の画像の期限つきの URL の署名）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser`、`aiplatform.user`（書き方の相談で Gemini を呼ぶ）、`firebaseauth.admin`（職員を登録するときに Identity Platform のアカウントを作る。プロジェクト単位） |
+| `cloud-run-worker-runtime`（worker） | `cloudsql.client` と `cloudsql.instanceUser`、`source` に `storage.objectViewer`、`work` に `storage.objectAdmin`、`forms` に `storage.objectViewer` と `storage.objectCreator`（様式の取り込み: 上げた PDF を読み、元の PDF とページの画像を新しく置く。上書きはしない）と、上げた PDF の場所だけに条件つきの `storage.objectAdmin`（変換の後に消す）、`aiplatform.user`、Speech-to-Text（既定は `roles/speech.client`。workerが認識器を作る場合は変数 `worker_speech_role` を `roles/speech.editor` にする）、キューに `cloudtasks.enqueuer`、`tasks-invoker` に `iam.serviceAccountUser` |
+| Speech-to-Text service agent | `source` に `storage.bucketViewer` と `storage.objectViewer`。BatchRecognize が `gs://` の録音を直接読むため、API有効化で作られる `service-<project-number>@gcp-sa-speech.iam.gserviceaccount.com` に録音バケットだけの読み取り権限を付ける |
 | `tasks-invoker`（Cloud TasksとSchedulerのOIDCの身元） | workerのCloud Runサービスにだけ `run.invoker` |
 | `github-api-deploy`（デプロイ用） | 上の表のapiと同じ範囲を、workerサービスと移行ジョブにも付ける（`run.developer`）。workerのヘルスチェック呼び出し用にworkerだけ `run.invoker`。workerと移行ジョブの実行用サービスアカウントには `serviceAccountUser` |
 
@@ -82,7 +98,7 @@ workerのURLは「`https://<サービス名>-<プロジェクト番号>.<リー�
 
 ## DBの初期設定（初回に一度だけ）
 
-IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTerraformが作りますが、テーブルを作る権限（`CREATE`）は持っていません。管理者が次の手順で、共通のロール `app` を作って両方を所属させ、スキーマの持ち主にします。`ALTER ROLE ... SET role` により、どちらのユーザーで接続しても `app` として動くので、どちらが作ったテーブルも両方が使えます。
+ IAM認証のDBユーザー（api・worker・録音Cleanupのサービスアカウント）はTerraformが作りますが、テーブルを作る権限（`CREATE`）は持っていません。管理者が次の手順で、`app` とCleanup専用の `recording_cleanup` ロールを作ります。Cleanupロールは録音状態の参照・更新と監査イベントの追記だけを持ち、他テーブルやDDLにはアクセスできません。
 
 1. `terraform output -raw bootstrap_sql` でSQLを出します（ユーザー名が入っています）。
 2. 組み込みの `postgres` ユーザーにパスワードを付けて接続します。作業後はパスワードを使い捨ての値に変えます。
@@ -105,6 +121,12 @@ IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTer
 
 3. 移行はリリースのワークフローが流します。手元から流す場合は、`app` に所属するユーザー（api・workerのサービスアカウントを借りる、または `GRANT app TO` した自分のIAMユーザー）で `DB_USER=... CLOUD_SQL_INSTANCE=... npm run db:migrate` を実行します。`postgres` で流すとテーブルの持ち主が `postgres` になり、api・workerが使えなくなります。
 
+録音Retentionを本番導入するときは、Migration前に`psql -f scripts/recording-retention-migration-check.sql`、Migration後に`psql -f scripts/recording-retention-preflight.sql`を実行し、適用履歴・列・不整合件数・Cleanup専用ロールの権限を読み取り確認します。どちらのSQLもSELECTだけを実行します。`missing_expiry`、`missing_generation`、`missing_purge_expectation`、`expired_active_holds`、`intermediate_deleted_state_mismatch`、`legacy_hold_sync`、`unsynced_holds`、`escalated_holds`、`failed_deletions`、`stuck_deletions`、`stale_uploads`はLifecycle有効化前にすべて0である必要があります。
+Migration後とLifecycle有効化前には、`psql -v ON_ERROR_STOP=1 -f scripts/recording-retention-production-check.sql`も実行します。Migration・同意制約・Retention状態・Cleanupロール権限のいずれかに異常がある場合は非0終了するため、`recording-retention-production-check: OK`を確認できない状態で本番有効化しません。
+
+本番のScheduler・通知・Lifecycleを有効化する前に、[`scripts/enable-recording-retention-production.sh`](../../scripts/enable-recording-retention-production.sh)を`APPLY=false`で実行してTerraform planを確認します。`MONITORING_NOTIFICATION_CHANNEL_IDS`は必須です。Schedulerと通知の初回成功を確認してから、Lifecycleだけを`ENABLE_SOURCE_LIFECYCLE=true`で別途有効化します。直接`terraform apply`や手動Scheduler再開だけで運用を開始しません。
+適用時は`APPLY=true CONFIRM_RECORDING_RETENTION_PRODUCTION=true`を明示し、誤操作で本番設定が変わらないようにします。Lifecycleを有効化するTerraform planは、Scheduler稼働・通知有効化・通知チャネル設定が揃わない場合も失敗します。
+
 ## 様式（アセスメント用紙・入院時情報提供書）を入れる
 
 様式は DB の版つきのデータです（`docs/DB設計.md`）。元の PDF とページの画像は、非公開の `forms` バケットに置きます。どちらもリポジトリには入れません。
@@ -115,7 +137,7 @@ IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTer
 | 初回と、元の PDF が変わったとき | 元の PDF とページの画像を `forms` に入れる | 管理者が手元で `gcloud auth application-default login` のあと、`STORAGE_MODE=gcs GCS_FORMS_BUCKET=$(terraform output -json buckets \| jq -r .forms) npm run forms:assets`（pdftoppm が要る）。場所が元の PDF のハッシュで決まるので DB は要らず、上書きも起きない。入院時情報提供書は公開されていないので、手元の PDF を `forms/tools/templates/admission/base.pdf` に置いたときだけ入る |
 | 新しい版を出したあと | 古い版を指す書類を新しい版に移す | 移行ジョブの引数だけを変えて流す: `gcloud run jobs execute <移行ジョブ> --region <リージョン> --args forms/admin/rebase.ts,--dry-run --wait` で確かめてから、`--dry-run` を外して流す。新しい版が古い版の読んでいた key を全部読むときだけ移す |
 
-`forms` に入れる権限は、管理者の IAM ユーザー（プロジェクトのオーナーなど）を使います。api は読むだけです。
+全体の様式（`pdf/`）を `forms` に入れる権限は、管理者の IAM ユーザー（プロジェクトのオーナーなど）を使います。api は、上げた PDF の送信 URL を作るほかは読むだけです。worker は、上げた PDF から作った様式の PDF と画像を新しく置き（上書きはしない）、上げた PDF を消します。
 
 ## 適用の順序
 
@@ -158,7 +180,7 @@ IAM認証のDBユーザー（apiとworkerのサービスアカウント）はTer
 | 順 | 内容 | 失敗したとき |
 |---|---|---|
 | 1 | DB移行。Cloud Runジョブ（`CLOUD_RUN_MIGRATE_JOB`）のイメージを更新し、`node db/migrate.ts` を `--wait` で流す | そこで止まる。api・workerは変わらない。移行は足すだけで、同時実行は advisory lock で防ぐ |
-| 2 | workerを `node worker/index.ts` で更新し、認証つきで `/healthz` を確認する | 直前のリビジョンに戻して止まる。apiは変わらない |
+| 2 | workerを `node worker/index.ts` で更新し、認証つきで `/health` を確認する | 直前のリビジョンに戻して止まる。apiは変わらない |
 | 3 | apiの候補リビジョンをトラフィックなしで作り、認証付きで検証する | 切り替えない |
 | 4 | apiを100%に切り替え、切り替え後も実APIを検証する | 直前のリビジョンへ戻す |
 

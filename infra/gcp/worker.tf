@@ -112,3 +112,51 @@ resource "google_cloud_run_v2_job" "migrate" {
 
   depends_on = [google_project_service.required]
 }
+
+resource "google_cloud_run_v2_job" "recording_cleanup" {
+  name                = var.recording_cleanup_job_name
+  location            = var.region
+  deletion_protection = true
+
+  template {
+    template {
+      service_account = google_service_account.recording_cleanup.email
+      timeout         = "900s"
+      max_retries     = 0
+
+      containers {
+        image   = var.bootstrap_image
+        command = ["node"]
+        args    = ["worker/recording-cleanup.ts"]
+
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "512Mi"
+          }
+        }
+
+        dynamic "env" {
+          for_each = local.cleanup_env
+
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      template[0].template[0].containers[0].command,
+      template[0].template[0].containers[0].args,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [google_project_service.required]
+}

@@ -1,0 +1,309 @@
+{
+  "key": "D1",
+  "scenario": "D",
+  "repeat": 1,
+  "synthetic": true,
+  "environment": {
+    "provider": "vertex",
+    "model": "gemini-3.8-flash",
+    "location": "global",
+    "projectSha256": "123d95723392284e7b4d2e18c78e18cf99c01f7a8288f5b37f3d2fe826cff96d",
+    "auth": "ADC",
+    "plannedUpperEstimateUsd": 0.44064
+  },
+  "captured": {
+    "startedAt": "2026-11-21T17:17:51.452Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 2940,
+    "promptSha256": "c4561b649268e51ae29ccf41ed2c6b87a5b2f44c17e7ac8857cc058fe6b74f31",
+    "generationConfig": {
+      "temperature": 0.2,
+      "maxOutputTokens": 8192,
+      "responseMimeType": "application/json"
+    },
+    "elapsedMs": 11450,
+    "responseId": "P9IBa-GbHrefvdAPoruWmAo",
+    "modelVersion": "gemini-3.8-flash",
+    "usage": {
+      "promptTokenCount": 708,
+      "candidatesTokenCount": 657,
+      "totalTokenCount": 2220,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 708
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 657
+        }
+      ],
+      "thoughtsTokenCount": 855
+    },
+    "finishReasons": [
+      "STOP"
+    ],
+    "text": "{\n  \"plan1\": {\n    \"plan.intentionAnalysis\": \"本人は現在利用している2つのサービスの継続を希望している。他者との交流を楽しみにしている一方で、自宅の掃除が困難な状態にある。\",\n    \"plan.overallPolicy\": \"本人の意向を踏まえ、現在利用している通所介護と訪問介護を継続し、他者との交流機会の確保および清潔な生活環境の維持を支援する。\"\n  },\n  \"needs\": [\n    {\n      \"need\": \"掃除が困難なため、清潔な生活環境を維持したい\",\n      \"longGoal\": {\n        \"goal\": \"定期的な支援を受け、清潔な住環境で安心して生活できる\",\n        \"periodText\": \"\"\n      },\n      \"shortGoals\": [\n        {\n          \"goal\": \"訪問介護を利用し、居室の清潔を保持する\",\n          \"periodText\": \"\",\n          \"services\": [\n            {\n              \"content\": \"掃除支援\",\n              \"insured\": true,\n              \"kind\": \"訪問介護\",\n              \"provider\": \"架空事業所そら\",\n              \"frequency\": \"週1回\",\n              \"periodText\": \"\"\n            }\n          ]\n        }\n      ]\n    },\n    {\n      \"need\": \"他者との交流の機会を継続したい\",\n      \"longGoal\": {\n        \"goal\": \"通所介護で他者と交流し、張り合いのある生活を継続できる\",\n        \"periodText\": \"\"\n      },\n      \"shortGoals\": [\n        {\n          \"goal\": \"通所介護に通い、交流を楽しむ\",\n          \"periodText\": \"\",\n          \"services\": [\n            {\n              \"content\": \"通所介護サービスによる交流の機会の提供\",\n              \"insured\": true,\n              \"kind\": \"通所介護\",\n              \"provider\": \"架空デイみどり\",\n              \"frequency\": \"週1回\",\n              \"periodText\": \"\"\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"slots\": [\n    {\n      \"serviceRef\": {\n        \"need\": 0,\n        \"shortGoal\": 0,\n        \"service\": 0\n      },\n      \"scheduleType\": \"weekly\",\n      \"weekday\": 2,\n      \"start\": \"14:15\",\n      \"end\": \"15:00\",\n      \"endsNextDay\": false\n    },\n    {\n      \"serviceRef\": {\n        \"need\": 1,\n        \"shortGoal\": 0,\n        \"service\": 0\n      },\n      \"scheduleType\": \"weekly\",\n      \"weekday\": 5,\n      \"start\": \"09:30\",\n      \"end\": \"16:10\",\n      \"endsNextDay\": false\n    }\n  ],\n  \"conflicts\": []\n}"
+  },
+  "generated": {
+    "status": 201,
+    "elapsedMs": 11485,
+    "draft": {
+      "id": "bbce5001-ab7d-4094-856b-c57e039c8138",
+      "planId": "3f44c276-9b5d-433f-81de-81ad4993fc59",
+      "status": "proposed",
+      "sourceDocumentId": "708ff7e2-42a8-4955-ac8c-084785512f6a",
+      "sourceRevisionId": 7,
+      "sourceRevisionRev": 1,
+      "referencedAt": "2026-11-21T17:18:02.927Z",
+      "proposal": {
+        "needs": [
+          {
+            "need": "掃除が困難なため、清潔な生活環境を維持したい",
+            "longGoal": {
+              "goal": "定期的な支援を受け、清潔な住環境で安心して生活できる",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "訪問介護を利用し、居室の清潔を保持する",
+                "services": [
+                  {
+                    "kind": "訪問介護",
+                    "content": "掃除支援",
+                    "insured": true,
+                    "provider": "架空事業所そら",
+                    "frequency": "週1回",
+                    "periodText": ""
+                  }
+                ],
+                "periodText": ""
+              }
+            ]
+          },
+          {
+            "need": "他者との交流の機会を継続したい",
+            "longGoal": {
+              "goal": "通所介護で他者と交流し、張り合いのある生活を継続できる",
+              "periodText": ""
+            },
+            "shortGoals": [
+              {
+                "goal": "通所介護に通い、交流を楽しむ",
+                "services": [
+                  {
+                    "kind": "通所介護",
+                    "content": "通所介護サービスによる交流の機会の提供",
+                    "insured": true,
+                    "provider": "架空デイみどり",
+                    "frequency": "週1回",
+                    "periodText": ""
+                  }
+                ],
+                "periodText": ""
+              }
+            ]
+          }
+        ],
+        "plan1": {
+          "plan.overallPolicy": "本人の意向を踏まえ、現在利用している通所介護と訪問介護を継続し、他者との交流機会の確保および清潔な生活環境の維持を支援する。",
+          "plan.intentionAnalysis": "本人は現在利用している2つのサービスの継続を希望している。他者との交流を楽しみにしている一方で、自宅の掃除が困難な状態にある。"
+        },
+        "slots": [
+          {
+            "end": "15:00",
+            "start": "14:15",
+            "weekday": 2,
+            "serviceRef": {
+              "need": 0,
+              "service": 0,
+              "shortGoal": 0
+            },
+            "endsNextDay": false,
+            "scheduleType": "weekly"
+          },
+          {
+            "end": "16:10",
+            "start": "09:30",
+            "weekday": 5,
+            "serviceRef": {
+              "need": 1,
+              "service": 0,
+              "shortGoal": 0
+            },
+            "endsNextDay": false,
+            "scheduleType": "weekly"
+          }
+        ],
+        "conflicts": []
+      },
+      "conflicts": [],
+      "applied": {},
+      "errorKind": null
+    }
+  },
+  "checks": {
+    "fixedRevision": true,
+    "noAutoApply": true,
+    "reopenWithoutCall": true,
+    "manualEdit": true,
+    "humanPreserved": true,
+    "stillDraft": true,
+    "noDoubleApply": true
+  },
+  "adopted": {
+    "status": 200,
+    "elapsedMs": 26,
+    "applied": {
+      "fields": [
+        "plan.intentionAnalysis"
+      ],
+      "needs": [
+        "c2e392b8-aa87-4054-9387-645a551d5f7c",
+        "edc47e4f-4853-4231-9b5b-a45398aa1947"
+      ],
+      "slots": [
+        "8ffefe69-ff6c-4f69-ba20-ae124b0bf882",
+        "22e2b863-c39f-48d6-80df-74c600154ecd"
+      ],
+      "skipped": [
+        {
+          "target": "plan.overallPolicy",
+          "reason": "human_value"
+        }
+      ]
+    }
+  },
+  "persisted": {
+    "plan1": {
+      "person.name": "架空検証D",
+      "office.name": "架空品質検証事業所",
+      "office.careManagerName": "架空の検証担当",
+      "plan.overallPolicy": "人が編集した方針（検証用・保持）",
+      "plan.intentionAnalysis": "本人は現在利用している2つのサービスの継続を希望している。他者との交流を楽しみにしている一方で、自宅の掃除が困難な状態にある。"
+    },
+    "needs": [
+      {
+        "id": "c2e392b8-aa87-4054-9387-645a551d5f7c",
+        "need": "掃除が困難なため、清潔な生活環境を維持したい",
+        "longGoal": {
+          "id": "93943207-bc5e-4f83-8959-438c2253b08b",
+          "goal": "定期的な支援を受け、清潔な住環境で安心して生活できる",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "d7bdc506-c4ac-4a66-a5b3-802889263c50",
+            "goal": "訪問介護を利用し、居室の清潔を保持する",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": [
+              {
+                "id": "8106b1fc-b1b6-406c-8f41-9ec5a8ce9b6d",
+                "content": "掃除支援",
+                "insured": true,
+                "kind": "訪問介護",
+                "provider": "架空事業所そら",
+                "frequency": "週1回",
+                "periodText": "",
+                "periodFrom": "2026-11-01",
+                "periodTo": "2027-10-31"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "edc47e4f-4853-4231-9b5b-a45398aa1947",
+        "need": "他者との交流の機会を継続したい",
+        "longGoal": {
+          "id": "312e91a9-84d4-44c0-b6b6-25decb71fd8c",
+          "goal": "通所介護で他者と交流し、張り合いのある生活を継続できる",
+          "periodText": "",
+          "periodFrom": "2026-11-01",
+          "periodTo": "2027-10-31"
+        },
+        "shortGoals": [
+          {
+            "id": "3192e469-e65c-4f47-a2a5-a6aca93474a1",
+            "goal": "通所介護に通い、交流を楽しむ",
+            "periodText": "",
+            "periodFrom": "2026-11-01",
+            "periodTo": "2027-10-31",
+            "services": [
+              {
+                "id": "3cd85525-f64d-4fe6-b92f-dc214ba43e93",
+                "content": "通所介護サービスによる交流の機会の提供",
+                "insured": true,
+                "kind": "通所介護",
+                "provider": "架空デイみどり",
+                "frequency": "週1回",
+                "periodText": "",
+                "periodFrom": "2026-11-01",
+                "periodTo": "2027-10-31"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "slots": [
+      {
+        "id": "8ffefe69-ff6c-4f69-ba20-ae124b0bf882",
+        "serviceId": "8106b1fc-b1b6-406c-8f41-9ec5a8ce9b6d",
+        "scheduleType": "weekly",
+        "weekday": 2,
+        "start": "14:15",
+        "end": "15:00",
+        "endsNextDay": false,
+        "note": null,
+        "periodFrom": null,
+        "periodTo": null
+      },
+      {
+        "id": "22e2b863-c39f-48d6-80df-74c600154ecd",
+        "serviceId": "3cd85525-f64d-4fe6-b92f-dc214ba43e93",
+        "scheduleType": "weekly",
+        "weekday": 5,
+        "start": "09:30",
+        "end": "16:10",
+        "endsNextDay": false,
+        "note": null,
+        "periodFrom": null,
+        "periodTo": null
+      }
+    ]
+  },
+  "expected": {
+    "focus": [
+      "掃除の困難",
+      "交流の楽しみ",
+      "既存2サービスの継続"
+    ],
+    "services": [
+      "掃除支援／訪問介護／架空事業所そら／週1回",
+      "通所介護／架空デイみどり／週1回"
+    ],
+    "slots": [
+      {
+        "weekday": 2,
+        "start": "14:15",
+        "end": "15:00",
+        "service": "掃除"
+      },
+      {
+        "weekday": 5,
+        "start": "09:30",
+        "end": "16:10",
+        "service": "通所"
+      }
+    ],
+    "conflictsRequired": false
+  }
+}

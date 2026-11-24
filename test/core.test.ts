@@ -46,3 +46,35 @@ test('文ごとの差分: 足した文、1 か所だけ保存、1 か所だけ�
   // 2 か所目（足した文）だけを保存すると、1 か所目（書き換え）は前の文のまま
   assert.equal(saveOneHunk(before, two, 1), after)
 })
+
+test('空の単行欄への追加: 変更前を空行で示すための追加 Hunk と復帰', () => {
+  const after = '佐藤 春子'
+  const hunks = sentenceDiff('', after)
+  assert.equal(hunks.length, 1)
+  assert.equal(hunks[0].del, '')
+  assert.equal(hunks[0].ins, after)
+  assert.equal(revertHunk(after, hunks[0]), '')
+  assert.equal(saveOneHunk('', after, 0), after)
+})
+
+test('句点を含む単行欄: 複数 Hunk の順序と個別保存・復帰', () => {
+  const before = '元の一文。'
+  const after = '追加した一文。元の一文。もう一つ追加。'
+  const hunks = sentenceDiff(before, after)
+  assert.equal(hunks.length, 2)
+  assert.equal(hunks[0].ins, '追加した一文。')
+  assert.equal(hunks[1].ins, 'もう一つ追加。')
+  assert.equal(revertHunk(after, hunks[0]), '元の一文。もう一つ追加。')
+  assert.equal(saveOneHunk(before, after, 1), '元の一文。もう一つ追加。')
+})
+
+test('人間の確認はbyと別にAIを止める。空欄やシステム値も確認保護を優先する（#16）',()=>{
+ const current={
+  'person.lifeHistory':{value:'確認したAI原案',by:'ai' as const,reviewed:true},
+  'intake.date':{value:'2026-11-23',by:'ai' as const,reviewed:true},
+  'housing.notes':{value:'',by:'ai' as const,reviewed:true},
+ }
+ const result=planBatch(current,{'person.lifeHistory':{value:'新原案'},'intake.date':{value:'2026-11-24'},'housing.notes':{value:'新情報'}},new Set(['intake.date']))
+ assert.deepEqual(result.changes,[])
+ assert.deepEqual(result.kept.map(k=>k.reason),['reviewed','reviewed','reviewed'])
+})
