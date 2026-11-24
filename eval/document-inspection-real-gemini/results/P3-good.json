@@ -1,0 +1,131 @@
+{
+  "id": "P3-good",
+  "synthetic": true,
+  "dry": false,
+  "why": "第2表の訪問介護月木、本人の毎日体操、長女の毎日電話・土曜買物が第3表と一致。",
+  "elapsedMs": 3071,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:35.039Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 9675,
+    "promptSha256": "2406a24d5324c495645e2ade26a6a8d70e5d825cf8ce60d68d1896c37d526f19",
+    "schemaSha256": "29e5ce74a673324f8f33262a7b2077e344dc2cb544b0e64dbc22942064c9e605",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 3053,
+    "responseId": "a-0Ea927D-mevdAP7fO40AE",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2848,
+      "candidatesTokenCount": 164,
+      "totalTokenCount": 3012,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2848
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 164
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"44\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"45\": {\n      \"level\": \"2\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true\n      },\n      \"missing\": null\n    },\n    \"46\": {\n      \"level\": \"2\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true\n      },\n      \"missing\": null\n    },\n    \"47\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "44",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-good",
+        "by": "ai"
+      },
+      {
+        "item": "45",
+        "level": "2",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-good",
+        "by": "ai"
+      },
+      {
+        "item": "46",
+        "level": "2",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "dailySchedule",
+        "documentId": "P3-good",
+        "by": "ai"
+      },
+      {
+        "item": "47",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.weekly",
+        "documentId": "P3-good",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2848,
+      "cachedTokens": 0,
+      "outputTokens": 164,
+      "thinkingTokens": 0,
+      "yen": 0.436164
+    },
+    "ruleItems": 0,
+    "aiItems": 4
+  },
+  "comparisons": [
+    {
+      "id": "44",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "45",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "46",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "47",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

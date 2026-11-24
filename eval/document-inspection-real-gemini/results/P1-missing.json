@@ -1,0 +1,98 @@
+{
+  "id": "P1-missing",
+  "synthetic": true,
+  "dry": false,
+  "why": "参考に十分な情報があっても対象の第1表には意向・分析・方針がない。",
+  "elapsedMs": 3696,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:20.176Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 7582,
+    "promptSha256": "7d9e0b4cd62f278ea36af72daaf824c046f8f4f2490671f64cbf963b7d2e0f4e",
+    "schemaSha256": "2a9b3c7f966188a56222506e552fda17a3eb2f34f5e5fd5296bb18d9e0a5b2a1",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 3683,
+    "responseId": "XO0Ea-yLIO2cvdAP04D_wAo",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2137,
+      "candidatesTokenCount": 143,
+      "totalTokenCount": 2280,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2137
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 143
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"33\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"本人・家族の意向を踏まえた課題分析結果の記載がない\"\n    },\n    \"34\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false,\n        \"③\": false\n      },\n      \"missing\": \"目指すべき方向性や生活機能維持の支援内容が記載されていない\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "33",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "本人・家族の意向を踏まえた課題分析結果の記載がない",
+        "fieldKey": "plan.intentionAnalysis",
+        "documentId": "P1-missing",
+        "by": "ai"
+      },
+      {
+        "item": "34",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false,
+          "③": false
+        },
+        "missing": "目指すべき方向性や生活機能維持の支援内容が記載されていない",
+        "fieldKey": "plan.overallPolicy",
+        "documentId": "P1-missing",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2137,
+      "cachedTokens": 0,
+      "outputTokens": 143,
+      "thinkingTokens": 0,
+      "yen": 0.339102
+    },
+    "ruleItems": 0,
+    "aiItems": 2
+  },
+  "comparisons": [
+    {
+      "id": "33",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "34",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

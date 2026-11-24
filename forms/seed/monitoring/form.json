@@ -1,0 +1,18 @@
+{
+  "kind": "monitoring",
+  "name": "モニタリング記録",
+  "title": "モニタリング記録（アプリ標準様式）",
+  "publisher": "アプリ標準（独自様式）",
+  "sourceUrl": null,
+  "sourceFile": "monitoring.pdf",
+  "basePdfSha256": "517f7883c3a508f5bd7f803a371ba34cde271ed79b7b90789ff05b37b68e24f7",
+  "pages": [
+    {
+      "no": 1,
+      "pdfIndex": 0,
+      "title": "モニタリング記録",
+      "width": 210,
+      "height": 297
+    }
+  ]
+}

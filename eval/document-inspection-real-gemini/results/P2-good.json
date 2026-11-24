@@ -1,0 +1,231 @@
+{
+  "id": "P2-good",
+  "synthetic": true,
+  "dry": false,
+  "why": "課題・長短目標・本人家族の役割・必要根拠・頻度・事業所選択を記載。貸与と有償保険外は不使用明記。",
+  "elapsedMs": 4279,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:23.879Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 15562,
+    "promptSha256": "88bfef1672c3a266a7aa7017e77f67b2949992b5128edbb1679f7a3b5e362e6b",
+    "schemaSha256": "4711e8fe74026de277083fe6205c4324eb0664857b34420bcc8387ab783affa3",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 4261,
+    "responseId": "YO0Ea8DiApGcvdAPjKPG4Ao",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 4811,
+      "candidatesTokenCount": 404,
+      "totalTokenCount": 5215,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4811
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 404
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"35\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true,\n        \"③\": true\n      },\n      \"missing\": null\n    },\n    \"36\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true,\n        \"③\": true\n      },\n      \"missing\": null\n    },\n    \"37\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true,\n        \"③\": true\n      },\n      \"missing\": null\n    },\n    \"38\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true,\n        \"③\": true,\n        \"④\": true,\n        \"⑤\": true\n      },\n      \"missing\": null\n    },\n    \"39\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"40\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"41\": {\n      \"level\": \"他\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"42\": {\n      \"level\": \"他\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"43\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true\n      },\n      \"missing\": null\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "35",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": true
+        },
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "36",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": true
+        },
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "37",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": true
+        },
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "38",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": true,
+          "④": true,
+          "⑤": true
+        },
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "39",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "40",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "41",
+        "level": "他",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "42",
+        "level": "他",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      },
+      {
+        "item": "43",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-good",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 4811,
+      "cachedTokens": 0,
+      "outputTokens": 404,
+      "thinkingTokens": 0,
+      "yen": 0.812081
+    },
+    "ruleItems": 0,
+    "aiItems": 9
+  },
+  "comparisons": [
+    {
+      "id": "35",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "36",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "37",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "38",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "39",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "40",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "41",
+      "expected": "他",
+      "actual": "他",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "42",
+      "expected": "他",
+      "actual": "他",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "43",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

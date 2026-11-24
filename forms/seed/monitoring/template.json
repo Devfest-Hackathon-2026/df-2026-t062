@@ -1,0 +1,259 @@
+{
+  "schemas": [
+    [
+      {
+        "name": "利用者名",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 33,
+          "y": 26
+        },
+        "width": 81,
+        "height": 9,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "horizontal"
+        }
+      },
+      {
+        "name": "実施日",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 138,
+          "y": 26
+        },
+        "width": 59,
+        "height": 9,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "horizontal"
+        }
+      },
+      {
+        "name": "担当者",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 33,
+          "y": 39
+        },
+        "width": 81,
+        "height": 9,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "horizontal"
+        }
+      },
+      {
+        "name": "確認方法",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 143,
+          "y": 39
+        },
+        "width": 54,
+        "height": 9,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "middle",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "horizontal"
+        }
+      },
+      {
+        "name": "ご本人の意向・満足度",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 61
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "ご家族の意向・支援状況",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 93
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "目標の達成状況・生活上の課題",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 125
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "サービスの実施状況・事業所との連絡",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 157
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "心身・生活状況の変化",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 189
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "医療者への報告・連携の内容",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 221
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      },
+      {
+        "name": "今後の対応・次回の確認事項",
+        "type": "text",
+        "content": "",
+        "position": {
+          "x": 13,
+          "y": 253
+        },
+        "width": 184,
+        "height": 22,
+        "fontName": "BIZUDPGothic",
+        "fontSize": 9,
+        "fontColor": "#1a3fa0",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.15,
+        "characterSpacing": 0,
+        "dynamicFontSize": {
+          "min": 5,
+          "max": 9,
+          "fit": "vertical"
+        }
+      }
+    ]
+  ]
+}

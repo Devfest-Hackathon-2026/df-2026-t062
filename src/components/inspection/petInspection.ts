@@ -23,12 +23,14 @@ export function menuStatus(list: InspectionSummary[] | undefined): { text: strin
   if (list[0] && running(list[0])) return { text: '（点検しています…）', tone: 'none' }
   const last = list.find(done)
   if (!last) return { text: '（まだ点検していません）', tone: 'none' }
+  if(!last.verdict)return {text:'（判定できない項目があります）',tone:'none'}
   return last.missingCount ? { text: `（要確認 ${last.missingCount}件）`, tone: 'ng' } : { text: '（適合）', tone: 'ok' }
 }
 
 /** 猫の言葉。pill があれば、評価の札をはさむ */
 export function catMessage(v: InspectionView): { before: string, pill?: '要確認' | '適合', after?: string } {
   if (v.latest && v.changed) return { before: `前の点検（${fmtWhen(v.createdAt)}）のあとに、用紙が変わっています。もう一度点検しますか？` }
+  if(!v.verdict)return {before:`${v.coverage.unjudged}項目を判定できませんでした。書類や情報を確認し、必要に応じてもう一度点検してください。`}
   const ng = v.missingCount > 0
   if (!v.latest) {
     return ng
@@ -54,10 +56,10 @@ export function historyRows(list: InspectionSummary[], currentId: string | null)
   const rows = list.filter(done)
   return rows.map((s, i) => {
     const prev = rows[i + 1]
-    const d = prev ? s.missingCount - prev.missingCount : null
+    const d = prev&&s.status==='succeeded'&&prev.status==='succeeded'&&s.total===prev.total ? s.missingCount - prev.missingCount : null
     return {
       id: s.id, createdAt: s.createdAt, when: fmtWhen(s.createdAt), by: s.createdBy,
-      label: s.missingCount ? `要確認 ${s.missingCount}` : '適合', tone: s.missingCount ? 'ng' : 'ok',
+      label: !s.verdict?'判定保留':s.missingCount ? `要確認 ${s.missingCount}` : '適合', tone: !s.verdict?'none':s.missingCount ? 'ng' : 'ok',
       diff: d === null ? null : d < 0 ? `前回より ${-d} 減` : d > 0 ? `前回より ${d} 増` : '前回と同じ',
       current: s.id === currentId,
     }

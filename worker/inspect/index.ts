@@ -44,10 +44,10 @@ const chunks = <T>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.leng
 /** 段階 1 なのに足りない情報がないときの言葉 */
 const fallbackMissing = (i: CheckItem) => `${i.name}の記載が足りない`
 
-export async function inspect({ set, docs, llm }: { set: CheckSet, docs: InspectDoc[], llm: Llm }): Promise<{ findings: Finding[], usage: Usage, ruleItems: number, aiItems: number }> {
+export async function inspect({ set, docs, llm,contextDocs=[] }: { set: CheckSet, docs: InspectDoc[], llm: Llm,contextDocs?:InspectDoc[] }): Promise<{ findings: Finding[], usage: Usage, ruleItems: number, aiItems: number }> {
   const items = inspectableItems(set, new Set(docs.map((d) => d.kind)))
   const docsOf = (i: CheckItem) => docs.filter((d) => i.docs.includes(d.kind))
-  const texts = new Map(docs.map((d) => [d.id, formText(fieldDict(d.form.localFields), d.form.keys, d.values)]))
+  const texts = new Map([...contextDocs,...docs].map((d) => [d.id, formText(fieldDict(d.form.localFields), d.form.keys, d.values)]))
 
   const jump = (i: CheckItem): Pick<Finding, 'fieldKey' | 'documentId'> => {
     for (const d of docsOf(i)) {
@@ -63,7 +63,7 @@ export async function inspect({ set, docs, llm }: { set: CheckSet, docs: Inspect
   for (const i of items) {
     const rule = RULES[i.id]
     if (!rule || i.method === 'ai') continue
-    const ds = docsOf(i)
+    const ds = [...contextDocs,...docsOf(i)]
     const r = rule({ values: Object.assign({}, ...ds.map((d) => d.values)), text: ds.map((d) => texts.get(d.id)).join('\n') })
     if (r && 'level' in r) decided.set(i.id, { item: i.id, level: r.level, met: {}, missing: r.level === '1' ? r.missing ?? fallbackMissing(i) : null, ...jump(i), by: 'rule' })
     else if (r) met.set(i.id, r.met)
@@ -72,15 +72,16 @@ export async function inspect({ set, docs, llm }: { set: CheckSet, docs: Inspect
 
   // 3. 残りを AI で判定。先頭（書類）は同じにする
   const rest = items.filter((i) => !decided.has(i.id))
-  const prefix = P.head(docs.map((d) => ({ kindName: d.kindName, text: texts.get(d.id)! })))
+  const prefix = P.head([...docs,...contextDocs.map(d=>({...d,kindName:`参考（点検対象外）：${d.kindName}`}))].map((d) => ({ kindName: d.kindName, text: texts.get(d.id)! })))
   for (const group of chunks(rest, CHUNK)) {
     const r = await llm.ask(prefix + P.body(group, met), P.schema(group), { step: '点検' }) as { results?: Record<string, { level?: unknown, met?: unknown, missing?: unknown }> } | null
     for (const i of group) {
       const a = r?.results?.[i.id]
-      const level = LEVELS.find((l) => l === a?.level && i.levels[l]) ?? null
+      const periodOutside=i.id==='37'&&met.get(i.id)?.['③']===false
+      const level = periodOutside?'1':LEVELS.find((l) => l === a?.level && i.levels[l]) ?? null
       const aiMet = a?.met && typeof a.met === 'object' ? Object.fromEntries(Object.entries(a.met).filter(([k, v]) => i.criteria.some((c) => c.mark === k) && typeof v === 'boolean')) as Record<string, boolean> : {}
-      const missing = level === '1' ? (typeof a?.missing === 'string' && a.missing.trim() ? a.missing.trim().slice(0, 80) : fallbackMissing(i)) : null
-      decided.set(i.id, { item: i.id, level, met: { ...aiMet, ...met.get(i.id) }, missing, ...jump(i), by: 'ai' })
+      const missing = periodOutside?'長期目標の期間が認定有効期間外、または開始日と終了日が逆転しています':level === '1' ? (typeof a?.missing === 'string' && a.missing.trim() ? a.missing.trim().slice(0, 80) : fallbackMissing(i)) : null
+      decided.set(i.id, { item: i.id, level, met: { ...aiMet, ...met.get(i.id) }, missing, ...jump(i), by: periodOutside?'rule':'ai' })
     }
   }
 

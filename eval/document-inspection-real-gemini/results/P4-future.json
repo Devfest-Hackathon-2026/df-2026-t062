@@ -1,0 +1,182 @@
+{
+  "id": "P4-future",
+  "synthetic": true,
+  "dry": false,
+  "why": "未開催・未記録を開催済・残課題なしと読まない。",
+  "elapsedMs": 4196,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:43.619Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 6575,
+    "promptSha256": "fc16567f36ec9fdb81e113c5fdc4837ac1da6b881806d2f11c7a51f53961acef",
+    "schemaSha256": "51fb83f34e349abe7ed295849bee5d7f5f1d5294b3a0eec3bb1a43166407698a",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 4193,
+    "responseId": "c-0Ea8zHM7ScvdAPnJjZyQE",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2292,
+      "candidatesTokenCount": 307,
+      "totalTokenCount": 2599,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2292
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 307
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"48\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"会議が開催されていない。\"\n    },\n    \"49\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"利用者の出席が確認できない。\"\n    },\n    \"50\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"家族の出席が確認できない。\"\n    },\n    \"51\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"サービス担当者の出席が記載されていない。\"\n    },\n    \"52\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"開催理由や議題が記載されていない。\"\n    },\n    \"53\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"議題に対する結論や意見が記載されていない。\"\n    },\n    \"54\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"残された課題の有無が記載されていない。\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "48",
+        "level": "1",
+        "met": {},
+        "missing": "会議が開催されていない。",
+        "fieldKey": "meeting.date",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "49",
+        "level": "1",
+        "met": {},
+        "missing": "利用者の出席が確認できない。",
+        "fieldKey": "meeting.personAttended",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "50",
+        "level": "1",
+        "met": {},
+        "missing": "家族の出席が確認できない。",
+        "fieldKey": "meeting.familyAttended",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "51",
+        "level": "1",
+        "met": {},
+        "missing": "サービス担当者の出席が記載されていない。",
+        "fieldKey": "meeting.attendees",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "52",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "開催理由や議題が記載されていない。",
+        "fieldKey": "meeting.items",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "53",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "議題に対する結論や意見が記載されていない。",
+        "fieldKey": "meeting.discussion",
+        "documentId": "P4-future",
+        "by": "ai"
+      },
+      {
+        "item": "54",
+        "level": "1",
+        "met": {},
+        "missing": "残された課題の有無が記載されていない。",
+        "fieldKey": "meeting.remaining",
+        "documentId": "P4-future",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2292,
+      "cachedTokens": 0,
+      "outputTokens": 307,
+      "thinkingTokens": 0,
+      "yen": 0.454799
+    },
+    "ruleItems": 0,
+    "aiItems": 7
+  },
+  "comparisons": [
+    {
+      "id": "48",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "49",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "50",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "51",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "52",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "53",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "54",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

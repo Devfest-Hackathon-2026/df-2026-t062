@@ -1,3 +1,5 @@
+import {TouchInspection} from '../inspection/TouchInspection.tsx'
+import type {InspectionContext} from '../inspection/context.ts'
 import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { CarePaperFlow } from '../care-paper/CarePaperFlow.ts'
 import { CarePlanWork } from './CarePlanWork.tsx'
@@ -16,8 +18,10 @@ type Section = typeof sections[number][0]
 const initialStatus = Object.fromEntries(sections.map(([key]) => [key, { dirty: false, busy: false }])) as Record<Section, { dirty: boolean, busy: boolean }>
 
 /** 書類ごとの入力と選択位置を保持し、ケアプラン内だけで第1〜7表を切り替える。 */
-export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outputTarget, historyRequest, ...props }: ComponentProps<typeof CarePlanWork> & { availableKinds: string[] }) {
+export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outputTarget, historyRequest,onInspectionContextChange, ...props }: ComponentProps<typeof CarePlanWork> & { availableKinds: string[] }) {
   const [active, setActive] = useState<Section>('plans')
+  const [inspectionContexts,setInspectionContexts]=useState<Partial<Record<Section,InspectionContext>>>()
+  useEffect(()=>{onInspectionContextChange?.(inspectionContexts?.[active])},[onInspectionContextChange,active,inspectionContexts])
   const [planTable,setPlanTable]=useState(0)
   const scroll=useRef<HTMLDivElement>(null)
   const anchor=useRef<{number:number;offset:number}|undefined>(undefined)
@@ -28,9 +32,10 @@ export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outp
   const [feeSource, setFeeSource] = useState<CareFeeSourceSelection>()
   const id = useId()
   const callbacks = useMemo(() => Object.fromEntries(sections.map(([key]) => [key, {
+    onInspectionContextChange:(context:InspectionContext|undefined)=>setInspectionContexts(old=>old?.[key]===context?old:{...old,[key]:context}),
     onDirtyChange: (dirty: boolean) => setStatus(old => old[key].dirty === dirty ? old : { ...old, [key]: { ...old[key], dirty } }),
     onBusyChange: (busy: boolean) => setStatus(old => old[key].busy === busy ? old : { ...old, [key]: { ...old[key], busy } }),
-  }])) as Record<Section, { onDirtyChange: (v: boolean) => void, onBusyChange: (v: boolean) => void }>, [])
+  }])) as Record<Section, { onInspectionContextChange:(context:InspectionContext|undefined)=>void,onDirtyChange: (v: boolean) => void, onBusyChange: (v: boolean) => void }>, [])
   const dirty = Object.values(status).some(s => s.dirty), busy = Object.values(status).some(s => s.busy)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
@@ -72,7 +77,7 @@ export function CarePlanArea({ availableKinds, onDirtyChange, onBusyChange, outp
   }
   const shown = sections.filter(([key]) => key === 'plans' || availableKinds.includes(key))
   return <CarePaperFlow.Provider value={true}><div className={`cp-area cp-area-continuous${props.embedded ? ' cp-area-embedded' : ''}`}>
-    <div className="cp-area-tabs" role="tablist" aria-label="ケアプランの書類" aria-orientation="vertical"><strong>ケアプラン用紙</strong>{[0,1,2].map(i=><button type="button" role="tab" id={`${id}-plans-${i}-tab`} key={i} aria-selected={active==='plans'&&planTable===i} disabled={busy} onClick={()=>choose('plans',i)}>{['第1表 基本情報と方針','第2表 ニーズとサービス','第3表 週間計画'][i]}</button>)}{shown.filter(([key])=>key!=='plans').map(([key, label]) =>
+    <div className="cp-area-tabs" role="tablist" aria-label="ケアプランの書類" aria-orientation="vertical"><strong>ケアプラン用紙</strong>{props.touch&&<div className="cp-touch-inspection"><TouchInspection clientId={props.clientId} context={inspectionContexts?.[active]}/></div>}{[0,1,2].map(i=><button type="button" role="tab" id={`${id}-plans-${i}-tab`} key={i} aria-selected={active==='plans'&&planTable===i} disabled={busy} onClick={()=>choose('plans',i)}>{['第1表 基本情報と方針','第2表 ニーズとサービス','第3表 週間計画'][i]}</button>)}{shown.filter(([key])=>key!=='plans').map(([key, label]) =>
       <button type="button" role="tab" id={`${id}-${key}-tab`} aria-selected={active === key} key={key} disabled={busy} onClick={() => choose(key)}>{label}</button>)}</div>
     <div className="cp-area-scroll" ref={scroll} onScroll={trackScroll} onWheel={userScroll} onTouchMove={userScroll} onPointerDown={e=>{if(e.target===e.currentTarget)userScroll()}} onKeyDown={userScroll} role="region" aria-label="ケアプラン全用紙"><div className="cp-area-flow">
     {shown.map(([key]) => <div key={key} className="cp-area-panel" data-care-table={key==='plans'?undefined:key.slice(-1)} data-active={key===active} role="tabpanel" aria-labelledby={key==='plans'?`${id}-plans-${planTable}-tab`:`${id}-${key}-tab`}>

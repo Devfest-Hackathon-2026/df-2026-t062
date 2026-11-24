@@ -27,7 +27,7 @@ export function recordPaperText(slot: string, binding: Binding | undefined, page
     if (index > attendees.length) return
     const attendee = attendees[index]
     const label = `出席者${index + 1}の${{ name: '氏名', affiliation: '所属', profession: '職種' }[field]}`
-    return { label, value: attendee?.[field] ?? '', onChange: value => {
+    return { key,label, value: attendee?.[field] ?? '', onChange: value => {
       const entry = { ...(attendee ?? { id: crypto.randomUUID(), name: '', affiliation: '', profession: '' }), [field]: value }
       const next = [...attendees]
       next[index] = entry
@@ -37,5 +37,5 @@ export function recordPaperText(slot: string, binding: Binding | undefined, page
   const field = textKeys[key]
   if (!field || slot.endsWith('_右') || page > 0) return
   const raw = values[key]
-  return { ...field, value: typeof raw === 'string' ? raw : '', onChange: value => setValue(key, value || null) }
+  return { key,...field, value: typeof raw === 'string' ? raw : '', onChange: value => setValue(key, value || null) }
 }

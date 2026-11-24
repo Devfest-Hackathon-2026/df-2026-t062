@@ -1,3 +1,5 @@
+import {useInspectionContext,focusInspectionField,type OnInspectionContext} from '../inspection/context.ts'
+import {GLOBAL_DICT} from '../../../core/dictionary.ts'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { DocumentOutput } from '../document/DocumentOutput.tsx'
@@ -79,7 +81,8 @@ export function PlanHistoryButton({ disabled, onClick }: { disabled?: boolean, o
   </button>
 }
 
-export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false, continuous=false }: {
+export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = false, onDirtyChange, onBusyChange, outputTarget, historyRequest = 0, active = true, selectedTable=0, hideNavigation=false, continuous=false,onInspectionContextChange }: {
+  onInspectionContextChange?:OnInspectionContext,
   clientId: string, clientName: string, touch: boolean, onBack: () => void, embedded?: boolean,
   onDirtyChange?: (dirty: boolean) => void, onBusyChange?: (busy: boolean) => void, outputTarget?: HTMLElement | null, historyRequest?: number, active?: boolean, selectedTable?:number, hideNavigation?:boolean, continuous?:boolean,
 }) {
@@ -181,13 +184,14 @@ export function CarePlanWork({ clientId, clientName, touch, onBack, embedded = f
         <button className="btn btn-p" disabled={busy} type="submit">{busy ? '作成中…' : '第1〜3表を作る'}</button>
       </form>
     </Modal>}
-    {selected ? <PlanEditor key={selected.id} initial={selected} continuous={continuous} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
+    {selected ? <PlanEditor onInspectionContextChange={onInspectionContextChange} key={selected.id} initial={selected} continuous={continuous} selectedTable={selectedTable} hideNavigation={hideNavigation} outputTarget={outputTarget} clientName={clientName} touch={touch} onDirty={setDirty} onBusy={setChildBusy}
       onUpdated={() => { void loadList().catch((e) => setError(message(e))) }} />
       : listLoaded && hideNavigation ? <>{(continuous?[0,1,2]:[selectedTable]).map(i=><section key={i} className="cp-plan-paper" data-care-table={i+1} data-current={selectedTable===i}><OfficialCareWorkspace formKind={`care_plan_${i+1}`} onStart={() => { setCopyFrom(undefined); setCreating(true) }} values={{}} title={names[i]} status="未作成"><p>用紙はまだ保存されていません。「計画を作る」から入力を開始できます。</p></OfficialCareWorkspace></section>)}</> : !creating && <p className="cp-loading" role="status">計画を読み込んでいます…</p>}
   </div>
 }
 
-function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false, continuous=false }: {
+function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, outputTarget, selectedTable=0, hideNavigation=false, continuous=false,onInspectionContextChange }: {
+  onInspectionContextChange?:OnInspectionContext,
   selectedTable?:number,hideNavigation?:boolean,continuous?:boolean,
   outputTarget?: HTMLElement | null,
   initial: CarePlanView, clientName: string, touch: boolean, onDirty: (dirty: boolean) => void,
@@ -270,6 +274,27 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     setAiNeeds(new Set())
     await Promise.all(documents.map((d) => d.reload())); onUpdated(); setNotice('第1〜3表を保存しました')
   })
+  const inspectionRoot=useRef<HTMLDivElement>(null)
+  const flushInspection=async()=>{
+    if(gate.current)return false
+    gate.current=true;setBusy(true);onBusy(true);setError('')
+    try{
+      const result=await savePlanEdits({
+        flush:async()=>{for(const d of documents)if(!await d.flush())return false;return true},
+        needs:async()=>{if(same(needs,plan.needs))return plan.lockVersion;const r=await api.carePlanNeeds(plan.id,plan.lockVersion,needs);setPlan(r.plan);setNeeds(r.plan.needs);return r.plan.lockVersion},
+        schedule:async version=>{if(same(slots,plan.slots))return version;const r=await api.carePlanSchedule(plan.id,version,slots);setPlan(r.plan);setSlots(r.plan.slots);return r.plan.lockVersion},
+        save:async version=>{const r=await api.carePlan(plan.id);if(r.plan.lockVersion!==version)throw new Error('入力が変わりました。確認してから点検してください。');return r},
+      })
+      setPlan(result.plan);setNeeds(result.plan.needs);setSlots(result.plan.slots)
+      return true
+    }catch(e){setError(message(e));return false}finally{gate.current=false;setBusy(false);onBusy(false)}
+  }
+  useInspectionContext(onInspectionContextChange,ready?plan.documents.find(d=>d.formNo===active+1)?.documentId:undefined,flushInspection,key=>{
+    if(key==='plan.needs')setNeedsOpen(true)
+    else if(key==='plan.weekly'||key==='plan.nonWeeklyServices')setScheduleOpen(true)
+    else if(key==='dailySchedule')setActivitiesOpen(true)
+    else focusInspectionField(inspectionRoot.current,GLOBAL_DICT.get(key)?.label??key,key)
+  })
   const replaceNeeds = (next: NeedInput[], confirmAction?: string) => {
     const ids = new Set(next.flatMap((n) => (n.shortGoals ?? []).flatMap((g) => (g.services ?? []).map((s) => s.id))))
     const removedSlots = slots.filter((slot) => !ids.has(slot.serviceId) && slot.serviceId)
@@ -331,7 +356,7 @@ function PlanEditor({ initial, clientName, touch, onDirty, onBusy, onUpdated, ou
     })} />
   return <>
     {outputTarget && createPortal(output, outputTarget)}
-    <div className={`cp-layout${hideNavigation?' cp-layout-single':''}`}>
+    <div ref={inspectionRoot} className={`cp-layout${hideNavigation?' cp-layout-single':''}`}>
       {!hideNavigation&&<nav className="cp-nav" aria-label="ケアプランの表"><div className="cp-nav-title">ケアプラン用紙</div>{names.map((name, i) => <button type="button" key={name} className={`nav-i ${active === i ? 'nav-on' : ''}`} aria-current={active === i ? 'page' : undefined} onClick={() => setActive(i)}><span className="no">{i + 1}</span>{name}</button>)}
 
       </nav>}

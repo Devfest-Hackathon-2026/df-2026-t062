@@ -1,0 +1,182 @@
+{
+  "id": "P4-good",
+  "synthetic": true,
+  "dry": false,
+  "why": "開催済、本人家族・全担当者出席、開催理由・議題・意見・結論・残課題なしを明記。",
+  "elapsedMs": 2573,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:41.049Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 7658,
+    "promptSha256": "c756a6b85e885d22338a15a19466f39918602463a2632533937ece025fe6e4f2",
+    "schemaSha256": "51fb83f34e349abe7ed295849bee5d7f5f1d5294b3a0eec3bb1a43166407698a",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 2567,
+    "responseId": "ce0Ea6HiDemevdAP7fO40AE",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2580,
+      "candidatesTokenCount": 254,
+      "totalTokenCount": 2834,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2580
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 254
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"48\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"49\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"50\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"51\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"52\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true\n      },\n      \"missing\": null\n    },\n    \"53\": {\n      \"level\": \"3\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true\n      },\n      \"missing\": null\n    },\n    \"54\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "48",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "meeting.date",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "49",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "meeting.personAttended",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "50",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "meeting.familyAttended",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "51",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "meeting.attendees",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "52",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "meeting.items",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "53",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "meeting.discussion",
+        "documentId": "P4-good",
+        "by": "ai"
+      },
+      {
+        "item": "54",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "meeting.remaining",
+        "documentId": "P4-good",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2580,
+      "cachedTokens": 0,
+      "outputTokens": 254,
+      "thinkingTokens": 0,
+      "yen": 0.457642
+    },
+    "ruleItems": 0,
+    "aiItems": 7
+  },
+  "comparisons": [
+    {
+      "id": "48",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "49",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "50",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "51",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "52",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "53",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "54",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

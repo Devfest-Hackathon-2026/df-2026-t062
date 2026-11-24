@@ -1483,3 +1483,13 @@ async function assertPlanDocumentDraft(db: Q, officeId: string, documentId: stri
   )
   if (result.rows[0] && result.rows[0].status !== 'draft') throw new PlanNotDraft()
 }
+
+/** 点検の読み取り専用射影。保存を行わず、編集中のニーズ・予定も読む（#221）。 */
+export async function inspectionProjection(db: Q, documentId: string): Promise<Record<string,unknown>> {
+  const row=(await db.query('SELECT plan_id,form_no FROM care_plan_documents WHERE document_id=$1',[documentId])).rows[0]
+  if(!row || ![2,3].includes(Number(row.form_no)))return {}
+  const needs=await readNeeds(db,row.plan_id)
+  if(Number(row.form_no)===2)return {'plan.needs':needsProjection(needs)}
+  const schedule=scheduleProjection(needs,await readSlots(db,row.plan_id))
+  return {'plan.weekly':schedule.weekly,'plan.nonWeeklyServices':schedule.nonWeeklyServices}
+}
