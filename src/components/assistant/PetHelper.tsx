@@ -265,7 +265,7 @@ export function PetHelper({ clientId,inspectionContext,inspectionUnavailable=fal
             {fill && <PetFillNote fill={fill} />}
             <div className="assistant-stack assistant-menu">
               {menus.filter(({ id }) => id !== 'inspect' || clientId).map(({ id, icon, title }) => (
-                <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" className={id === action ? "assistant-card assistant-card-suggested" : "assistant-card"} onClick={() => open(id)}>
+                <button key={id} ref={(node) => { menuButtons.current[id] = node }} type="button" disabled={id === 'revise' && !chat.documentId} className={id === action ? "assistant-card assistant-card-suggested" : "assistant-card"} onClick={() => open(id)}>
                   <PetIcon name={icon} />
                   <span><strong>{title}</strong>{id === 'review' && <small>（未確認 {pending}件）</small>}
                     {id === 'documents' && inputStatus && <small role="status">{inputStatus}</small>}
