@@ -1,0 +1,79 @@
+{
+  "利用者名": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "person.name"
+    }
+  },
+  "実施日": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monitoring.date"
+    }
+  },
+  "担当者": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "office.careManagerName"
+    }
+  },
+  "確認方法": {
+    "op": "text@1",
+    "ui": "text",
+    "ref": {
+      "key": "monitoring.method"
+    }
+  },
+  "ご本人の意向・満足度": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.personOpinion"
+    }
+  },
+  "ご家族の意向・支援状況": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.familyOpinion"
+    }
+  },
+  "目標の達成状況・生活上の課題": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.goalStatus"
+    }
+  },
+  "サービスの実施状況・事業所との連絡": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.serviceContacts"
+    }
+  },
+  "心身・生活状況の変化": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.changes"
+    }
+  },
+  "医療者への報告・連携の内容": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.medicalReport"
+    }
+  },
+  "今後の対応・次回の確認事項": {
+    "op": "text@1",
+    "ui": "area",
+    "ref": {
+      "key": "monitoring.nextActions"
+    }
+  }
+}

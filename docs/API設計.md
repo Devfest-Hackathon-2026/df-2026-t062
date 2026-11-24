@@ -44,9 +44,10 @@
 | `GET /api/clients/:id/jobs` | 処理中・終わって15分以内・最後のジョブ。AI が処理できなかった欄と形式不一致で反映できなかった欄を `incompleteFields` の key 配列で返す。PDF プレビューは該当欄を赤枠にする | `{jobs:[{status, step, etaSeconds, batch:{changes, kept}, incompleteFields, errorKind}]}` |
 | `POST /api/documents/:id/fill` | 書類を作るときに、元の書類（`create_from` の種類の、いちばん新しい書類）から AI が書く（#195）。裏の仕事（worker）。元の書類がない・ケアプランの書類は 409。同じ書類の仕事が待っているか動いていれば、それを返す（2 つ走らない） | `202 {fillId}` |
 | `GET /api/documents/:id/fill` | その書類のいちばん新しい仕事。まだ頼んでいなければ null。`step` は画面に出す段（`read` 元の書類を読む・`write` 欄に書く・`check` 書いた中身を確かめる・`done`）。`changes` は書類に入れた欄の数 | `{fill:{id, status, step, changes, sourceName} \| null}` |
-| `POST /api/clients/:id/inspections` | AI 点検を始める（`{checkSet?}`。省くと `mhlw-careplan@2026-03`。ない物差しは 400）。点検は裏の仕事（worker）。同じ利用者の点検が待っているか動いていれば、その点検を返す（2 つ走らない）。点検は書類の値を読むだけで、値は変えない（[16_書類と点検の基盤.md](再設計/16_書類と点検の基盤.md) の「AI 点検」） | `202 {inspectionId}` |
-| `GET /api/clients/:id/inspections` | これまでの点検（新しい順）。終わっていない点検は `verdict` が null。メニューの「点検する」の状態にも使う | `{inspections:[{id, status, createdAt, createdBy, verdict, missingCount, total}]}`（`verdict` は `要確認`／`適合`、`missingCount` は段階 1 の項目の数、`total` は段階の付いた項目の数） |
-| `GET /api/inspections/:id` | 点検 1 回の結果。点検した項目だけを物差しの順に（今はアセスメントの 32 項目。第1〜5表の項目は入れない）。段階が 1 の項目だけ `missing`（何が足りないか）。`fieldKey` は押したときに移る欄（null は用紙に欄なし）。分類ごとの「満たしている数 / 項目の数」（「他」は満たしている側）。`changed` は、利用者のいちばん新しい点検で、そのあとに読んだ書類の値が変わったか（ほかの点検と終わっていない点検は null） | `{inspection:{id, status, createdAt, createdBy, checkSet, verdict, missingCount, total, categories:[{category, satisfied, total}], items:[{id, name, category, level, missing, fieldKey, documentId}], latest, changed}}` |
+| `POST /api/clients/:id/inspections` | `{checkSet?,documentId?}`。省略時は既定の物差し・主な書類。対象は指定した1書類。同じ書類・物差しで待機中／実行中なら既存点検を返す。値や保存版を変更しない | `202 {inspectionId}` |
+| `GET /api/clients/:id/inspection-scope?documentId=…` | 対象の書類名、適用項目数、分類、未点検の内訳。未点検は今回の対象外／書類なし／書類だけでは判断不可を区別。`care.work` が必要 | `{documentId,documentName,coverage,categories}` |
+| `GET /api/clients/:id/inspections?documentId=…` | 書類ごとの履歴（省略時は利用者全体、新しい順）。他の事業所・利用者の書類は404 | `{inspections:[{id,documentId,documentName,status,createdAt,createdBy,verdict,missingCount,total}]}` |
+| `GET /api/inspections/:id` | 対象書類の項目だけを物差し順に返す。`total` は段階が付いた数。未判定を適合に数えない。段階1があれば要確認、全項目を判定済みなら適合、0件・一部未判定で不足もなければ `verdict:null`。最新・変更検出も書類単位 | `{inspection:{id,documentId,documentName,status,createdAt,createdBy,checkSet,verdict,missingCount,total,coverage:{total,applicable,evaluated,unjudged,uninspected,groups:[{kinds,reason,count}]},references:[{documentId,kind,rev,unsaved,role,formVersionId}],categories:[{category,satisfied,total}],items:[{id,name,category,level,missing,fieldKey,documentId}],latest,changed}}` |
 
 ### 責任者の入口（操作は `staff.manage`）
 
@@ -124,7 +125,7 @@
 | `POST /tasks/jobs/:id/run` | Cloud Tasks（OIDC） | 録音 1 本の処理。応答の前に終える。失敗は 500（Cloud Tasks が間をあけてやり直す）。AI が書く欄は、録音がつながった書類の様式の版から決める（版が読む欄のうち、出どころに会話・書類・案がある欄。その様式だけの欄は説明書き `note` のあるもの） |
 | `POST /tasks/form-imports/:id/run` | Cloud Tasks（OIDC） | 上げた PDF から様式の下書きの版を作る（`worker/form-import/job.ts`）。期限つきの印で 1 回だけ動く。済んだら上げたままの PDF を消す。置き場か DB の誤りは 500（3 回で `failed`・`internal`）。変換の失敗（PDF でない など）は 200 で `failed` |
 | `POST /tasks/document-fills/:id/run` | Cloud Tasks（OIDC） | 書類を作るときに AI が書く（`worker/document-fill/job.ts`）。期限つきの印で 1 回だけ動く。書く欄を決め（文字の欄と、空のほかの型の欄。ケアマネが書いた欄は除く）、元の書類の値の文と値を入れたページの画像を材料に、書く先のページごとに Gemini に頼む。型・選択肢・はみ出しで外れた欄だけ 1 回頼み直し、最後に根拠のない部分を切らせて、`applyBatch`（記録は `fill`）で書類に入れる。失敗は 500（3 回で `failed`） |
-| `POST /tasks/inspections/:id/run` | Cloud Tasks（OIDC） | AI 点検（`worker/inspect/job.ts`）。期限つきの印で 1 回だけ動く。利用者の書類（種類ごとにいちばん新しいもの）の今の値を読み（録音は読まない）、プログラムで決まる観点（BMI など）を先に判定し、残りを AI（Gemini。項目を 16 ずつ分けて聞く）が判定する。失敗は 500（3 回で `failed`） |
+| `POST /tasks/inspections/:id/run` | Cloud Tasks（OIDC） | AI 点検（`worker/inspect/job.ts`）。期限つきの印で 1 回だけ動く。指定された書類の現在値を同一スナップショットで読み、第1〜3表では同じ計画版の別表と主なアセスメントを参考にする。参考書類は項目数に含めない。第4・5表を最新の別記録に取り替えない。欄値・構造化されたニーズ／予定・様式版の指紋を残し（録音は読まない）、プログラムで決まる観点（BMI など）を先に判定し、残りを AI（Gemini。項目を 16 ずつ分けて聞く）が判定する。失敗は 500（3 回で `failed`） |
 | `POST /tasks/reconcile` | Cloud Scheduler（5 分ごと） | 積み損ね・止まった処理を積み直す（録音・様式の取り込み・AI 点検）。失敗して 7 日たった・送り終わらなかった上げたままの PDF を消す |
 | `GET /health` | — | worker が動いているか |
 

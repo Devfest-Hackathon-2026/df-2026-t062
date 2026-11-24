@@ -1,0 +1,166 @@
+{
+  "generatedAt": "2026-11-24T01:52:53.102Z",
+  "successful": 12,
+  "failed": 0,
+  "notExecuted": [],
+  "uniqueItems": 28,
+  "judgments": 62,
+  "exact": 59,
+  "missed": [
+    {
+      "scenario": "P2-conflict",
+      "id": "39",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "scenario": "P2-conflict",
+      "id": "41",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "scenario": "P2-conflict",
+      "id": "42",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    }
+  ],
+  "extra": [],
+  "unjudged": [],
+  "diff": [
+    {
+      "scenario": "P2-conflict",
+      "id": "39",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "scenario": "P2-conflict",
+      "id": "41",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "scenario": "P2-conflict",
+      "id": "42",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    }
+  ],
+  "rawDifferences": [],
+  "input": 32349,
+  "output": 2785,
+  "thinking": 0,
+  "cached": 0,
+  "estimatedUsd": 0.0347055,
+  "latencySeconds": {
+    "min": 2.042,
+    "max": 6.854,
+    "mean": 3.3905833333333337
+  },
+  "cases": [
+    {
+      "id": "P1-good",
+      "status": "success",
+      "exact": 2,
+      "total": 2,
+      "seconds": 2.504
+    },
+    {
+      "id": "P1-missing",
+      "status": "success",
+      "exact": 2,
+      "total": 2,
+      "seconds": 3.683
+    },
+    {
+      "id": "P2-good",
+      "status": "success",
+      "exact": 9,
+      "total": 9,
+      "seconds": 4.261
+    },
+    {
+      "id": "P2-conflict",
+      "status": "success",
+      "exact": 6,
+      "total": 9,
+      "seconds": 6.854
+    },
+    {
+      "id": "P3-good",
+      "status": "success",
+      "exact": 4,
+      "total": 4,
+      "seconds": 3.053
+    },
+    {
+      "id": "P3-missing",
+      "status": "success",
+      "exact": 4,
+      "total": 4,
+      "seconds": 2.927
+    },
+    {
+      "id": "P4-good",
+      "status": "success",
+      "exact": 7,
+      "total": 7,
+      "seconds": 2.567
+    },
+    {
+      "id": "P4-future",
+      "status": "success",
+      "exact": 7,
+      "total": 7,
+      "seconds": 4.193
+    },
+    {
+      "id": "P5-good",
+      "status": "success",
+      "exact": 6,
+      "total": 6,
+      "seconds": 2.56
+    },
+    {
+      "id": "P5-future",
+      "status": "success",
+      "exact": 6,
+      "total": 6,
+      "seconds": 3.708
+    },
+    {
+      "id": "M-good",
+      "status": "success",
+      "exact": 3,
+      "total": 3,
+      "seconds": 2.335
+    },
+    {
+      "id": "M-missing",
+      "status": "success",
+      "exact": 3,
+      "total": 3,
+      "seconds": 2.042
+    }
+  ]
+}

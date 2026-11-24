@@ -97,8 +97,8 @@ beforeEach(() => {
 })
 
 /** 点検を始めて、終わるまで待つ */
-async function inspect(clientId = ids.kai, token = A) {
-  const started = await call(`/api/clients/${clientId}/inspections`, token, { method: 'POST', body: '{}' })
+async function inspect(clientId = ids.kai, token = A,documentId?:string) {
+  const started = await call(`/api/clients/${clientId}/inspections`, token, { method: 'POST', body: JSON.stringify({documentId}) })
   assert.equal(started.status, 202, JSON.stringify(started.body))
   const id = started.body.inspectionId as string
   for (let i = 0; i < 200; i++) {
@@ -198,7 +198,7 @@ test('これまでの点検: 新しい順。前の回の結果を開ける。い
   assert.equal(list.status, 200)
   const mine = list.body.inspections.filter((x: any) => [first.id, second.id].includes(x.id))
   assert.deepEqual(mine.map((x: any) => x.id), [second.id, first.id])
-  assert.deepEqual(Object.keys(mine[0]).sort(), ['createdAt', 'createdBy', 'id', 'missingCount', 'status', 'total', 'verdict'])
+  assert.deepEqual(Object.keys(mine[0]).sort(), ['createdAt', 'createdBy','documentId','documentName', 'id', 'missingCount', 'status', 'total', 'verdict'])
   assert.equal(mine[0].missingCount, 2)
   assert.equal(mine[1].missingCount, 3)
 
@@ -277,7 +277,7 @@ test('権限: ほかの事業所の利用者・点検は 404。ログインし�
   assert.equal((await call('/api/inspections/not-a-uuid', A)).status, 404)
 })
 
-test('ケアプランを作成済みでも、現行の点検APIはアセスメントだけを読む', { skip }, async () => {
+test('旧APIの対象省略は主な書類を読む（明示した別の書類には切り替えない）', { skip }, async () => {
   const plan = await call(`/api/clients/${ids.kai}/care-plans`, A, {
     method: 'POST', body: JSON.stringify({ effectiveFrom: '2026-04-01' }),
   })
@@ -286,4 +286,98 @@ test('ケアプランを作成済みでも、現行の点検APIはアセスメ�
   assert.equal(result.total, 32)
   const { rows: [stored] } = await db.query('SELECT inputs FROM inspections WHERE id = $1', [result.id])
   assert.deepEqual(stored.inputs.map(({ kind }: { kind: string }) => kind), ['assessment'])
+})
+
+test('第1〜3表: 開いた表だけを点検し、同じ計画版を参考に未保存の構造・期間を読む', {skip},async()=>{
+ const repo=await import('../db/repo.ts'),cp=await import('../db/care-plans.ts'),forms=await import('../db/forms.ts')
+ const staff=(await repo.staffByAuth(db,'dev:kato@example.com'))!
+ const client=await repo.createClient(db,staff,{name:'架空 計画点検'})
+ let plan=await cp.createCarePlan(db,staff,client.id,{effectiveFrom:'2026-04-01',effectiveTo:null,copyFromPlanId:null})
+ const doc=(n:number)=>plan.documents.find(d=>d.formNo===n)!.documentId
+ await repo.patchFields(db,staff,doc(1),[{key:'cert.validFrom',value:'2026-01-01',base:null},{key:'cert.validTo',value:'2026-12-31',base:null}])
+ plan=await cp.saveCarePlanNeeds(db,staff,plan.id,plan.lockVersion,[{need:'架空の外出支援',longGoal:{goal:'架空の長期目標',periodText:'2026/4/1〜2027/3/31'},shortGoals:[]}])
+ const before=await values(doc(2)),revsBefore=(await db.query('SELECT count(*)::int AS n FROM revisions WHERE document_id=$1',[doc(2)])).rows[0].n
+ const result=await inspect(client.id,A,doc(2))
+ assert.deepEqual(result.items.map((i:any)=>i.id),Array.from({length:9},(_,i)=>String(35+i)))
+ assert.ok(result.references.some((d:any)=>d.documentId===doc(1)&&d.formVersionId))
+ assert.equal(result.documentId,doc(2));assert.equal(result.coverage.applicable,9)
+ assert.equal(result.items.find((i:any)=>i.id==='37').level,'1','AIの適合回答があっても期間外の機械判定を覆さない')
+ const form=await forms.loadFormDef(db,plan.documents.find(d=>d.formNo===2)!.formVersionId)
+ for(const item of result.items){assert.ok(form.keys.includes(item.fieldKey),item.id);assert.equal(item.documentId,doc(2))}
+ assert.ok(asked.some(a=>a.ids.includes('37')&&a.prompt.includes('架空の外出支援')&&/③.*プログラムで確かめ済み: 当たらない/.test(a.prompt)))
+ assert.deepEqual(await values(doc(2)),before,'点検で構造の射影を保存しない')
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM revisions WHERE document_id=$1',[doc(2)])).rows[0].n,revsBefore)
+ assert.deepEqual((await inspect(client.id,A,doc(1))).items.map((i:any)=>i.id),['33','34'])
+ assert.deepEqual((await inspect(client.id,A,doc(3))).items.map((i:any)=>i.id),['44','45','46','47'])
+ assert.equal((await call(`/api/inspections/${result.id}`,A)).body.inspection.latest,true,'別書類の点検で最新扱いを失わない')
+ const version=(await db.query('SELECT template_version_id FROM documents WHERE id=$1',[doc(2)])).rows[0].template_version_id
+ const inputHash=(await db.query('SELECT inputs_sha FROM inspections WHERE id=$1',[result.id])).rows[0].inputs_sha
+ const {valuesSha,currentValues}=await import('../db/inspections.ts')
+ assert.notEqual(valuesSha([{documentId:doc(2),values:await currentValues(db,doc(2)),formVersionId:version}]),valuesSha([{documentId:doc(2),values:await currentValues(db,doc(2)),formVersionId:crypto.randomUUID()}]),'同じ値でも様式版の変更を検出する')
+ assert.match(inputHash,/^[a-f0-9]{64}$/)
+ await cp.saveCarePlanNeeds(db,staff,plan.id,plan.lockVersion,[{...plan.needs[0],need:'点検後に変更'}])
+ assert.equal((await call(`/api/inspections/${result.id}`,A)).body.inspection.changed,true,'未保存の構造変更も指紋で検出する')
+})
+
+test('第4・5表: 古い記録を指定しても別の最新記録に取り替えず、結果の移動先も指定した書類', {skip},async()=>{
+ const repo=await import('../db/repo.ts'),records=await import('../db/care-records.ts')
+ const staff=(await repo.staffByAuth(db,'dev:kato@example.com'))!
+ const client=await repo.createClient(db,staff,{name:'架空 記録点検'})
+ for(const [kind,key,expected] of [['care_plan_4','meeting.discussion',['48','49','50','51','52','53','54']],['care_plan_5','progress.content',['55','56','57','58','59','60']]] as const){
+  const first=await records.createCareRecord(db,staff,client.id,{kind,requestId:crypto.randomUUID()})
+  const newer=await records.createCareRecord(db,staff,client.id,{kind,requestId:crypto.randomUUID()})
+  await repo.patchFields(db,staff,first.id,[{key,value:'架空対象Aの記録',base:null}])
+  await repo.patchFields(db,staff,newer.id,[{key,value:'架空対象外Bの記録',base:null}])
+  asked=[]
+  const result=await inspect(client.id,A,first.id)
+  assert.deepEqual(result.items.map((i:any)=>i.id),expected)
+  assert.ok(asked.every(a=>a.prompt.includes('架空対象Aの記録')&&!a.prompt.includes('架空対象外Bの記録')))
+  for(const item of result.items)assert.equal(item.documentId,first.id)
+  const listing=await call(`/api/clients/${client.id}/inspections?documentId=${first.id}`,A)
+  assert.ok(listing.body.inspections.every((i:any)=>i.documentId===first.id))
+ }
+})
+
+test('モニタリング: 作成・保存・PDFと58〜60番の点検を既存の書類APIで行う', {skip},async()=>{
+ const repo=await import('../db/repo.ts')
+ const staff=(await repo.staffByAuth(db,'dev:kato@example.com'))!
+ const client=await repo.createClient(db,staff,{name:'架空 モニタリング'})
+ const doc=await repo.createDocument(db,staff,client.id,'monitoring')
+ const before=(await repo.getDocument(db,staff.officeId,doc.id)).fields
+ await repo.patchFields(db,staff,doc.id,[{key:'monitoring.date',value:'2026-11-24',base:null},{key:'monitoring.goalStatus',value:'架空の目標達成状況を確認した。',base:null},{key:'monitoring.changes',value:'架空の生活状況に変化なし。',base:null}])
+ const r=await repo.saveDocument(db,staff,doc.id,{scope:'document'})
+ assert.ok(r.rev>0);assert.equal(before['monitoring.goalStatus'],undefined)
+ const result=await inspect(client.id,A,doc.id)
+ assert.deepEqual(result.items.map((i:any)=>i.id),['58','59','60'])
+ assert.equal(result.coverage.applicable,3)
+ assert.ok(result.items.every((i:any)=>i.documentId===doc.id&&i.fieldKey.startsWith('monitoring.')))
+ const {LocalStorage}=await import('../api/storage.ts'),{ensurePdf}=await import('../forms/admin/pdf.ts'),{putFormAssets}=await import('../forms/admin/assets.ts'),{readMeta}=await import('../forms/admin/files.ts'),{makePdf}=await import('../api/pdf.ts'),{loadVersion}=await import('../db/forms.ts')
+ const storage=new LocalStorage(await mkdtemp(join(tmpdir(),'monitoring-pdf-')))
+ const {pdf}=await ensurePdf('monitoring');assert.ok(pdf)
+ await putFormAssets(storage,readMeta('monitoring'),pdf!,{images:false})
+ const current=await repo.getDocument(db,staff.officeId,doc.id)
+ const bytes=await makePdf(storage,await loadVersion(db,current.formVersionId),Object.fromEntries(Object.entries(current.saved).map(([k,v])=>[k,v.value])))
+ assert.equal(Buffer.from(bytes).subarray(0,4).toString(),'%PDF')
+ const {openPdf}=await import('../worker/form-import/pdf.ts');const parsed=await openPdf(bytes)
+ try{assert.ok((await parsed.layout(1)).words.map(w=>w.t).join('').includes('架空の目標達成状況を確認した。'))}finally{await parsed.close()}
+})
+
+test('書類単位の同時実行・権限・点検範囲・判定対象のない書類を安全に扱う', {skip},async()=>{
+ const repo=await import('../db/repo.ts'),ins=await import('../db/inspections.ts')
+ const staff=(await repo.staffByAuth(db,'dev:kato@example.com'))!
+ const client=await repo.createClient(db,staff,{name:'架空 範囲確認'})
+ const admission=await repo.createDocument(db,staff,client.id,'admission')
+ const primary=(await repo.getClient(db,staff.officeId,client.id)).documents.find(d=>d.kind==='assessment')!
+ const start=()=>ins.createInspection(db,staff,client.id,DEFAULT_CHECK_SET,primary.id)
+ const concurrent=await Promise.all([start(),start()]);assert.equal(concurrent[0].id,concurrent[1].id)
+ await db.query("UPDATE inspections SET status='failed' WHERE id=$1",[concurrent[0].id])
+ const scope=await ins.inspectionScope(db,staff.officeId,client.id,primary.id)
+ assert.equal(scope.coverage.applicable,32);assert.equal(scope.coverage.uninspected,30)
+ assert.equal(scope.coverage.groups.reduce((sum,g)=>sum+g.count,0),30)
+ assert.ok(scope.coverage.groups.some(g=>g.kinds.includes('care_plan_4')&&g.reason==='missing_document'))
+ const result=await inspect(client.id,A,admission.id)
+ assert.equal(result.verdict,null);assert.equal(result.total,0);assert.equal(result.status,'partial')
+ assert.equal(asked.length,0,'対象がなければAIへの追加課金をしない')
+ assert.equal((await call(`/api/clients/${client.id}/inspections?documentId=${ids.kaiDoc}`,A)).status,404)
+ assert.equal((await call(`/api/clients/${client.id}/inspection-scope?documentId=${admission.id}`,B)).status,404)
 })

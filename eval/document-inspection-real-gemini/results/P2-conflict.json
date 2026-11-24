@@ -1,0 +1,231 @@
+{
+  "id": "P2-conflict",
+  "synthetic": true,
+  "dry": false,
+  "why": "課題と役割・根拠・頻度・選択経緯が欠落。認定外期間。貸与のみなので40は他。",
+  "elapsedMs": 6879,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:28.161Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 14289,
+    "promptSha256": "75455b5d3089a9703be105b63d3fc13b550004fd45c1228a399c568f24b8b05a",
+    "schemaSha256": "4711e8fe74026de277083fe6205c4324eb0664857b34420bcc8387ab783affa3",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 6854,
+    "responseId": "ZO0Ea-qUFbScvdAPnJjZyQE",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 4435,
+      "candidatesTokenCount": 469,
+      "totalTokenCount": 4904,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4435
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 469
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"35\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false,\n        \"③\": false\n      },\n      \"missing\": \"アセスメントに基づく生活課題やニーズが記載されていない\"\n    },\n    \"36\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": true,\n        \"③\": false\n      },\n      \"missing\": \"目指す方向性や役割、肯定的な表現が記載されていない\"\n    },\n    \"37\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false,\n        \"③\": false\n      },\n      \"missing\": \"具体的な長期目標と認定期間内の期間が設定されていない\"\n    },\n    \"38\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": true,\n        \"②\": true,\n        \"③\": false,\n        \"④\": false,\n        \"⑤\": false\n      },\n      \"missing\": \"サービス利用自体が目標となり、具体的な内容や期間がない\"\n    },\n    \"39\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"40\": {\n      \"level\": \"他\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"41\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"42\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"43\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"目標達成に必要なサービス内容や事業所の選定理由がない\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "35",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false,
+          "③": false
+        },
+        "missing": "アセスメントに基づく生活課題やニーズが記載されていない",
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "36",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": true,
+          "③": false
+        },
+        "missing": "目指す方向性や役割、肯定的な表現が記載されていない",
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "37",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false,
+          "③": false
+        },
+        "missing": "長期目標の期間が認定有効期間外、または開始日と終了日が逆転しています",
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "rule"
+      },
+      {
+        "item": "38",
+        "level": "1",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": false,
+          "④": false,
+          "⑤": false
+        },
+        "missing": "サービス利用自体が目標となり、具体的な内容や期間がない",
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "39",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "40",
+        "level": "他",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "41",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "42",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      },
+      {
+        "item": "43",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "目標達成に必要なサービス内容や事業所の選定理由がない",
+        "fieldKey": "plan.needs",
+        "documentId": "P2-conflict",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 4435,
+      "cachedTokens": 0,
+      "outputTokens": 469,
+      "thinkingTokens": 0,
+      "yen": 0.805882
+    },
+    "ruleItems": 0,
+    "aiItems": 9
+  },
+  "comparisons": [
+    {
+      "id": "35",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "36",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "37",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "38",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "39",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "id": "40",
+      "expected": "他",
+      "actual": "他",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "41",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "id": "42",
+      "expected": "1",
+      "actual": "2",
+      "exact": false,
+      "missed": true,
+      "extra": false
+    },
+    {
+      "id": "43",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

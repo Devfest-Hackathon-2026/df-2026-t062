@@ -1,3 +1,4 @@
+import {focusInspectionField,type InspectionContext} from '../../components/inspection/context.ts'
 import { DocumentReview } from '../../components/document/DocumentReview.tsx'
 import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
 // PC ② 作業画面（キャンバス Main）。新しい利用者は ③（PcNew）、2 回目からの書き換えのあとは ④（PcDiff）の印になる。
@@ -31,6 +32,7 @@ import { RecordingRetentionPanel } from '../../components/recording/RecordingRet
 export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, staffName: string, isAdmin: boolean }) {
   // 開いている書類の種類（空なら主な書類）
   const [tab, setTab] = useState('')
+  const [planInspection,setPlanInspection]=useState<InspectionContext>()
   const [carePlanOpen, setCarePlanOpen] = useState(false)
   const [planHistoryRequest, setPlanHistoryRequest] = useState(0)
   const [planOutputTarget, setPlanOutputTarget] = useState<HTMLDivElement | null>(null)
@@ -208,7 +210,7 @@ export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, sta
   const canSave = () => adoption.current ?? Promise.resolve(true)
 
   const maxW = Math.round(820 * zoom / 100)
-  const required = isPrimary && doc && open.kind ? countRequired(state.current, open.kind.required) : client?.required ?? { filled: 0, total: 84 }
+  const required = doc?.id===docId&&open.kind ? countRequired(state.current,open.kind.required) : {filled:0,total:0}
   const latestBatch = doc?.batches[0]
   const batchLabel = latestBatch?.label ?? 'AI 書き込み'
   const empty = !!doc && !doc.batches.length && Object.keys(doc.fields).every((k) => k === 'person.name' || k === 'person.sex')
@@ -316,7 +318,7 @@ export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, sta
       {isAdmin && <RecordingRetentionPanel clientId={clientId} />}
 
       <div className="pc-work-layout">
-        {carePlanOpen ? <CarePlanArea availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} embedded historyRequest={planHistoryRequest} outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
+        {carePlanOpen ? <CarePlanArea onInspectionContextChange={setPlanInspection} availableKinds={(kinds ?? []).filter(k => k.available || client?.documents.some(d => d.kind === k.key)).map(k => k.key)} embedded historyRequest={planHistoryRequest} outputTarget={planOutputTarget} clientId={clientId} clientName={client?.name ?? ''} touch={false}
           onDirtyChange={setPlanDirty} onBusyChange={setPlanBusy} onBack={() => { setCarePlanOpen(false); setPlanDirty(false) }} /> : <>
         <nav aria-label="ページ" style={{ minWidth: 0, minHeight: 0, overflow: 'auto', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 2, boxSizing: 'border-box' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#5A6270', padding: '0 8px 6px' }}>{isPrimary ? `${kindName}用紙` : kindName}</div>
@@ -371,7 +373,7 @@ export function PcWork({ clientId, staffName, isAdmin }: { clientId: string, sta
         </section>
         </>}
 
-        <PetHelper key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics} unheard={doc?.id === docId ? state.unheard : []}
+        <PetHelper inspectionContext={carePlanOpen?planInspection:doc?.id===docId&&docId?{documentId:docId,beforeStart:state.flush,jump:key=>{if(isPrimary)jumpToField(key);else focusInspectionField(scroller.current,fieldDict(state.form?.localFields).get(key)?.label??key,key)}}:undefined} inspectionUnavailable={carePlanOpen?!planInspection:doc?.id!==docId||!docId} key="work-assistant" clientId={clientId} beforeDocumentAdopt={state.flush} onDocumentApplied={() => { void state.reload() }} diagramRequest={diagramChatRequest} available={assessmentReady} clientName={client?.name ?? ''} review={review} topics={topics} unheard={doc?.id === docId ? state.unheard : []}
           hasUnsavedChanges={hasUpdates || state.hasLocalEdits || !!state.total.ai || !!state.total.hand}
           work={carePlanOpen || !docId || doc?.id !== docId ? undefined : {
             job, conflict: state.conflicts.size > 0,

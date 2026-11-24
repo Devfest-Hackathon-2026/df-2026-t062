@@ -19,6 +19,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_6','サービス利用票 第6表','many',false,'assessment','[]','[]','single')")
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_4','サービス担当者会議の要点 第4表','many',false,'assessment','[]','[]','single')")
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_5','居宅介護支援経過 第5表','many',false,'assessment','[]','[]','single')")
+    await db.query("INSERT INTO form_kinds(key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES('monitoring','モニタリング記録','many',false,'assessment','[]','[]','single')")
     await seedForms(db)
     const office = (await db.query("INSERT INTO offices (name, phone, fax) VALUES ('migration test', '', '') RETURNING id")).rows[0].id
     const staff = (await db.query("INSERT INTO staff (office_id, auth_uid, name, email) VALUES ($1, 'migration-test', 'テスト', 'migration@test.invalid') RETURNING id", [office])).rows[0].id
@@ -77,6 +78,8 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0039_recording_consent.sql',
       '0040_recording_consent_integrity.sql',
       '0041_recording_cleanup_audit_grant.sql',
+      '0043_document_inspections.sql',
+      '0044_monitoring.sql',
     ])
     const cleanupRoleExists = (await db.query("SELECT 1 FROM pg_roles WHERE rolname = 'recording_cleanup'")).rowCount === 1
     if (cleanupRoleExists) {

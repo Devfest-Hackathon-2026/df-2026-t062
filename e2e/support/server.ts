@@ -1,3 +1,6 @@
+import {runInspection} from '../../worker/inspect/job.ts'
+import * as fake from '../../worker/fake.ts'
+import type {WorkerDeps} from '../../worker/jobs.ts'
 import { fakeModel } from '../../api/chat.ts'
 // E2E専用: 実API・独立したDBスキーマ・一時ストレージを起動する。本番依存は接続しない。
 import { seedOfficeReview } from './office-review.ts'
@@ -27,6 +30,8 @@ const admin = await createPool({ DATABASE_URL: connection })
 const db = await createPool({ DATABASE_URL: connection, DB_SCHEMA: schema })
 const root = await mkdtemp(join(tmpdir(), 'care-plan-e2e-'))
 const storage = new LocalStorage(root)
+const inspectionTasks=new Set<Promise<void>>()
+const inspectionDeps:WorkerDeps={db:async()=>db,storage:()=>storage,providers:async()=>({stt:new fake.FakeStt(),speakers:new fake.FakeSpeakers(),formImport:fake.fakeFormImport,inspect:fake.fakeInspect,recording:{summarizer:new fake.FakeSummarizer(),writer:new fake.FakeTopicWriter()}})}
 let api: ReturnType<typeof createApiServer> | undefined
 let vite: Awaited<ReturnType<typeof createServer>> | undefined
 let closing: Promise<void> | undefined
@@ -34,6 +39,7 @@ function close() {
   return closing ??= (async () => {
     await vite?.close()
     if (api?.listening) await new Promise<void>((resolve) => api!.close(() => resolve()))
+    await Promise.allSettled([...inspectionTasks])
     await db.end()
     await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
     await admin.end()
@@ -45,7 +51,7 @@ try {
   await admin.query(`CREATE SCHEMA ${schema}`)
   await migrate(db)
   await seed(db, { email: 'e2e@example.com', officeName: 'E2E架空事業所' })
-  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7']) {
+  for (const kind of ['assessment', 'care_plan_1', 'care_plan_2', 'care_plan_3', 'care_plan_4', 'care_plan_5', 'care_plan_6', 'care_plan_7','monitoring']) {
     const { pdf, message } = await ensurePdf(kind)
     if (!pdf) throw new Error(message)
     await putFormAssets(storage, readMeta(kind), pdf)
@@ -65,7 +71,7 @@ try {
       needs: [{ need: '架空の入浴支援', longGoal: { goal: '自宅で暮らす' }, shortGoals: [{ goal: '安全に入浴する', services: [{ content: '架空の入浴介助', insured: true, kind: '訪問介護' }] }] }],
       slots: [{ serviceRef: { need: 0, shortGoal: 0, service: 0 }, scheduleType: 'weekly', weekday: 1, start: '09:00', end: '10:00' }], conflicts: [],
     }),
-    queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection() {} }), devAuth: true,
+    queue: () => ({ async enqueue() {}, async enqueueFormImport() {}, async enqueueInspection(id) {const task=runInspection(inspectionDeps,id);inspectionTasks.add(task);void task.catch(()=>{}).finally(()=>inspectionTasks.delete(task))} }), devAuth: true,
   })
   api.listen(0, '127.0.0.1')
   await once(api, 'listening')

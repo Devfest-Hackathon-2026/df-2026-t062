@@ -97,7 +97,7 @@ export function OfficialCareWorkspace({ documentId, formKind, revision, formVers
                 </div>
               }
               if (staticFields) return <span key={s.name} className="care-paper-printed" style={style}>{printed.input[s.name] ?? ''}</span>
-              return <button type="button" disabled={disabled||(!documentId&&!onStart)} key={s.name} className={klass} aria-label={`${slot}（入力・修正）`} onClick={() => openEditor(slot)} style={style}>{circle ? '' : printed.input[s.name] ?? ''}</button>
+              return <button data-field-key={current.form.bindings[slot]?.ref.key} type="button" disabled={disabled||(!documentId&&!onStart)} key={s.name} className={klass} aria-label={`${slot}（入力・修正）`} onClick={() => openEditor(slot)} style={style}>{circle ? '' : printed.input[s.name] ?? ''}</button>
             })}
           </div>
         </div>

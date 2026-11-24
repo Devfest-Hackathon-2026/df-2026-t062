@@ -15,6 +15,10 @@ import { ZERO_USAGE, type Summarizer, type TopicWriter, type TopicWriterInput } 
 
 const url = process.env.DATABASE_URL
 const skip = url ? false : 'DATABASE_URL がないので飛ばします'
+// 要約の日付比較を保持しつつ、録音を14日の保持期限内に置く。固定日付だと暦の進行で失敗する。
+const firstDay=new Date(Date.now()-2*86400000).toISOString().slice(0,10)
+const middleDay=new Date(Date.now()-86400000).toISOString().slice(0,10)
+const secondDay=new Date().toISOString().slice(0,10)
 const schema = `t_sumjob_${process.pid}`
 let db: Db
 let storage: Storage
@@ -138,7 +142,7 @@ test('足していく種類（アセスメント）: 要約は足すだけで、
       ? { 'complaint.person': '自分でやりたい。', 'health.history': '脳梗塞。', 'office.name': '勝手に書いた事業所' }
       : { 'complaint.person': '自分でやりたい。夜が心配。', 'health.history': 'AI の書き直し' }))
 
-  const r1 = await upload(c.id, c.documentId, '2026-11-10T01:00:00Z')
+  const r1 = await upload(c.id, c.documentId, `${firstDay}T01:00:00Z`)
   await run(r1.jobId, p)
   const s1 = await summariesOf(c.documentId)
   assert.deepEqual(s1.map((s) => s.topic).sort(), ['health', 'wishes'], '話に出なかった項目（空の要約も）は行を作らない')
@@ -146,12 +150,12 @@ test('足していく種類（アセスメント）: 要約は足すだけで、
   assert.equal(seen.summarize[0].topics.length, 24, '23 項目と全体のまとめ')
   assert.equal(seen.write[0].showNew, false, '1 回目は印を付けない')
   assert.equal(seen.write[0].kindName, 'アセスメント')
-  assert.deepEqual(seen.write[0].summaries.map((s) => [s.topic, s.seq, s.date, s.isNew]).sort(), [['health', 1, '2026-11-10', true], ['wishes', 1, '2026-11-10', true]])
+  assert.deepEqual(seen.write[0].summaries.map((s) => [s.topic, s.seq, s.date, s.isNew]).sort(), [['health', 1, firstDay, true], ['wishes', 1, firstDay, true]])
   const f1 = await fieldsOf(c.documentId)
   assert.equal(f1['complaint.person'].value, '自分でやりたい。')
   assert.deepEqual(f1['complaint.person'].cite, { kind: 'summary', ids: seen.write[0].summaries.map((s) => s.id) }, '根拠は要約の行')
   assert.notEqual(f1['office.name']?.value, '勝手に書いた事業所', '事業所の設定は AI が書かない')
-  assert.equal(f1['assessment.initialDate'].value, '2026-11-10', '1 回目は実施日（初回）')
+  assert.equal(f1['assessment.initialDate'].value, firstDay, '1 回目は実施日（初回）')
   assert.equal(f1['assessment.updateDate'], undefined)
   const job1 = (await db.query('SELECT status, steps FROM jobs WHERE id = $1', [r1.jobId])).rows[0]
   assert.equal(job1.status, 'succeeded')
@@ -163,7 +167,7 @@ test('足していく種類（アセスメント）: 要約は足すだけで、
   const patched = await call(`/api/documents/${c.documentId}/fields`, { method: 'PATCH', body: JSON.stringify({ changes: [{ key: 'health.history', value: 'ケアマネが直した既往歴', base: doc.fields['health.history'].value }] }) })
   assert.equal(patched.status, 200)
   round = 2
-  const r2 = await upload(c.id, c.documentId, '2026-11-24T01:00:00Z')
+  const r2 = await upload(c.id, c.documentId, `${secondDay}T01:00:00Z`)
   await run(r2.jobId, p)
   const s2 = await summariesOf(c.documentId)
   assert.deepEqual(s2.filter((s) => s.recording_id === r1.recordingId), s1, '前の回の要約は変わらない')
@@ -175,8 +179,8 @@ test('足していく種類（アセスメント）: 要約は足すだけで、
   const f2 = await fieldsOf(c.documentId)
   assert.equal(f2['health.history'].value, 'ケアマネが直した既往歴', 'ケアマネが書いた値は書き換えない')
   assert.equal(f2['complaint.person'].value, '自分でやりたい。夜が心配。', 'AI が書いた値は書き直す')
-  assert.equal(f2['assessment.initialDate'].value, '2026-11-10')
-  assert.equal(f2['assessment.updateDate'].value, '2026-11-24', '2 回目からは実施日（更新）')
+  assert.equal(f2['assessment.initialDate'].value, firstDay)
+  assert.equal(f2['assessment.updateDate'].value, secondDay, '2 回目からは実施日（更新）')
   await assert.rejects(db.query('UPDATE recording_summaries SET text = $2 WHERE id = $1', [s1[0].id, '書き換え']), /書き換えられません/)
 
   // 要約は API で返さない
@@ -197,9 +201,9 @@ test('単体の種類（担当者会議の記録）: 前の回の要約を使わ
   const seen: Seen = { summarize: [], write: [] }
   let n = 0
   const p = await providers(seen, () => ({ talk: `${++n} 回目の会議の話` }), () => ({ 'complaint.person': `${n} 回目の思い` }))
-  const r1 = await upload(c.id, docId, '2026-11-10T01:00:00Z')
+  const r1 = await upload(c.id, docId, `${firstDay}T01:00:00Z`)
   await run(r1.jobId, p)
-  const r2 = await upload(c.id, docId, '2026-11-24T01:00:00Z')
+  const r2 = await upload(c.id, docId, `${secondDay}T01:00:00Z`)
   await run(r2.jobId, p)
   assert.deepEqual(seen.summarize.map((s) => s.topics), [['talk', 'overall'], ['talk', 'overall']])
   assert.deepEqual(seen.write[1].summaries.map((s) => [s.text, s.isNew]), [['2 回目の会議の話', true]], '今回の録音の要約だけ')
@@ -212,7 +216,7 @@ test('4 から先で失敗してやり直しても、要約はし直さない', 
   const c = await newClient('やり直しの見本')
   const seen: Seen = { summarize: [], write: [] }
   const p = await providers(seen, () => ({ adl: '杖で歩く' }), () => ({ 'complaint.person': 'やり直しで書いた' }), { failWriteOnce: true })
-  const r = await upload(c.id, c.documentId, '2026-11-10T01:00:00Z')
+  const r = await upload(c.id, c.documentId, `${firstDay}T01:00:00Z`)
   await assert.rejects(run(r.jobId, p), /書き手が落ちた/)
   assert.equal((await db.query('SELECT status FROM jobs WHERE id = $1', [r.jobId])).rows[0].status, 'queued')
   await run(r.jobId, p)
@@ -227,11 +231,11 @@ test('事業所が直した項目: 書き足しと足した項目を合わせた
   const office = (await db.query('SELECT office_id FROM documents WHERE id = $1', [c.documentId])).rows[0].office_id
   const seen: Seen = { summarize: [], write: [] }
   const p = await providers(seen, () => ({ pet: '犬を飼っている' }), () => ({}))
-  const before = await upload(c.id, c.documentId, '2026-11-10T01:00:00Z')
+  const before = await upload(c.id, c.documentId, `${firstDay}T01:00:00Z`)
   await run(before.jobId, p)
   await db.query("INSERT INTO office_topics (office_id, kind, added, notes) VALUES ($1, 'assessment', $2, $3)",
     [office, JSON.stringify([{ id: 'pet', name: 'ペット', guide: 'ペットの有無と世話をする人' }]), JSON.stringify({ health: '1 日の水分量も聞く' })])
-  const later = await upload(c.id, c.documentId, '2026-11-24T01:00:00Z')
+  const later = await upload(c.id, c.documentId, `${secondDay}T01:00:00Z`)
   await run(later.jobId, p)
   assert.equal(seen.summarize[0].topics.includes('pet'), false, '直す前の録音は全体の一覧')
   assert.equal(seen.summarize[1].topics.includes('pet'), true, '直したあとの録音から効く')
@@ -255,7 +259,7 @@ test('まとめる項目が空の種類は、録音から書かない', { skip }
   const docId = created.body.id as string
   const seen: Seen = { summarize: [], write: [] }
   const p = await providers(seen, () => ({ health: '話' }), () => ({ 'complaint.person': '書かない' }))
-  const r = await upload(c.id, docId, '2026-11-10T01:00:00Z')
+  const r = await upload(c.id, docId, `${firstDay}T01:00:00Z`)
   await run(r.jobId, p)
   assert.deepEqual([seen.summarize.length, seen.write.length], [0, 0])
   assert.equal((await db.query('SELECT status FROM jobs WHERE id = $1', [r.jobId])).rows[0].status, 'succeeded')
@@ -275,12 +279,12 @@ test('入院時情報提供書の録音: 入院時情報提供書の項目で要
   const docId = created.body.id as string
   const seen: Seen = { summarize: [], write: [] }
   const p = await providers(seen, () => ({ wishes: '本人は家に帰りたいと話した' }), () => ({ 'intention.person': '家に帰りたい' }))
-  const r1 = await upload(c.id, docId, '2026-11-10T01:00:00Z')
+  const r1 = await upload(c.id, docId, `${firstDay}T01:00:00Z`)
   await run(r1.jobId, p)
   assert.deepEqual(seen.summarize[0].topics, ['basic', 'family', 'wishes', 'homeOutlook', 'conference'])
   assert.equal((await fieldsOf(docId))['intention.person']?.value, '家に帰りたい')
   assert.equal((await fieldsOf(c.documentId))['intention.person'], undefined, 'アセスメントには書かない')
-  const r2 = await upload(c.id, docId, '2026-11-11T01:00:00Z')
+  const r2 = await upload(c.id, docId, `${middleDay}T01:00:00Z`)
   await run(r2.jobId, p)
   assert.deepEqual([seen.write[0].summaries.length, seen.write[1].summaries.length], [1, 1], '2 回目は前の回の要約を使わない')
 })
@@ -310,7 +314,7 @@ test('本物の段（偽の Gemini）: 要約の行が DB に残り、欄の根�
   })
   const f = await import('../worker/fake.ts')
   const p = { stt: new f.FakeStt(), speakers: new f.FakeSpeakers(), formImport: f.fakeFormImport, recording: { summarizer: summarizer(newLlm as never), writer: topicWriter(newLlm as never) } }
-  const r = await upload(c.id, c.documentId, '2026-11-10T01:00:00Z')
+  const r = await upload(c.id, c.documentId, `${firstDay}T01:00:00Z`)
   await run(r.jobId, p)
   const rows = await summariesOf(c.documentId)
   const idOf = (topic: string) => rows.find((x) => x.topic === topic)!.id
@@ -319,7 +323,7 @@ test('本物の段（偽の Gemini）: 要約の行が DB に残り、欄の根�
   assert.deepEqual(fields['complaint.person'].cite, { kind: 'summary', ids: [idOf('wishes')] })
   assert.deepEqual(fields['summary.overall'].cite, { kind: 'summary', ids: [idOf('wishes'), idOf('health')] })
   assert.equal(fields['health.history'], undefined, '選んでいない欄は書かない')
-  assert.equal(fields['assessment.initialDate'].value, '2026-11-10')
+  assert.equal(fields['assessment.initialDate'].value, firstDay)
   assert.equal(steps[0], '要約')
   assert.equal(steps.filter((x) => x === '要約').length, 1)
   const job = (await db.query('SELECT status, steps FROM jobs WHERE id = $1', [r.jobId])).rows[0]

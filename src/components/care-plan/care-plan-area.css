@@ -39,3 +39,5 @@
 
 /* 一覧・対象月はダイアログで選び、中央には用紙を並べる。 */
 .cp-area .cp-area-flow .care-record-columns{display:block}
+.cp-touch-inspection{display:flex;padding:4px;background:#fff}
+.cp-touch-inspection .btn{min-height:44px;width:100%}

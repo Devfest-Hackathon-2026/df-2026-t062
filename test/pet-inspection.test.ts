@@ -8,7 +8,7 @@ const summary = (id: string, createdAt: string, missingCount: number, status: In
   id, status, createdAt, createdBy: '加藤', verdict: status === 'succeeded' ? (missingCount ? '要確認' : '適合') : null, missingCount, total: 32,
 })
 const view = (over: Partial<InspectionView> = {}): InspectionView => ({
-  ...summary('a', '2026-11-20T05:05:00Z', 6), checkSet: 'mhlw-careplan@2026-03', categories: [], items: [], latest: true, changed: false, ...over,
+  ...summary('a', '2026-11-20T05:05:00Z', 6), checkSet: 'mhlw-careplan@2026-03', references:[], coverage:{total:62,applicable:32,evaluated:32,unjudged:0,uninspected:30,groups:[]},categories: [], items: [], latest: true, changed: false, ...over,
 })
 
 test('日時は日本の時刻で「11/20 14:05」', () => {
