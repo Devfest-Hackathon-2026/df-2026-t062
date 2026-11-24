@@ -286,9 +286,10 @@ run "private_service_with_scoped_deployer" {
 
   assert {
     condition = (
-      google_logging_metric.recording_cleanup_overdue.value_extractor == "EXTRACT(jsonPayload.overdue_count)" &&
-      google_logging_metric.recording_cleanup_hold_mismatch.value_extractor == "EXTRACT(jsonPayload.hold_alert_count)" &&
-      google_logging_metric.recording_cleanup_stuck.value_extractor == "EXTRACT(jsonPayload.stuck_count)" &&
+      google_logging_metric.recording_cleanup_overdue.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_stuck.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_duration.value_extractor == "EXTRACT(jsonPayload.duration_ms)" &&
       google_monitoring_alert_policy.recording_cleanup_overdue.enabled &&
       google_monitoring_alert_policy.recording_cleanup_overdue.conditions[0].condition_threshold[0].duration == "900s" &&
       google_monitoring_alert_policy.recording_cleanup_no_success.conditions[0].condition_absent[0].duration == "7200s"

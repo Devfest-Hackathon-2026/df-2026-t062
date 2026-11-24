@@ -53,10 +53,8 @@ resource "terraform_data" "ai_job_alert_configuration" {
 # =========================================================
 
 resource "google_logging_metric" "recording_cleanup_success" {
-  name            = "recording_cleanup_success_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.result=\"success\""
-  value_extractor = "EXTRACT(jsonPayload.success_count)"
-
+  name   = "recording_cleanup_success_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.result=\"success\""
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -65,10 +63,8 @@ resource "google_logging_metric" "recording_cleanup_success" {
 }
 
 resource "google_logging_metric" "recording_cleanup_failure" {
-  name            = "recording_cleanup_failure_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.result=\"failed\""
-  value_extractor = "EXTRACT(jsonPayload.failure_count)"
-
+  name   = "recording_cleanup_failure_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.result=\"failed\""
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -77,10 +73,8 @@ resource "google_logging_metric" "recording_cleanup_failure" {
 }
 
 resource "google_logging_metric" "recording_cleanup_overdue" {
-  name            = "recording_cleanup_overdue_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.overdue\" AND jsonPayload.result=\"detected\""
-  value_extractor = "EXTRACT(jsonPayload.overdue_count)"
-
+  name   = "recording_cleanup_overdue_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.overdue\" AND jsonPayload.result=\"detected\""
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -89,10 +83,8 @@ resource "google_logging_metric" "recording_cleanup_overdue" {
 }
 
 resource "google_logging_metric" "recording_cleanup_hold_mismatch" {
-  name            = "recording_cleanup_hold_mismatch_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.hold_mismatch\" AND jsonPayload.result=\"detected\""
-  value_extractor = "EXTRACT(jsonPayload.hold_alert_count)"
-
+  name   = "recording_cleanup_hold_mismatch_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.hold_mismatch\" AND jsonPayload.result=\"detected\""
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -101,10 +93,8 @@ resource "google_logging_metric" "recording_cleanup_hold_mismatch" {
 }
 
 resource "google_logging_metric" "recording_cleanup_final_failure" {
-  name            = "recording_cleanup_final_failure_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.delete\" AND jsonPayload.result=\"failed\" AND jsonPayload.retryable=false"
-  value_extractor = "EXTRACT(jsonPayload.failure_count)"
-
+  name   = "recording_cleanup_final_failure_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.delete\" AND jsonPayload.result=\"failed\" AND jsonPayload.retryable=false"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -113,10 +103,8 @@ resource "google_logging_metric" "recording_cleanup_final_failure" {
 }
 
 resource "google_logging_metric" "recording_cleanup_retry" {
-  name            = "recording_cleanup_retry_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.delete\" AND jsonPayload.result=\"failed\" AND jsonPayload.retryable=true"
-  value_extractor = "EXTRACT(jsonPayload.failure_count)"
-
+  name   = "recording_cleanup_retry_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.delete\" AND jsonPayload.result=\"failed\" AND jsonPayload.retryable=true"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -125,10 +113,8 @@ resource "google_logging_metric" "recording_cleanup_retry" {
 }
 
 resource "google_logging_metric" "recording_cleanup_stuck" {
-  name            = "recording_cleanup_stuck_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND (jsonPayload.eligible_stuck_count > 0 OR jsonPayload.deleting_stuck_count > 0 OR jsonPayload.failed_past_retry_count > 0 OR jsonPayload.intermediate_overdue_count > 0 OR jsonPayload.intermediate_stuck_count > 0 OR jsonPayload.intermediate_failed_past_retry_count > 0)"
-  value_extractor = "EXTRACT(jsonPayload.stuck_count)"
-
+  name   = "recording_cleanup_stuck_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND (jsonPayload.eligible_stuck_count > 0 OR jsonPayload.deleting_stuck_count > 0 OR jsonPayload.failed_past_retry_count > 0 OR jsonPayload.intermediate_overdue_count > 0 OR jsonPayload.intermediate_stuck_count > 0 OR jsonPayload.intermediate_failed_past_retry_count > 0)"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -137,10 +123,8 @@ resource "google_logging_metric" "recording_cleanup_stuck" {
 }
 
 resource "google_logging_metric" "recording_cleanup_hold_sync_failure" {
-  name            = "recording_cleanup_hold_sync_failure_count"
-  filter          = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.hold_sync_failure_count > 0"
-  value_extractor = "EXTRACT(jsonPayload.hold_sync_failure_count)"
-
+  name   = "recording_cleanup_hold_sync_failure_count"
+  filter = "${local.recording_cleanup_log_filter} AND jsonPayload.event=\"recording.retention.cleanup\" AND jsonPayload.hold_sync_failure_count > 0"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"
@@ -305,10 +289,8 @@ resource "google_logging_metric" "ai_job_queue_wait" {
 }
 
 resource "google_logging_metric" "ai_job_cost" {
-  name            = "ai_job_estimated_cost_yen"
-  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.estimated_cost_yen >= 0"
-  value_extractor = "EXTRACT(jsonPayload.estimated_cost_yen)"
-
+  name   = "ai_job_estimated_cost_yen"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.job\" AND jsonPayload.estimated_cost_yen >= 0"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "DOUBLE"
@@ -317,10 +299,8 @@ resource "google_logging_metric" "ai_job_cost" {
 }
 
 resource "google_logging_metric" "ai_job_backlog_age" {
-  name            = "ai_job_backlog_age_seconds"
-  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_queued_age_seconds >= 0"
-  value_extractor = "EXTRACT(jsonPayload.queue_oldest_queued_age_seconds)"
-
+  name   = "ai_job_backlog_age_seconds"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_queued_age_seconds >= 0"
   metric_descriptor {
     metric_kind = "GAUGE"
     value_type  = "INT64"
@@ -329,10 +309,8 @@ resource "google_logging_metric" "ai_job_backlog_age" {
 }
 
 resource "google_logging_metric" "ai_job_processing_age" {
-  name            = "ai_job_processing_age_seconds"
-  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_processing_age_seconds >= 0"
-  value_extractor = "EXTRACT(jsonPayload.queue_oldest_processing_age_seconds)"
-
+  name   = "ai_job_processing_age_seconds"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_oldest_processing_age_seconds >= 0"
   metric_descriptor {
     metric_kind = "GAUGE"
     value_type  = "INT64"
@@ -341,10 +319,8 @@ resource "google_logging_metric" "ai_job_processing_age" {
 }
 
 resource "google_logging_metric" "ai_job_queue_depth" {
-  name            = "ai_job_queue_depth"
-  filter          = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_queued_count >= 0"
-  value_extractor = "EXTRACT(jsonPayload.queue_queued_count)"
-
+  name   = "ai_job_queue_depth"
+  filter = "${local.ai_job_log_filter} AND jsonPayload.event=\"ai.queue\" AND jsonPayload.queue_queued_count >= 0"
   metric_descriptor {
     metric_kind = "GAUGE"
     value_type  = "INT64"
