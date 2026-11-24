@@ -6,7 +6,7 @@ import { checkProposal, runChat, diagramChatSystem, chatSystem, type ChatDocumen
 import { blank, type Item } from '../core/diagram/model.ts'
 import { nextDiagram, diagramSchema } from '../core/diagram/fields.ts'
 import { anatomySchema, bodyAnchor, normalizeBodyProposal, tapPosition, BODY_VIEWS } from '../core/diagram/body.ts'
-import { familyLayout, familyRelationPaths } from '../core/diagram/family-layout.ts'
+import { familyLayout, familyRelationPaths, familyHouseholds, familyPersonBounds } from '../core/diagram/family-layout.ts'
 import { diagramSvg } from '../core/diagram/svg.ts'
 import { diagramChanges } from '../core/diagram/changes.ts'
 import { cardAction, pendingDiagramDraft, diagramCardStatus, type ProposalCard } from '../src/components/assistant/petChat.ts'
@@ -204,9 +204,12 @@ test('co-resident bounding boxes do not include outsiders, regardless of origina
   const d = blank()
   d.family.people = Array.from({ length: 8 }, (_, i) => ({ id: String(i), name: `人物${i}`, sex: 'unknown', household: i % 2 ? '同居' : '別居', deceased: null, x: i * 50, y: i * 30 }))
   d.family.relations = [{ id: 'parent', kind: '親子', source: '1', target: '3' }]
-  const positions = familyLayout(d.family), home = positions.filter((p) => p.household === '同居')
-  const maxX = Math.max(...home.map((p) => p.x)) + 148, minX = Math.min(...home.map((p) => p.x)) - 14
-  assert.ok(positions.filter((p) => p.household !== '同居').every((p) => p.x > maxX || p.x + 120 < minX))
+  const positions = familyLayout(d.family), boxes = familyHouseholds(positions)
+  assert.deepEqual(boxes.flatMap(b=>b.people).sort(),positions.filter(p=>p.household==='同居').map(p=>p.id).sort())
+  for(const box of boxes)for(const p of positions.filter(p=>p.household!=='同居')) {
+    const b=familyPersonBounds(p)
+    assert.ok(b.right<box.x||b.left>box.x+box.width||b.bottom<box.y||b.top>box.y+box.height)
+  }
   assert.equal(d.family.people[0].x, 0)
   const svg = diagramSvg(d, 'family')
   assert.ok(svg.includes('同居'))
@@ -320,37 +323,24 @@ test('family proposal uses each person’s own current health, employment and de
   }
 })
 
-test('family routes never share an orthogonal segment, even with more than ten edges in one gap', () => {
+test('12人の兄弟と世代をまたぐ登録関係を共有線に整理し、登録のない親を足さない', () => {
   const d = blank()
   const ids = ['a', 'b', ...Array.from({ length: 12 }, (_, i) => `child-${i}`), 'grandchild']
-  d.family.people = ids.map((id) => ({ id, name: id, household: '不明', sex: 'unknown', deceased: null, x: 0, y: 0 }))
+  d.family.people = ids.map(id => ({id,name:id,household:'不明',sex:'unknown',deceased:null,x:0,y:0}))
   d.family.relations = [
-    { id: 'spouses', kind: '離婚', source: 'a', target: 'b' },
-    ...ids.slice(2, -1).flatMap((id) => (['a', 'b'].map((parent) => ({ id: parent + id, kind: '親子' as const, source: parent, target: id })))),
-    { id: 'next', kind: '親子', source: 'child-0', target: 'grandchild' },
-    { id: 'skip', kind: '親子', source: 'a', target: 'grandchild' },
+    {id:'spouses',kind:'離婚',source:'a',target:'b'},
+    ...ids.slice(2,-1).flatMap(id=>['a','b'].map(parent=>({id:parent+id,kind:'親子' as const,source:parent,target:id}))),
+    {id:'next',kind:'親子',source:'child-0',target:'grandchild'},
+    {id:'skip',kind:'親子',source:'a',target:'grandchild'},
   ]
-  const people = familyLayout(d.family)
-  const right = Math.max(...people.map((p) => p.x + 160))
-  const layout = familyRelationPaths(people, d.family.relations, right)
-  assert.equal(layout.paths.length, d.family.relations.length)
-  assert.ok(layout.paths[0].divorceMark)
-  assert.ok(layout.right > right)
-
-  const segments: { axis: string, fixed: number, from: number, to: number }[] = []
-  for (const { path } of layout.paths) {
-    const [start, ...commands] = path.split(/ (?=[HV])/)
-    let [x, y] = start.slice(1).split(' ').map(Number)
-    for (const command of commands) {
-      const axis = command[0], next = Number(command.slice(1))
-      const [fixed, current] = axis === 'H' ? [y, x] : [x, y]
-      const [from, to] = [Math.min(current, next), Math.max(current, next)]
-      assert.ok(!segments.some((s) => s.axis === axis && s.fixed === fixed && Math.max(s.from, from) < Math.min(s.to, to)), path)
-      segments.push({ axis, fixed, from, to })
-      if (axis === 'H') x = next
-      else y = next
-    }
-  }
+  const people=familyLayout(d.family), right=Math.max(...people.map(p=>p.x+160))
+  const layout=familyRelationPaths(people,d.family.relations,right)
+  assert.equal(layout.paths.length,3)
+  assert.ok(layout.paths.find(p=>p.kind==='partner')?.divorceMark)
+  assert.deepEqual(layout.paths.flatMap(p=>p.relationIds).sort(),d.family.relations.map(r=>r.id).sort())
+  assert.deepEqual(layout.paths.find(p=>p.children?.includes('grandchild'))?.parents,['a','child-0'])
+  assert.equal(layout.paths.find(p=>p.children?.includes('child-0'))?.children?.length,12)
+  assert.ok(layout.right>right,'世代をまたぐ線だけに外側経路を使う')
 })
 
 test('family life status requires a statement about the named person in chat, recordings and notes', () => {

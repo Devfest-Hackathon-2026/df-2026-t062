@@ -1,0 +1,36 @@
+import {test,expect} from '@playwright/test'
+test('4人家族と再婚例の比較・例外表示・人物編集・反映に同じ家族線を使う',async({page},info)=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
+ await page.route('**/family-layout-integration',route=>route.fulfill({contentType:'text/html',body:`<html lang="ja"><head><style>@font-face{font-family:BIZUDPGothic;src:url('/forms/fonts/BIZUDPGothic-Regular.ttf')}body{margin:20px;font:16px BIZUDPGothic,sans-serif;color:#172b3d}nav{display:flex;gap:12px}button{padding:10px}.comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.figure{border:1px solid #dde1e9}.figure svg{width:100%;height:600px}h2{text-align:center}</style></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/test/fixtures/family-layout-integration.tsx"></script></body></html>`}))
+ await page.goto('/family-layout-integration')
+ const after=page.locator('[data-after]')
+ await expect(after.locator('[data-person-id]')).toHaveCount(4)
+ await expect(after.locator('[data-family-connection="partner"]')).toHaveCount(1)
+ await expect(after.locator('[data-family-connection="parent"]')).toHaveCount(1)
+ await page.evaluate(()=>document.fonts.ready)
+ for(const name of ['four','remarried']){
+  await page.getByRole('button',{name,exact:true}).click()
+  await page.locator('.comparison').screenshot({path:info.outputPath(`${name}-before-after.png`)})
+ }
+ await page.getByRole('button',{name:'unmarried',exact:true}).click()
+ await expect(after.locator('[data-family-connection="partner"]')).toHaveCount(0)
+ await expect(after.locator('[data-family-connection="parent"]')).toHaveCount(1)
+ for(const name of ['single','partial','three']){
+  await page.getByRole('button',{name,exact:true}).click()
+  await expect(after.locator('svg')).toBeVisible()
+  await after.screenshot({path:info.outputPath(`${name}-after.png`)})
+ }
+ await page.getByRole('button',{name:'four',exact:true}).click()
+ await page.getByRole('button',{name:'この家族図を編集',exact:true}).click()
+ const editor=page.locator('.diagram-editor')
+ await expect(editor.locator('[data-family-connection="parent"]')).toHaveCount(1)
+ await editor.locator('[data-person-id="son"]').click()
+ await expect(page.getByLabel('名前',{exact:true})).toHaveValue('架空 健')
+ await page.getByLabel('名前',{exact:true}).fill('架空 健（確認済）')
+ await page.getByRole('button',{name:'確認へ進む',exact:true}).click()
+ await page.getByRole('button',{name:'用紙に反映',exact:true}).click()
+ const value=JSON.parse(await page.getByLabel('反映した家族図').innerText())
+ expect(value.data.people.find((p:{id:string})=>p.id==='son').name).toBe('架空 健（確認済）')
+ expect(value.data.relations).toHaveLength(5)
+ expect(errors).toEqual([])
+})
