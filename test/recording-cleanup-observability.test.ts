@@ -12,8 +12,11 @@ test('cleanup observability classifies database errors without exposing messages
   assert.equal(safeDatabaseErrorCode({ code: '23503', message: 'contains sensitive SQL values' }), 'database_foreign_key')
   assert.equal(safeDatabaseErrorCode({ code: '23505' }), 'database_unique_violation')
   assert.equal(safeDatabaseErrorCode({ code: '23514' }), 'database_check_violation')
+  assert.equal(safeDatabaseErrorCode({ code: '23502' }), 'database_not_null')
+  assert.equal(safeDatabaseErrorCode({ code: '42501' }), 'database_permission_denied')
   assert.equal(safeDatabaseErrorCode({ code: '40001' }), 'database_transaction_conflict')
   assert.equal(safeDatabaseErrorCode({ code: '42703', message: 'private query details' }), 'database_schema_error')
+  assert.equal(safeDatabaseErrorCode(new Error('監査detailに自由文字列は保存できません')), 'audit_detail_validation')
   assert.equal(safeDatabaseErrorCode(new Error('private database details')), 'database_error')
 })
 
