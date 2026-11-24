@@ -14,7 +14,7 @@ export SERVICE_URL=https://t062-api.run.app CANDIDATE_URL=https://ci-42-1---t062
 export CLOUD_RUN_WORKER_SERVICE=t062-worker CLOUD_RUN_MIGRATE_JOB=t062-migrate
 export WORKER_URL=https://t062-worker.run.app WORKER_ID_TOKEN=fake-worker-token
 export WORKER_PREVIOUS_REVISION=t062-worker-previous WORKER_NEW_REVISION=t062-worker-new
-export WORKER_STATE="$sandbox/worker" CALL_LOG="$sandbox/calls"
+export WORKER_STATE="$sandbox/worker" CALL_LOG="$sandbox/calls" CLEANUP_ARGS_STATE="$sandbox/cleanup-args"
 
 gcloud() {
   # worker のサービスは別の状態ファイルで持つ
@@ -32,10 +32,15 @@ gcloud() {
     return
   fi
   case "$2 $3" in
-    'jobs update') printf 'jobs update %s\n' "$*" >> "$CALL_LOG" ;;
+    'jobs describe') printf '%s\n' 'previous-cleanup-image' ;;
+    'jobs update')
+      printf 'jobs update %s\n' "$*" >> "$CALL_LOG"
+      if [[ "$*" == *'t062-recording-cleanup'* ]]; then printf '%s\n' "$*" > "$CLEANUP_ARGS_STATE"; fi
+      ;;
     'jobs execute')
       printf 'jobs execute %s\n' "$*" >> "$CALL_LOG"
-      [[ "$SCENARIO" != migrate_fails ]]
+      [[ "$SCENARIO" != migrate_fails ]] &&
+        { [[ "$SCENARIO" != cleanup_fails ]] || ! grep -F -- '--cleanup-expired-intermediate-data' "$CLEANUP_ARGS_STATE" >/dev/null; }
       ;;
     'deploy t062-worker')
       printf 'deploy worker %s\n' "$*" >> "$CALL_LOG"
@@ -80,6 +85,7 @@ export -f gcloud gh sleep curl
 printf '%s\n' "$PREVIOUS_REVISION" > "$RELEASE_STATE"
 printf 'no\n' > "$STAGE_STATE"
 printf '%s\n' "$WORKER_PREVIOUS_REVISION" > "$WORKER_STATE"
+: > "$CLEANUP_ARGS_STATE"
 : > "$CALL_LOG"
 
 # DB 移行: 同じイメージで db/migrate.ts を流す。失敗したら止まる
@@ -93,6 +99,21 @@ grep -F "jobs execute run jobs execute t062-migrate" "$CALL_LOG" | grep -F -- "-
 # 移行のあいだ、worker と api は動かさない
 [[ "$(cat "$WORKER_STATE")" == "$WORKER_PREVIOUS_REVISION" ]]
 [[ "$(cat "$RELEASE_STATE")" == "$PREVIOUS_REVISION" ]]
+
+: > "$CALL_LOG"
+CLOUD_RUN_RECORDING_CLEANUP_JOB=t062-recording-cleanup bash scripts/release-cloud-run.sh cleanup-deploy
+export SCENARIO=cleanup_fails
+if CLEANUP_PREVIOUS_IMAGE=previous-cleanup-image CLOUD_RUN_RECORDING_CLEANUP_JOB=t062-recording-cleanup \
+  bash scripts/release-cloud-run.sh cleanup-verify; then exit 1; fi
+grep -F -- '--image previous-cleanup-image --command node --args worker/recording-cleanup.ts' "$CALL_LOG" >/dev/null
+export SCENARIO=success
+CLOUD_RUN_RECORDING_CLEANUP_JOB=t062-recording-cleanup bash scripts/release-cloud-run.sh cleanup-deploy
+CLEANUP_PREVIOUS_IMAGE=previous-cleanup-image CLOUD_RUN_RECORDING_CLEANUP_JOB=t062-recording-cleanup \
+  bash scripts/release-cloud-run.sh cleanup-verify
+grep -F 'worker/recording-cleanup.ts,--synchronize-lifecycle-metadata' "$CALL_LOG" >/dev/null
+grep -F 'worker/recording-cleanup.ts,--cleanup-expired-intermediate-data' "$CALL_LOG" >/dev/null
+grep -F 'worker/recording-cleanup.ts,--verify-lifecycle-readiness' "$CALL_LOG" >/dev/null
+grep -F 'jobs update run jobs update t062-recording-cleanup' "$CALL_LOG" | grep -F -- '--args worker/recording-cleanup.ts' >/dev/null
 
 # worker: 同じイメージを node worker/index.ts で動かし、/health が通らなければ前のリビジョンに戻す
 : > "$CALL_LOG"
