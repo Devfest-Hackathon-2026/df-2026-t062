@@ -116,7 +116,19 @@ export function RecordingRetentionPanel({ clientId }: { clientId: string }) {
   }
 
   return (
-    <section aria-label="録音の保持管理" style={{ margin: '16px 28px 0', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 12, padding: 18 }}>
+    <section
+  aria-label="録音の保持管理"
+  style={{
+    width: 'calc(100% - 56px)',
+    maxWidth: 900,
+    boxSizing: 'border-box',
+    margin: '16px auto 0',
+    background: '#FFFFFF',
+    border: '1px solid #E1E4EA',
+    borderRadius: 12,
+    padding: 18,
+  }}
+>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 16 }}>録音の保持管理</h2>
