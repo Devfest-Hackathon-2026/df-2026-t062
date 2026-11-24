@@ -86,6 +86,10 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
   }, [v])
 
   const reviewSlots = useMemo(() => (fix || !v ? [] : reviewSlotNames(v.review)), [v, fix])
+  const pageWarnings = useMemo(
+  () => (fix || !v ? [] : v.review.filter((item) => !item.slot.trim())),
+  [v, fix]
+)
   const exists = useCallback((name: string) => !!v && v.formVersion.schemas.some((p) => p.some((s) => s.name === name)), [v])
   const isDone = (name: string) => name in done || unused.includes(name) || (fix && name in moved)
   const open = reviewSlots.filter((n) => !isDone(n))
@@ -279,6 +283,19 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
           </div>
         </section>
         <aside className="of-side" aria-label={fix ? '直した欄' : 'AI が迷った欄'}>
+          {pageWarnings.length > 0 && (
+  <div role="alert" className="of-err" style={{ marginBottom: 12 }}>
+    <strong>書式の読み取りに関する注意</strong>
+    <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+      {pageWarnings.map((item, i) => (
+        <li key={i}>{item.reason}</li>
+      ))}
+    </ul>
+    <p style={{ margin: '8px 0 0' }}>
+      読み取れなかった部分がないか、書式を確認してください。
+    </p>
+  </div>
+)}
           <div className="of-cat">
             <img src={ready && !fix ? '/assistant/pet-cat.jpg' : '/assistant/pet-peeking.png'} alt="" />
             <div className="of-bubble">

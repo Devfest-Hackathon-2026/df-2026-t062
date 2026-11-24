@@ -14,4 +14,5 @@ export function resumePath(k: KindFormState): string {
 }
 
 /** 確かめる画面の「まだ」に並べる欄。AI は 1 つの欄に理由をいくつも付けることがあるので、欄ごとに 1 回だけにする（同じ欄が並ぶと、確かめたあとも行が残る） */
-export const reviewSlotNames = (review: readonly { slot: string }[]): string[] => [...new Set(review.map((r) => r.slot))]
+export const reviewSlotNames = (review: readonly { slot: string }[]): string[] =>
+  [...new Set(review.map((r) => r.slot).filter((slot) => slot.trim().length > 0))]

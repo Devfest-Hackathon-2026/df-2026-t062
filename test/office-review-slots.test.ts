@@ -12,3 +12,15 @@ test('AI が同じ欄に理由を 2 つ付けても、「まだ」には 1 回�
   ]
   assert.deepEqual(reviewSlotNames(review), ['p1_M', 'p1_T'])
 })
+test('ページ全体の問題は「まだ」の欄に表示せず、実在する欄だけを並べる（#256）', () => {
+  const review = [
+    { slot: '', reason: '1 ページ: 読み取りに失敗しました' },
+    { slot: 'p1_氏名', reason: '入る内容を確認してください' },
+    { slot: '', reason: '2 ページ: 読み取りに失敗しました' },
+    { slot: 'p1_氏名', reason: '別の確認理由' },
+    { slot: '  ', reason: '欄名が空白だけ' },
+    { slot: 'p1_住所', reason: '住所の対応を確認してください' },
+  ]
+
+  assert.deepEqual(reviewSlotNames(review), ['p1_氏名', 'p1_住所'])
+})
