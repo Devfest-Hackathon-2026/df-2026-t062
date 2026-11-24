@@ -24,3 +24,19 @@ test('ページ全体の問題は「まだ」の欄に表示せず、実在す�
 
   assert.deepEqual(reviewSlotNames(review), ['p1_氏名', 'p1_住所'])
 })
+test('PDFに存在しないreview slotは確認対象から除外する（#256）', () => {
+  const review = [
+    { slot: '', reason: 'ページ全体の読み取りエラー' },
+    { slot: 'p1_氏名', reason: '氏名を確認してください' },
+    { slot: 'p3_存在しない欄', reason: '対応先がありません' },
+    { slot: 'p1_住所', reason: '住所を確認してください' },
+    { slot: 'p1_氏名', reason: '別の確認理由' },
+  ]
+
+  const validSlots = new Set(['p1_氏名', 'p1_住所'])
+
+  assert.deepEqual(
+    reviewSlotNames(review, validSlots),
+    ['p1_氏名', 'p1_住所']
+  )
+})

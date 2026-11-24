@@ -64,10 +64,17 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
         const k = forms.kinds.find((x) => x.key === kind)
         setKindName(k?.name ?? '')
         setAddKind(k && adding(k) ? k : null)
-        if (!fix && mv.review[0]) {
-          setSel(mv.review[0].slot)
-          setPage(pageOfSlot(mv, mv.review[0].slot) ?? 1)
-        }
+        if (!fix) {
+  const valid = new Set(
+    mv.formVersion.schemas.flat().map((s) => s.name)
+  )
+  const firstSlot = reviewSlotNames(mv.review, valid)[0]
+
+  setSel(firstSlot ?? null)
+  if (firstSlot) {
+    setPage(pageOfSlot(mv, firstSlot) ?? 1)
+  }
+}
       })
       .catch((e) => { if (live) setError(String((e as Error).message)) })
     return () => { live = false }
@@ -85,10 +92,20 @@ export function OfficeReview({ staffName, kind, versionId, fix }: { staffName: s
     return out
   }, [v])
 
-  const reviewSlots = useMemo(() => (fix || !v ? [] : reviewSlotNames(v.review)), [v, fix])
-  const pageWarnings = useMemo(
-  () => (fix || !v ? [] : v.review.filter((item) => !item.slot.trim())),
-  [v, fix]
+  const validSlots = useMemo(
+  () => new Set(v?.formVersion.schemas.flat().map((s) => s.name) ?? []),
+  [v]
+)
+
+const reviewSlots = useMemo(
+  () => (fix || !v ? [] : reviewSlotNames(v.review, validSlots)),
+  [v, fix, validSlots]
+)
+const pageWarnings = useMemo(
+  () => (fix || !v ? [] : v.review.filter(
+    (item) => !item.slot.trim() || !validSlots.has(item.slot)
+  )),
+  [v, fix, validSlots]
 )
   const exists = useCallback((name: string) => !!v && v.formVersion.schemas.some((p) => p.some((s) => s.name === name)), [v])
   const isDone = (name: string) => name in done || unused.includes(name) || (fix && name in moved)
