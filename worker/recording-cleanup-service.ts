@@ -193,9 +193,14 @@ async function deleteIntermediateCandidate(
   }
 }
 
-export async function deleteExpiredIntermediateRecordings(deps: WorkerDeps, limit = 100, metrics?: CleanupMetrics) {
+export async function deleteExpiredIntermediateRecordings(
+  deps: WorkerDeps,
+  limit = 100,
+  metrics?: CleanupMetrics,
+  retryFailed = false,
+) {
   const db = await deps.db()
-  const candidates = await claimIntermediateDeletionCandidates(db, limit)
+  const candidates = await claimIntermediateDeletionCandidates(db, limit, retryFailed)
   for (const candidate of candidates) await deleteIntermediateCandidate(deps, candidate, metrics)
   return candidates.length
 }
@@ -281,6 +286,25 @@ async function runBatched(
     if (processed < limit) break
   }
   return total
+}
+
+export interface IntermediateCleanupSummary {
+  deletions: number
+  metrics: CleanupMetrics
+}
+
+export async function drainExpiredIntermediateRecordings(
+  deps: WorkerDeps,
+  limit = 100,
+): Promise<IntermediateCleanupSummary> {
+  const startedAt = Date.now()
+  const metrics = emptyMetrics()
+  const deletions = await runBatched(
+    (batchLimit) => deleteExpiredIntermediateRecordings(deps, batchLimit, metrics, true),
+    limit,
+    startedAt,
+  )
+  return { deletions, metrics }
 }
 
 export async function runRecordingCleanup(deps: WorkerDeps, limit = 100): Promise<CleanupSummary> {
