@@ -224,6 +224,14 @@ test('saved diagram values generate a PDF with the normal export pipeline; empty
     const filled = await makePdf(storage, version, { 'housing.floorPlan': house() })
     assert.equal(Buffer.from(filled).subarray(0, 4).toString(), '%PDF')
     assert.ok(filled.length > empty.length + 1000)
+    const {fourPersonFamily}=await import('./fixtures/family-layout.ts')
+    const family=nextDiagram('family',fourPersonFamily(),0)
+    const familyVersion={...version,id:'family-export-test',bindings:{house:{op:'diagram@1' as const,ui:'diagram' as const,ref:{key:'family.genogram'}}}}
+    const familyPdf=await makePdf(storage,familyVersion,{'family.genogram':family})
+    assert.equal(Buffer.from(familyPdf).subarray(0,4).toString(),'%PDF')
+    const uri=await diagramImage(family,80,60),png=Buffer.from(uri.split(',')[1],'base64')
+    assert.equal(png.readUInt32BE(16),960,'家族図は約300dpiで氏名を印字する')
+    assert.equal(png.readUInt32BE(20),720)
   } finally { await rm(folder, { recursive: true, force: true }) }
 })
 test('body map labels of nearby marks are stacked so long labels do not overlap (#198)', () => {
@@ -234,4 +242,54 @@ test('body map labels of nearby marks are stacked so long labels do not overlap 
   const labelY = (id: string) => Number(svg.match(new RegExp(`data-object-id="${id}"[^>]*>(?:<text[^>]*>[^<]*</text>)<text x="[^"]*" y="([^"]*)"`))![1])
   assert.ok(Math.abs(labelY('a') - labelY('b')) >= 17, 'labels of marks 35px apart must not share a line')
   assert.equal(labelY('far'), labelY('a'), 'a mark far away keeps the default label position')
+})
+
+test('4人家族は夫婦を水平に結び、両親が共通の子2人へ1本の兄弟線で分岐する',async()=>{
+ const {fourPersonFamily}=await import('./fixtures/family-layout.ts')
+ const {familyLayout,familyRelationPaths}=await import('../core/diagram/family-layout.ts')
+ const d=fourPersonFamily(),people=familyLayout(d.family),routes=familyRelationPaths(people,d.family.relations,820)
+ const couple=routes.paths.find(p=>p.kind==='partner')!, parent=routes.paths.find(p=>p.kind==='parent')!
+ assert.match(couple.path,/^M[-\d.]+ [-\d.]+ H[-\d.]+$/,'夫婦線に上方迂回がない')
+ assert.equal(routes.paths.length,2)
+ assert.deepEqual(parent.parents,['father','mother'])
+ assert.deepEqual(parent.children,['daughter','son'])
+ assert.equal(parent.relationIds.length,4,'両親ごとの親子の意味は落とさず、描画を統合する')
+ assert.equal(couple.divorceMark,undefined,'婚姻を離婚に変えない')
+})
+
+/** M/H/Vの実線分。複数のMで分かれた共有幹線・兄弟線・子への枝も検査する。 */
+function familySegments(path:string) {
+ const segments:{x:number;y:number;xx:number;yy:number}[]=[]
+ let x=0,y=0
+ for(const match of path.matchAll(/M(-?[\d.]+) (-?[\d.]+)|H(-?[\d.]+)|V(-?[\d.]+)/g)) {
+   if(match[1]!==undefined){x=Number(match[1]);y=Number(match[2]);continue}
+   const xx=match[3]===undefined?x:Number(match[3]), yy=match[4]===undefined?y:Number(match[4])
+   segments.push({x,y,xx,yy});x=xx;y=yy
+ }
+ return segments
+}
+test('家族図の例外群: 登録関係を過不足なく描画し、記号・ラベルを横断せず、入力順でも変わらない',async()=>{
+ const {familyFixtures}=await import('./fixtures/family-layout.ts')
+ const {familyLayout,familyRelationPaths,familyPersonBounds,familyHouseholds}=await import('../core/diagram/family-layout.ts')
+ for(const [name,doc] of Object.entries(familyFixtures())) {
+   const before=JSON.stringify(doc),people=familyLayout(doc.family),layout=familyRelationPaths(people,doc.family.relations,Math.max(820,...people.map(p=>familyPersonBounds(p).right+40)))
+   assert.deepEqual(layout.paths.flatMap(p=>p.relationIds).sort(),doc.family.relations.map(r=>r.id).sort(),name)
+   for(const path of layout.paths.filter(p=>p.kind==='parent'))for(const child of path.children!) {
+     const actual=doc.family.relations.filter(r=>r.kind==='親子'&&r.target===child).map(r=>r.source).sort()
+     assert.deepEqual(path.parents,actual,`${name}/${child}: 親の集合を推測しない`)
+   }
+   if(name==='unmarried'||name==='single')assert.equal(layout.paths.filter(p=>p.kind==='partner').length,0)
+   for(const route of layout.paths)for(const seg of familySegments(route.path))for(const p of people) {
+     const b=familyPersonBounds(p),boxes=[{left:b.left,right:b.right,top:p.y+78,bottom:b.bottom},{left:p.x+33,right:p.x+87,top:p.y+5,bottom:p.y+59}]
+     for(const box of boxes)assert.ok(!(seg.y===seg.yy?seg.y>box.top&&seg.y<box.bottom&&Math.max(seg.x,seg.xx)>box.left&&Math.min(seg.x,seg.xx)<box.right:seg.x>box.left&&seg.x<box.right&&Math.max(seg.y,seg.yy)>box.top&&Math.min(seg.y,seg.yy)<box.bottom),`${name}/${p.id}: ${route.path}`)
+   }
+   for(const box of familyHouseholds(people)) {
+     assert.ok(box.people.every(id=>people.find(p=>p.id===id)!.household==='同居'&&people.find(p=>p.id===id)!.deceased!==true))
+     for(const p of people.filter(p=>!box.people.includes(p.id))){const b=familyPersonBounds(p);assert.ok(b.right<box.x||b.left>box.x+box.width||b.bottom<box.y||b.top>box.y+box.height,`${name}: 同居枠に別の人物を巻き込まない`)}
+   }
+   const svg=diagramSvg(doc,'family')
+   const reversed={...doc,family:{people:[...doc.family.people].reverse(),relations:[...doc.family.relations].reverse()}}
+   assert.equal(diagramSvg(reversed,'family'),svg,`${name}: 配列順で図が変わらない`)
+   assert.equal(JSON.stringify(doc),before,'保存データは書き換えない')
+ }
 })

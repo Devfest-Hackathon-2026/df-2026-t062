@@ -1,6 +1,6 @@
 import { houseShape } from './house-shapes.ts'
 import { resizeCorners } from './interaction.ts'
-import { familyLayout, familyRelationPaths, livesInHousehold } from './family-layout.ts'
+import { familyLayout, familyRelationPaths, familyLabels, familyPersonBounds, familyHouseholds } from './family-layout.ts'
 import { BODY_VIEWS } from './body.ts'
 import { type Doc, type Tab, type Item } from './model.ts'
 
@@ -26,28 +26,33 @@ export function diagramSvg(doc: Doc, tab: Tab, options: { editing?: boolean, cro
   let contents = '', viewBox = '0 0 820 560'
   if (tab === 'family') {
     const people = familyLayout(doc.family)
-    const minX = Math.min(0, ...people.map((p) => p.x - 55))
-    const maxX = Math.max(820, ...people.map((p) => p.x + 160)), maxY = Math.max(560, ...people.map((p) => p.y + 135))
-    const together = people.filter(livesInHousehold)
-    if (together.length) {
-      const x = Math.min(...together.map((p) => p.x)), y = Math.min(...together.map((p) => p.y))
-      contents += `<rect x="${x - 14}" y="${y - 8}" width="${Math.max(...together.map((p) => p.x)) - x + 148}" height="${Math.max(...together.map((p) => p.y)) - y + 130}" fill="none" stroke="#344757" stroke-dasharray="8 5"/>${text(x + 20, y - 15, '同居')}`
+    const bounds = people.map(familyPersonBounds)
+    const households = familyHouseholds(people)
+    const minX = Math.min(0, ...bounds.map(b => b.left - 30)), minY = Math.min(0, ...households.map(b => b.y - 36))
+    const maxX = Math.max(people.length ? 560 : 820, ...bounds.map(b => b.right + 40)), maxY = Math.max(people.length ? 320 : 450, ...bounds.map(b => b.bottom + 30))
+    for (const box of households) {
+      contents += `<rect data-household-people="${escape(box.people.join(' '))}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" fill="none" stroke="#344757" stroke-dasharray="8 5"/>${text(box.x + 28, box.y + 18, '同居', 14)}`
     }
     const { paths, right } = familyRelationPaths(people, doc.family.relations, maxX)
-    for (const { path, divorceMark } of paths) {
-      contents += `<path d="${path}" fill="none" stroke="white" stroke-width="5"/><path d="${path}" fill="none" stroke="#172b3d" stroke-width="2"/>`
+    const topRoutes = paths.flatMap(p => [...p.path.matchAll(/M[-\d.]+ ([-\d.]+)|V([-\d.]+)/g)].map(m=>Number(m[1]??m[2])))
+    const top = Math.min(minY, ...topRoutes.map(y=>y-25))
+    for (const { path, divorceMark, relationIds, kind } of paths) {
+      // 別の家族線との交差は白い橋で分離し、共有の接点とは区別する。
+      contents += `<path d="${path}" fill="none" stroke="white" stroke-width="5"/>`
+      contents += `<path data-family-connection="${kind}" data-relation-ids="${escape(relationIds.join(' '))}" d="${path}" fill="none" stroke="#172b3d" stroke-width="2"/>`
       if (divorceMark) contents += text(divorceMark.x, divorceMark.y + 6, '//', 17)
     }
-    viewBox = `${minX} 0 ${right + 20 - minX} ${maxY + 70}`
+    for (const {unionJunction:p} of paths) if(p) contents += `<circle data-family-junction="true" cx="${p.x}" cy="${p.y}" r="2" fill="#172b3d"/>`
+    viewBox = `${minX} ${top} ${right + 20 - minX} ${maxY + 70 - top}`
     for (const p of people) {
       const fill = p.deceased ? '#172b3d' : 'white'
       const shape = p.sex === 'female' ? `<circle r="27" fill="${fill}"/>${p.isSubject ? '<circle r="21" fill="none"/>' : ''}` : p.sex === 'male' ? `<rect x="-27" y="-27" width="54" height="54" fill="${fill}"/>${p.isSubject ? '<rect x="-21" y="-21" width="42" height="42" fill="none"/>' : ''}` : `<path d="M0 -28 L28 0 L0 28 L-28 0Z" fill="${fill}"/>${p.isSubject ? '<path d="M0 -21 L21 0 L0 21 L-21 0Z" fill="none"/>' : ''}`
-      const household = p.deceased === true ? '' : p.household === '不明' ? '同居未確認' : p.household === '別居' ? '別居' : ''
-      const life = p.deceased === null ? '生死未確認' : p.deceased ? '' : '生存'
-      contents += `<g data-person-id="${escape(p.id)}" transform="translate(${p.x + 60},${p.y + 32})" stroke="#172b3d" stroke-width="3">${options.editing ? '<rect x="-60" y="-32" width="120" height="120" fill="transparent" stroke="none"/>' : ''}${shape}<g stroke="none">${text(0, 60, `${p.name || '名前未確認'}${p.age == null ? '' : `（${p.age}歳）`}`)}${text(0, 83, [p.isSubject ? '本人' : '', household, life].filter(Boolean).join('・'), 14)}</g></g>`
-      if (p.id === options.selected) contents += `<rect x="${p.x}" y="${p.y}" width="120" height="110" fill="none" stroke="#684ac7" stroke-width="3" stroke-dasharray="6 3" pointer-events="none"/>`
+      const labels = familyLabels(p)
+      contents += `<g data-person-id="${escape(p.id)}" transform="translate(${p.x + 60},${p.y + 32})" stroke="#172b3d" stroke-width="3">${options.editing ? `<rect x="-60" y="-32" width="120" height="${familyPersonBounds(p).bottom-p.y}" fill="transparent" stroke="none"/>` : ''}${shape}<g stroke="none">${labels.names.map((line,i)=>text(0,60+i*24,line)).join('')}${text(0,83+(labels.names.length-1)*24,labels.status,14)}</g></g>`
+      if (p.id === options.selected) contents += `<rect x="${p.x}" y="${p.y}" width="120" height="${familyPersonBounds(p).bottom-p.y+8}" fill="none" stroke="#684ac7" stroke-width="3" stroke-dasharray="6 3" pointer-events="none"/>`
     }
-    contents += text(410, maxY + 48, '女性 ○　男性 □　本人 二重枠　死亡 塗りつぶし　同居 破線囲み', 18)
+    contents += text((minX + right + 20) / 2, maxY + 28, '女性 ○　男性 □　本人 二重枠', 16)
+    contents += text((minX + right + 20) / 2, maxY + 52, '死亡 塗りつぶし　同居 破線囲み', 16)
   } else {
     if (tab === 'body') {
       if (options.cropBody) viewBox = '97 0 626 560'
