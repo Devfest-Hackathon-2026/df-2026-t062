@@ -3,7 +3,12 @@ import type { FormDef, TemplateSlot } from '../../../core/form.ts'
 
 /** 空欄の操作領域は画面専用。架空の行や予定を値・保存・PDFへ追加しない。 */
 export function editablePages(form: FormDef, values: Record<string, unknown>): PrintPage[] {
-  return expandPrintLayout(form, values, { checkOverflow: false }).map(printed => {
+  return expandPrintLayout(form, values, { checkOverflow: false }).filter(printed => {
+    const layout = form.pages.find(p => p.pdfIndex === printed.sourceIndex)?.print
+    // 第6・7表の補足明細は、空のときだけ画面から除く。値がある明細と原紙は残す。
+    return !(['care_plan_6', 'care_plan_7'].includes(form.kind) && printed.sourceIndex > 0 && layout?.type === 'flow'
+      && layout.slots.every(name => !(printed.input[name] ?? '').trim()))
+  }).map(printed => {
     const layout = form.pages.find(p => p.pdfIndex === printed.sourceIndex)?.print
     const source = form.schemas[printed.sourceIndex]
     const empty: TemplateSlot[] = []
