@@ -24,9 +24,11 @@ import type { OfficeTopicsEdit, TeachDecision, TrainingItem } from '../../core/t
 import type { TrainingView } from '../../db/office-topics.ts'
 import type { LocalField } from '../../core/dictionary.ts'
 import type { HoldReasonCode, RecordingRetentionState } from '../../db/recording-retention.ts'
+import type { StaffMember } from '../../db/staff.ts'
 import type { RecordingConsentPolicy, RecordingConsentView } from '../../core/recording-consent.ts'
 
 export type { ClientSummary, DocumentView, JobView, RecordingRetentionListItem, SlotEdit, SlotEditResult, Staff, KindFormState, FormImportView, SlotMeaning, TrainingView, TrainingItem, TeachDecision, OfficeTopicsEdit }
+export type { StaffMember }
 
 /** 責任者が見る様式の版（GET /api/office/form-versions/:id）。slots は印字欄ごとの入る内容の言葉、review は取り込みが迷った欄 */
 export interface ManagedVersion {
@@ -134,6 +136,9 @@ export const api = {
   },
   formAssets: (id: string) => req<FormAssetsView>('GET', `/api/form-versions/${id}/assets`),
   me: () => req<{ staff: Staff }>('GET', '/api/me'),
+  officeStaff: () => req<{ staff: StaffMember[] }>('GET', '/api/office/staff'),
+  createOfficeStaff: (body: { name: string, email: string, role: 'admin' | 'caremanager' }) => req<{ staff: StaffMember }>('POST', '/api/office/staff', body),
+  updateOfficeStaff: (id: string, body: { role?: 'admin' | 'caremanager', disabled?: boolean }) => req<{ staff: StaffMember }>('PATCH', `/api/office/staff/${id}`, body),
   clients: (q = '', sort: 'updated' | 'name' = 'updated') => req<{ clients: ClientSummary[] }>('GET', `/api/clients?q=${encodeURIComponent(q)}&sort=${sort}`),
   createClient: (input: { name: string, sex?: '男' | '女' | null, status?: string }) => req<{ id: string, documentId: string }>('POST', '/api/clients', input),
   formKinds: () => req<{ kinds: FormKindView[] }>('GET', '/api/form-kinds'),

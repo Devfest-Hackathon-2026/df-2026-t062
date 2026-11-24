@@ -14,12 +14,16 @@ export type Route =
   | { name: 'officeAdd' }
   // 事業所が直せる項目（#115）: AI 特訓部屋
   | { name: 'officeTraining', kind: string }
+  | { name: 'staff' }
+  | { name: 'account' }
 
 export function parse(path: string, search = ''): Route {
   const m = /^\/clients\/([0-9a-f-]{36})\/?$/.exec(path)
   if (m) return { name: 'client', id: m[1], doc: new URLSearchParams(search).get('doc') ?? undefined }
   if (path === '/login') return { name: 'login' }
   if (path === '/office' || path === '/office/') return { name: 'office' }
+  if (path === '/staff' || path === '/staff/') return { name: 'staff' }
+  if (path === '/account' || path === '/account/') return { name: 'account' }
   if (path === '/office/add' || path === '/office/add/') return { name: 'officeAdd' }
   const o = /^\/office\/forms\/([^/]+)(?:\/(upload|training|review\/([0-9a-f-]{36})))?\/?$/.exec(path)
   if (o) {
