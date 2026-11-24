@@ -1,3 +1,5 @@
+import {TouchInspection} from '../../components/inspection/TouchInspection.tsx'
+import {focusInspectionField} from '../../components/inspection/context.ts'
 import { DocumentReview } from '../../components/document/DocumentReview.tsx'
 import { fieldDict } from '../../../core/dictionary.ts'
 import { CarePlanArea, isCarePlanRelatedKind } from '../../components/care-plan/CarePlanArea.tsx'
@@ -141,7 +143,7 @@ export function PadWork({ clientId }: { clientId: string }) {
 
   return (
     <div className="pad" style={{ width: '100%', height: '100dvh', boxSizing: 'border-box', overflow: 'hidden', fontFamily: "'Noto Sans JP',system-ui,sans-serif", color: '#1F2430', background: '#E9EBEF', fontSize: 16, lineHeight: 1.6, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', position: 'relative', zIndex: 10 }}>
+      <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '10px 16px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA', position: 'relative', zIndex: 10 }}>
         <a className="tb" {...linkProps('/app')} onClick={(e) => {
           if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
           if (state.conflicts.size && !window.confirm('競合した入力を破棄して利用者一覧に移動しますか？')) {
@@ -184,6 +186,7 @@ export function PadWork({ clientId }: { clientId: string }) {
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <TouchInspection clientId={clientId} context={state.doc?.id===docId&&docId?{documentId:docId,beforeStart:state.flush,jump:key=>focusInspectionField(scroller.current,fieldDict(state.form?.localFields).get(key)?.label??key,key)}:undefined}/>
           <DocumentReview key={docId} doc={state.doc} dict={fieldDict(state.form?.localFields)} flush={state.flush} reload={state.reload} />
           {saved && <span role="status" style={{ fontSize: 15, fontWeight: 500, color: '#1F49B0' }}>保存しました</span>}
           <button type="button" onClick={async () => { const ok = await state.saveDocument(); setSaved(ok); if (ok) setSavedPages(new Set(pages.map((p) => p.no))) }} disabled={phase === 'writing'} style={{ fontFamily: "'Noto Sans JP',sans-serif", fontSize: 16, fontWeight: 700, borderRadius: 12, padding: '0 18px', minHeight: 48, cursor: 'pointer', border: '1px solid #1C2229', background: '#1C2229', color: '#FFFFFF', whiteSpace: 'nowrap' }}>書類を保存</button>

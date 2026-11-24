@@ -136,3 +136,11 @@ test('分類ごとの数: アセスメントの 5 つの分類の順に、満た
     { category: '家族の状況の把握と支援', satisfied: 2, total: 2 },
   ])
 })
+
+test('期間判定は存在しない日付・逆転・一部の目標だけの期間を適合扱いしない',()=>{
+ const cert={from:'2026-01-01',to:'2026-12-31'}
+ assert.equal(withinPeriod('2026/2/31〜2026/3/31',cert),null)
+ assert.equal(withinPeriod('2026/6/30〜2026/4/1',cert),false)
+ assert.equal(withinPeriod('2026/1/1〜2026/12/31',{from:'2026-02-31',to:'2026-12-31'}),null)
+ assert.equal(RULES['37'](ruleInput({'cert.validFrom':cert.from,'cert.validTo':cert.to,'plan.needs':[{longGoalPeriod:'2026/1/1〜2026/6/30'},{longGoalPeriod:''}]})),null)
+})

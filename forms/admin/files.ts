@@ -12,6 +12,8 @@ export interface FormMeta {
   title: string
   publisher: string | null
   sourceUrl: string | null
+  /** 本プロジェクトが作成・公開する独自原紙。第三者の様式は対象外。 */
+  sourceFile?:string
   /** 公開通知から様式だけを取り出す場合の、元ファイルのハッシュと1始まりページ番号 */
   sourcePdfSha256?: string
   sourcePages?: number[]

@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { safeErrorCode, writeCleanupLog } from '../worker/recording-cleanup-observability.ts'
+import { safeDatabaseErrorCode, safeErrorCode, writeCleanupLog } from '../worker/recording-cleanup-observability.ts'
 
 test('cleanup observability only accepts known error codes', () => {
   assert.equal(safeErrorCode('permission_denied'), 'permission_denied')
   assert.equal(safeErrorCode('free-form database error'), 'unknown')
   assert.equal(safeErrorCode(undefined), 'unknown')
+})
+
+test('cleanup observability classifies database errors without exposing messages', () => {
+  assert.equal(safeDatabaseErrorCode({ code: '23503', message: 'contains sensitive SQL values' }), 'database_foreign_key')
+  assert.equal(safeDatabaseErrorCode({ code: '23505' }), 'database_unique_violation')
+  assert.equal(safeDatabaseErrorCode({ code: '23514' }), 'database_check_violation')
+  assert.equal(safeDatabaseErrorCode({ code: '40001' }), 'database_transaction_conflict')
+  assert.equal(safeDatabaseErrorCode({ code: '42703', message: 'private query details' }), 'database_schema_error')
+  assert.equal(safeDatabaseErrorCode(new Error('private database details')), 'database_error')
 })
 
 test('cleanup observability sanitizes free-form error codes and fields', () => {

@@ -1,3 +1,4 @@
+import type {InspectionContext} from '../inspection/context.ts'
 import { diagramChatTitle } from './chatEntry.ts'
 import { useEffect, useRef, useState } from 'react'
 import { DocumentInput, useDocumentInputs } from '../document-input/DocumentInput.tsx'
@@ -58,6 +59,8 @@ interface Props {
   diagramRequest?: { key: string, id: number }
   /** 点検（AI 点検）の相手。なければ「点検する」を出さない */
   clientId?: string
+  inspectionContext?:InspectionContext
+  inspectionUnavailable?:boolean
 
   available: boolean
   hasUnsavedChanges: boolean
@@ -108,7 +111,7 @@ function PetFillNote({ fill }: { fill: PetFill }) {
   )
 }
 
-export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, available, hasUnsavedChanges, work, clientName, review, topics, unheard = [], onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
+export function PetHelper({ clientId,inspectionContext,inspectionUnavailable=false, beforeDocumentAdopt, onDocumentApplied, available, hasUnsavedChanges, work, clientName, review, topics, unheard = [], onJump, onPreview, onIdentity, verifiedSources, chat, diagramRequest, fill }: Props) {
 
   const [menu, setMenu] = useState<Menu | null>(null)
   const [activeDiagramRequest, setActiveDiagramRequest] = useState<{ key: string, id: number, documentId?: string }>()
@@ -133,7 +136,8 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
   const activity = useWorkActivity(!!work)
   const [handledReturn, setHandledReturn] = useState(0)
   const returned = activity.returned !== handledReturn
-  const inspections = useInspections(clientId)
+  const inspectionDocumentId=inspectionContext?.documentId??chat.documentId
+  const inspections = useInspections(inspectionUnavailable?undefined:clientId,inspectionDocumentId)
   const inspectStatus = menuStatus(inspections.list)
   const intake = useDocumentInputs(chat.documentId)
   const inputReview = intake.inputs.filter((input) => input.status === 'review' &&
@@ -325,7 +329,7 @@ export function PetHelper({ clientId, beforeDocumentAdopt, onDocumentApplied, av
             {!topics.length && !unheard.length && <p className="assistant-empty">{available ? '面談のヒントに対応する空欄はありません。' : 'アセスメントを開くと面談のヒントを表示します。'}</p>}
           </>
         )}
-        {menu === 'inspect' && clientId && <PetInspection clientId={clientId} list={inspections.list} reload={inspections.reload} onJump={jump} />}
+        {menu === 'inspect' && clientId && (inspectionUnavailable?<p className="assistant-empty">点検する書類を開いてください。</p>:<PetInspection key={inspectionDocumentId} clientId={clientId} documentId={inspectionDocumentId} beforeStart={inspectionContext?.beforeStart??beforeDocumentAdopt} list={inspections.list} reload={inspections.reload} onJump={(key,documentId)=>{if(documentId&&documentId!==inspectionDocumentId)return;if(inspectionContext)inspectionContext.jump(key);else jump(key)}} />)}
         {menu === 'revise' && (
           <PetChat key={chat.documentId} diagramRequest={scopedDiagramRequest} onTopicChange={setChatTopic} saved={chat.saved} documentId={chat.documentId} entries={chatEntries} setEntries={setChatEntries} current={chat.current} onSet={chat.onSet} onDiagramApply={chat.onDiagramApply}
             onJump={available ? jump : undefined} dict={chat.dict} />

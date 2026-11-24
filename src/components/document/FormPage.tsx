@@ -72,7 +72,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
     const pad = s.kind === 'check' ? (touch ? 1.2 : 1.0) : 0.2
     const box = pos(s.x, s.y, s.w, s.h)
     return (
-      <span key={s.name}>
+      <span key={s.name} data-field-key={s.binding?.ref.key}>
         {(m === 'cm' || proposed) && <span className="chg" style={box} data-provisional={proposed || undefined} />}
         {m === 'ai' && on && <span className={freshCls} style={box} />}
         {!proposed && !m && <span className="able" style={box} />}
@@ -101,7 +101,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
     const multi = (s.cellOptions?.length ?? 0) > 1
     const isOpen = open === s.name
     return (
-      <span key={s.name}>
+      <span key={s.name} data-field-key={s.binding?.ref.key}>
         {v && marks.get(s.name) === 'cm' && <span className="chg" style={box} />}
         {v && marks.get(s.name) === 'ai' && <span className={freshCls} style={box} />}
         {v && <span className="mark" style={{ ...box, fontSize: '2.3cqw' }}>{v}</span>}
@@ -122,7 +122,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
     if (d) {
       return (
         <Fragment key={s.name}>
-        <div style={{ position: 'absolute', ...pos(s.x, s.y, s.w, s.h), zIndex: diffOpen === s.name ? 8 : 3 }}>
+        <div data-field-key={s.binding?.ref.key} style={{ position: 'absolute', ...pos(s.x, s.y, s.w, s.h), zIndex: diffOpen === s.name ? 8 : 3 }}>
           <DiffField
             before={d.before} after={d.after} ai={d.ai} label={s.label} batch={batchLabel}
             fontSize={fsz(s.pt)} lineHeight={multi ? s.lh : 1.15} padding={multi ? '0.4cqw 0.3cqw 0' : '0 0.3cqw'} fill touch={touch} disabled={disabled} singleLine={!multi} textAlign={s.align}
@@ -146,10 +146,10 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
     const value = display(s.name)
     const reason = state.reasons.get(s.name)
     const field = multi
-      ? <FitTextarea key={s.name} label={s.label} value={value} disabled={disabled} onChange={(t) => state.type(s.name, t)} onBlur={() => state.commit(s.name)} style={style} base={fsz(s.pt)} />
+      ? <FitTextarea fieldKey={s.binding?.ref.key} key={s.name} label={s.label} value={value} disabled={disabled} onChange={(t) => state.type(s.name, t)} onBlur={() => state.commit(s.name)} style={style} base={fsz(s.pt)} />
       : (
         <input
-          key={s.name} className="fx" type="text" aria-label={`${s.label}（${changeStatus(m)}）`} aria-invalid={!!reason} value={value} disabled={disabled}
+          key={s.name} data-field-key={s.binding?.ref.key} className="fx" type="text" aria-label={`${s.label}（${changeStatus(m)}）`} aria-invalid={!!reason} value={value} disabled={disabled}
           onChange={(e) => state.type(s.name, e.target.value)}
           onBlur={() => state.commit(s.name)}
           // 変換中の Enter は確定に使わない
@@ -159,7 +159,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
       )
     if (!reason) return field
     return (
-      <span key={s.name}>
+      <span key={s.name} data-field-key={s.binding?.ref.key}>
         {field}
         <span role="alert" style={{
           position: 'absolute', left: pc(s.x, W), top: pc(s.y + s.h + 0.6, H), zIndex: 6, maxWidth: touch ? 320 : 260,
@@ -175,7 +175,7 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
       {noImage || !image
         ? <div className="pimg" role="img" aria-label={page.title} style={{ aspectRatio: `${W} / ${H}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4%', color: '#8A919C', fontSize: 12 }}>{image === null && !noImage ? '様式の画像が置き場にありません（npm run forms:assets）' : ''}</div>
         : <img className="pimg" src={image} alt={`${page.title}`} style={{ aspectRatio: `${W} / ${H}`, ...(dim ? { opacity: 0.55 } : {}) }} draggable={false} onError={() => { if (!state.imageFailed()) setNoImage(true) }} />}
-      {page.slots.map((s) => (s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} onChat={onDiagramChat} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)))}
+      {page.slots.map((s) => (<Fragment key={s.name}>{s.kind === 'diagram' ? <Suspense key={`${state.doc?.id}:${s.name}`} fallback={null}><DiagramSlot slot={s} state={state} disabled={disabled} onChat={onDiagramChat} /></Suspense> : s.kind === 'circle' || s.kind === 'check' ? renderMark(s) : s.kind === 'cell' ? renderCell(s) : renderText(s)}</Fragment>))}
       {children}
       {target && <span className="pc-pet-field-focus" data-slot={target.name} style={pos(target.x, target.y, target.w, target.h)} aria-hidden="true" />}
       {cell && (
@@ -204,10 +204,10 @@ function FormPageInner({ page, state, touch, disabled, batchLabel, dim, glow, pe
 }
 
 /** 長い文章の欄（入りきらなければ文字を小さくする） */
-function FitTextarea({ label, value, disabled, onChange, onBlur, style, base }: { label: string, value: string, disabled: boolean, onChange: (t: string) => void, onBlur: () => void, style: CSSProperties, base: string }) {
+function FitTextarea({ fieldKey,label, value, disabled, onChange, onBlur, style, base }: { fieldKey?:string,label: string, value: string, disabled: boolean, onChange: (t: string) => void, onBlur: () => void, style: CSSProperties, base: string }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const s = useFitScale(ref, base, value)
-  return <textarea ref={ref} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={(e) => {
+  return <textarea ref={ref} data-field-key={fieldKey} className="fx fxa" aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} onBlur={(e) => {
     // 貼り付け等の直後に離れても、Reactへの反映前の表示値を保存から落とさない。
     if (e.currentTarget.value !== value) onChange(e.currentTarget.value)
     onBlur()

@@ -1,0 +1,111 @@
+{
+  "id": "M-missing",
+  "synthetic": true,
+  "dry": false,
+  "why": "変化はあるが事業所との連絡記録と医療者報告がない。",
+  "elapsedMs": 2045,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:56.431Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 5618,
+    "promptSha256": "6bd70d410db367a0713cf7084debeb10e93861beccc81e5280cae81d4cd3b64a",
+    "schemaSha256": "41d5741a75125584a5a1d14b4c04ce17925f00c4b56ec98f239c1c3035bc554d",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 2042,
+    "responseId": "gO0Ea4S2I7efvdAPoruWmAo",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 1543,
+      "candidatesTokenCount": 138,
+      "totalTokenCount": 1681,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 1543
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 138
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"58\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"サービス事業所との連絡に関する記載がない\"\n    },\n    \"59\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"60\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": true,\n        \"②\": false\n      },\n      \"missing\": \"医療者への報告または伝達の記録がない\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "58",
+        "level": "1",
+        "met": {},
+        "missing": "サービス事業所との連絡に関する記載がない",
+        "fieldKey": "monitoring.serviceContacts",
+        "documentId": "M-missing",
+        "by": "ai"
+      },
+      {
+        "item": "59",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "monitoring.changes",
+        "documentId": "M-missing",
+        "by": "ai"
+      },
+      {
+        "item": "60",
+        "level": "1",
+        "met": {
+          "①": true,
+          "②": false
+        },
+        "missing": "医療者への報告または伝達の記録がない",
+        "fieldKey": "monitoring.medicalReport",
+        "documentId": "M-missing",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 1543,
+      "cachedTokens": 0,
+      "outputTokens": 138,
+      "thinkingTokens": 0,
+      "yen": 0.265451
+    },
+    "ruleItems": 0,
+    "aiItems": 3
+  },
+  "comparisons": [
+    {
+      "id": "58",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "59",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "60",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

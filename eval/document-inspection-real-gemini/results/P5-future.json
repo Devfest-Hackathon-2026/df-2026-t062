@@ -1,0 +1,165 @@
+{
+  "id": "P5-future",
+  "synthetic": true,
+  "dry": false,
+  "why": "交付・招集・訪問・連絡は未実施。変化は記録されているが医療者への報告はない。",
+  "elapsedMs": 3709,
+  "captured": {
+    "startedAt": "2026-11-24T01:50:50.379Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 8325,
+    "promptSha256": "edb9ba828e25f474da7763676e583b715afa4bda45c446c92dcfbdd787ac4a3a",
+    "schemaSha256": "eab9f0f51f226c9725f35436324a1e33a9e965177964a7dadfd49efa4d3befad",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 3708,
+    "responseId": "eu0Ea4jPIJGcvdAPjKPG4Ao",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2500,
+      "candidatesTokenCount": 297,
+      "totalTokenCount": 2797,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2500
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 297
+        }
+      ]
+    },
+    "text": "{\n  \"results\": {\n    \"55\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": false,\n        \"②\": false\n      },\n      \"missing\": \"利用者及び事業所への計画交付の記録が記載されていない。\"\n    },\n    \"56\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"サービス担当者会議の招集の実施内容が記載されていない。\"\n    },\n    \"57\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"面談の日時・場所・相手・モニタリング内容が記載されていない。\"\n    },\n    \"58\": {\n      \"level\": \"1\",\n      \"met\": {},\n      \"missing\": \"サービス事業所との連絡やモニタリングの記録がない。\"\n    },\n    \"59\": {\n      \"level\": \"2\",\n      \"met\": {},\n      \"missing\": null\n    },\n    \"60\": {\n      \"level\": \"1\",\n      \"met\": {\n        \"①\": true,\n        \"②\": false\n      },\n      \"missing\": \"心身状態の変化について医療者へ報告・伝達した記録がない。\"\n    }\n  }\n}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "55",
+        "level": "1",
+        "met": {
+          "①": false,
+          "②": false
+        },
+        "missing": "利用者及び事業所への計画交付の記録が記載されていない。",
+        "fieldKey": "progress.date",
+        "documentId": "P5-future",
+        "by": "ai"
+      },
+      {
+        "item": "56",
+        "level": "1",
+        "met": {},
+        "missing": "サービス担当者会議の招集の実施内容が記載されていない。",
+        "fieldKey": "progress.date",
+        "documentId": "P5-future",
+        "by": "ai"
+      },
+      {
+        "item": "57",
+        "level": "1",
+        "met": {},
+        "missing": "面談の日時・場所・相手・モニタリング内容が記載されていない。",
+        "fieldKey": "progress.date",
+        "documentId": "P5-future",
+        "by": "ai"
+      },
+      {
+        "item": "58",
+        "level": "1",
+        "met": {},
+        "missing": "サービス事業所との連絡やモニタリングの記録がない。",
+        "fieldKey": "progress.content",
+        "documentId": "P5-future",
+        "by": "ai"
+      },
+      {
+        "item": "59",
+        "level": "2",
+        "met": {},
+        "missing": null,
+        "fieldKey": "progress.content",
+        "documentId": "P5-future",
+        "by": "ai"
+      },
+      {
+        "item": "60",
+        "level": "1",
+        "met": {
+          "①": true,
+          "②": false
+        },
+        "missing": "心身状態の変化について医療者へ報告・伝達した記録がない。",
+        "fieldKey": "progress.content",
+        "documentId": "P5-future",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2500,
+      "cachedTokens": 0,
+      "outputTokens": 297,
+      "thinkingTokens": 0,
+      "yen": 0.473621
+    },
+    "ruleItems": 0,
+    "aiItems": 6
+  },
+  "comparisons": [
+    {
+      "id": "55",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "56",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "57",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "58",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "59",
+      "expected": "2",
+      "actual": "2",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "60",
+      "expected": "1",
+      "actual": "1",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

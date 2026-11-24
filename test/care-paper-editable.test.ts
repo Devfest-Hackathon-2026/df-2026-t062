@@ -22,7 +22,7 @@ for (const number of [2, 6]) test(`第${number}表は空の最終行まで全列
   for (const column of layout.slots) for (let row = 0; row < layout.rowsPerPage; row++) {
     assert.ok(screen[0].schemas.some(s => s.name === `${column}__row${row}`))
   }
-  assert.equal(screen.length, pdf.length)
+  assert.equal(screen.length, number === 6 ? 1 : pdf.length)
   assert.deepEqual(values, {})
   assert.equal(JSON.stringify(expandPrintLayout(f, values, { checkOverflow: false })), before)
 })

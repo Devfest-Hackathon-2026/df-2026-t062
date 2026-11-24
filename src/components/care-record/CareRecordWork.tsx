@@ -1,3 +1,5 @@
+import {useInspectionContext,focusInspectionField,type OnInspectionContext} from '../inspection/context.ts'
+import {fieldDict} from '../../../core/dictionary.ts'
 import { useContext } from 'react'
 import { CarePaperFlow } from '../care-paper/CarePaperFlow.ts'
 import { PaperDialog } from '../care-paper/PaperDialog.tsx'
@@ -16,7 +18,9 @@ import { useDocument } from '../document/useDocument.ts'
 import { FieldConflicts } from '../document/FieldConflicts.tsx'
 import './CareRecordWork.css'
 
-export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onBack, onDirtyChange, onBusyChange }: { clientId: string, clientName: string, kind?: CareRecordKind, onBack: () => void, onDirtyChange?: (v: boolean) => void, onBusyChange?: (v: boolean) => void }) {
+export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onBack, onDirtyChange, onBusyChange,onInspectionContextChange }: { onInspectionContextChange?:OnInspectionContext, clientId: string, clientName: string, kind?: CareRecordKind, onBack: () => void, onDirtyChange?: (v: boolean) => void, onBusyChange?: (v: boolean) => void }) {
+  const inspectionRoot=useRef<HTMLElement>(null)
+  const selectedScroll=useRef(false)
   const continuous = useContext(CarePaperFlow)
   const [choosing, setChoosing] = useState(false)
   const config = careRecordConfig[kind]
@@ -35,12 +39,14 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
   const historyRequest = useRef(0)
   const state = useDocument(id)
   const ready = !!id && state.doc?.id === id
+  useEffect(()=>{if(ready&&continuous&&selectedScroll.current){selectedScroll.current=false;inspectionRoot.current?.scrollIntoView({block:'start',behavior:'instant'})}},[ready,continuous])
   const dirty = ready && (state.hasLocalEdits || !sameValue(state.current, state.saved))
   useEffect(() => { onDirtyChange?.(!!dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
   const values = past?.values ?? state.current
   const text = (key: string) => typeof values[key] === 'string' ? values[key] as string : ''
   const editable = ready && !past && !busy
+  useInspectionContext(onInspectionContextChange,ready&&!past?id:undefined,state.flush,key=>focusInspectionField(inspectionRoot.current,fieldDict(state.form?.localFields).get(key)?.label??key,key))
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -75,7 +81,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
     setReload(n => n + 1)
     return true
   }
-  const select = (next: string) => { if (id !== next) void run(async () => { if (await preserve()) { historyRequest.current++; setPast(undefined); setId(next); setChoosing(false) } }) }
+  const select = (next: string) => { if (id !== next) void run(async () => { if (await preserve()) { historyRequest.current++; selectedScroll.current=true; setPast(undefined); setId(next); setChoosing(false) } }) }
   const create = () => void run(async () => {
     if (!await preserve()) return
     createRequest.current ??= crypto.randomUUID()
@@ -102,7 +108,7 @@ export function CareRecordWork({ clientId, clientName, kind = 'care_plan_5', onB
         <nav aria-label="記録一覧のページ"><button className="btn" disabled={!filters.offset || loading} onClick={() => setFilters(f => ({ ...f, offset: Math.max(0, f.offset - 50) }))}>前の50件</button><button className="btn" disabled={!more || loading} onClick={() => setFilters(f => ({ ...f, offset: f.offset + 50 }))}>次の50件</button></nav>
       </aside>
   )
-  return <main className="care-record-work">
+  return <main ref={inspectionRoot} className="care-record-work">
     <header className="care-record-header"><button className="btn" type="button" disabled={busy} onClick={() => void run(async () => { if (await preserve()) onBack() })}>ケアプランに戻る</button><h1>{clientName} さんの{config.short}</h1>{continuous && <button type="button" className="btn" disabled={busy} onClick={() => setChoosing(true)}>記録を選ぶ</button>}<button type="button" className="savebtn" disabled={busy} onClick={create}>＋ {config.short}を追加</button></header>
     <div className="care-record-columns">
       {(!continuous || choosing) && (continuous ? <PaperDialog title={config.short + 'を選ぶ'} onClose={() => setChoosing(false)}>{recordList}</PaperDialog> : recordList)}

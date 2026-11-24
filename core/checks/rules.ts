@@ -47,7 +47,9 @@ export function withinPeriod(period: string, cert: { from: string, to: string })
   const ds = datesIn(period)
   if (ds.length < 2) return null
   const [start, end] = [ds[0], ds[ds.length - 1]]
-  return start >= cert.from && end <= cert.to
+  const valid=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v
+  if(![start,end,cert.from,cert.to].every(valid)||cert.from>cert.to)return null
+  return start<=end&&start >= cert.from && end <= cert.to
 }
 
 /** 37 長期目標の ③: 長期目標の期間は、開始日・終了日とも認定の有効期間の中か（どれか 1 つでも外なら当たらない） */
@@ -56,8 +58,8 @@ const longGoalPeriod: Rule = ({ values }) => {
   const to = values['cert.validTo']
   const needs = values['plan.needs']
   if (typeof from !== 'string' || typeof to !== 'string' || !Array.isArray(needs)) return null
-  const rs = needs.map((n) => (typeof n?.longGoalPeriod === 'string' ? withinPeriod(n.longGoalPeriod, { from, to }) : null)).filter((r) => r !== null)
-  if (!rs.length) return null
+  const rs = needs.map((n) => (typeof n?.longGoalPeriod === 'string' ? withinPeriod(n.longGoalPeriod, { from, to }) : null))
+  if (!rs.length || (!rs.includes(false)&&rs.includes(null))) return null
   return { met: { '③': rs.every(Boolean) } }
 }
 

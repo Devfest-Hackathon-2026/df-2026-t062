@@ -1,7 +1,7 @@
 // 様式の元の PDF を手元（forms/tools/templates/<種類>/base.pdf）に用意する。中身は form.json のハッシュで確かめる。
 //   アセスメント: 全社協が公開している PDF を公式の URL から取ってくる
 //   入院時情報提供書: 公開されていない地域の版なので、手元に置いたときだけ
-// PDF は公開リポジトリに入れない（.gitignore）。
+// 第三者のPDFは公開しない。プロジェクト独自の原紙だけ sourceFile で同梱する。
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -18,7 +18,14 @@ export async function ensurePdf(kind: FormKind): Promise<{ pdf: Uint8Array | nul
   if (existsSync(file)) {
     const b = new Uint8Array(readFileSync(file))
     if (sha(b) === meta.basePdfSha256) return { pdf: b, message: '元の PDF はもうあります' }
-    if (!meta.sourceUrl) throw new Error(`${file} の中身が、欄の位置を合わせた版と違います（form.json の basePdfSha256）`)
+    if (!meta.sourceUrl && !meta.sourceFile) throw new Error(`${file} の中身が、欄の位置を合わせた版と違います（form.json の basePdfSha256）`)
+  }
+  if(meta.sourceFile){
+    if(!/^[a-z][a-z0-9_-]*\.pdf$/.test(meta.sourceFile))throw new Error('独自原紙の名前が不正です')
+    const pdf=new Uint8Array(readFileSync(new URL(`../originals/${meta.sourceFile}`,import.meta.url)))
+    if(sha(pdf)!==meta.basePdfSha256)throw new Error('独自原紙と様式のハッシュが一致しません')
+    mkdirSync(dirname(file),{recursive:true});writeFileSync(file,pdf)
+    return {pdf,message:'アプリ独自の原紙を用意しました'}
   }
   if (!meta.sourceUrl) return { pdf: null, message: `元の PDF がありません（公開されていない様式なので、手元の PDF を ${file} に置いてください）` }
   const res = await fetch(meta.sourceUrl)

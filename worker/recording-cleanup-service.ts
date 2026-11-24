@@ -26,6 +26,11 @@ import {
   getRecordingRetentionObservability,
   listRetentionHoldVerificationCandidates,
 } from '../db/recording-retention.ts'
+import {
+  CLEANUP_EVENTS,
+  safeDatabaseErrorCode,
+  writeCleanupLog,
+} from './recording-cleanup-observability.ts'
 
 const asDecimal = (value: string): DecimalString => value as DecimalString
 
@@ -167,8 +172,17 @@ async function deleteIntermediateCandidate(
   try {
     const result = await markIntermediateDataDeleted(db, candidate)
     if (result && metrics) metrics.intermediateDeletionSuccessCount++
-  } catch {
+  } catch (error) {
     const retryableFailure = candidate.attempts < RECORDING_DELETE_MAX_ATTEMPTS
+    writeCleanupLog({
+      event: CLEANUP_EVENTS.deletion,
+      operation: 'delete',
+      result: 'failed',
+      error_code: safeDatabaseErrorCode(error),
+      retryable: retryableFailure,
+      failure_count: 1,
+      intermediate_failure_count: 1,
+    })
     await markIntermediateDataDeleteFailed(db, candidate, 'database_error', retryableFailure)
     if (metrics) {
       metrics.failureCount++

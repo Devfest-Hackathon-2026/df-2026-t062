@@ -19,6 +19,7 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_6','サービス利用票 第6表','many',false,'assessment','[]','[]','single')")
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_4','サービス担当者会議の要点 第4表','many',false,'assessment','[]','[]','single')")
     await db.query("INSERT INTO form_kinds (key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES ('care_plan_5','居宅介護支援経過 第5表','many',false,'assessment','[]','[]','single')")
+    await db.query("INSERT INTO form_kinds(key,name,per_client,is_primary,create_from,required,topics,summary_mode) VALUES('monitoring','モニタリング記録','many',false,'assessment','[]','[]','single')")
     await seedForms(db)
     const office = (await db.query("INSERT INTO offices (name, phone, fax) VALUES ('migration test', '', '') RETURNING id")).rows[0].id
     const staff = (await db.query("INSERT INTO staff (office_id, auth_uid, name, email) VALUES ($1, 'migration-test', 'テスト', 'migration@test.invalid') RETURNING id", [office])).rows[0].id
@@ -76,7 +77,23 @@ test('書類取込の追加移行は既存原本・候補を保持し、版を�
       '0038_document_review.sql',
       '0039_recording_consent.sql',
       '0040_recording_consent_integrity.sql',
+      '0041_recording_cleanup_audit_grant.sql',
+      '0043_document_inspections.sql',
+      '0044_monitoring.sql',
     ])
+    const cleanupRoleExists = (await db.query("SELECT 1 FROM pg_roles WHERE rolname = 'recording_cleanup'")).rowCount === 1
+    if (cleanupRoleExists) {
+      assert.equal((await db.query(`
+        SELECT bool_and(has_column_privilege('recording_cleanup', 'audit_events', required.column_name, 'INSERT')) AS allowed
+        FROM (VALUES
+          ('office_id'), ('staff_id'), ('client_id'), ('document_id'), ('action'),
+          ('outcome'), ('request_id'), ('correlation_id'), ('trace_id'), ('source'),
+          ('route'), ('schema_version'), ('detail')
+        ) AS required(column_name)
+      `)).rows[0].allowed, true)
+      assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'USAGE') AS allowed")).rows[0].allowed, true)
+      assert.equal((await db.query("SELECT has_sequence_privilege('recording_cleanup', 'audit_events_id_seq', 'SELECT') AS allowed")).rows[0].allowed, true)
+    }
     const field=(await db.query('SELECT value,by,reviewed_at,reviewed_by,value_version FROM field_values WHERE document_id=$1 AND key=$2',[document,'person.lifeHistory'])).rows[0]
     assert.equal(field.value,'架空の移行前原案');assert.equal(field.by,'ai')
     assert.equal(field.reviewed_at,null);assert.equal(field.reviewed_by,null)

@@ -5,6 +5,7 @@ import { summaryTopics, topicsFor, type Topic, type OfficeTopics } from '../../c
 import { loadFormDef } from '../../db/forms.ts'
 import { prepareWriterValues } from '../job-values.ts'
 import { contextFields, type WorkerContext, type WorkerDeps } from '../jobs.ts'
+import { safeAiJobErrorCode, writeAiJobEvent, writeAiQueueSnapshot } from '../ai-job-observability.ts'
 import { ZERO_USAGE, type Usage, type SummaryLine, type Summarizer } from '../types.ts'
 import { unresolvedFieldKeys } from './review.ts'
 import { DocumentReadError, readDocument } from './read.ts'
@@ -19,6 +20,8 @@ export async function runDocumentInput(deps: WorkerDeps, id: string, context?: W
     template_version_id=coalesce(template_version_id,(SELECT template_version_id FROM documents WHERE id=document_inputs.document_id))
     WHERE id=$1 AND attempts<$3 AND (status='queued' OR (status='processing' AND lease_until<now())) RETURNING *`, [id, token, MAX_ATTEMPTS])).rows[0]
   if (!row) return
+  const t0 = Date.now()
+  writeAiJobEvent({ jobType: 'document_input', phase: 'started', jobId: id, attempt: row.attempts, context })
   const update = async (sql: string, args: unknown[] = []) => {
     const r = await db.query(`UPDATE document_inputs SET ${sql},updated_at=now() WHERE id=$1 AND run_token=$2 AND status='processing' AND lease_until>now() RETURNING id`, [id, token, ...args])
     if (!r.rows.length) throw new LeaseLost()
@@ -107,12 +110,15 @@ export async function runDocumentInput(deps: WorkerDeps, id: string, context?: W
     }
     // 候補を作ったときの版を固定する。採用時はこの版と書類の今の版を照合する。
     await update("status='review',result=$3,run_token=NULL,lease_until=NULL,error_kind=NULL", [JSON.stringify(result)])
+    writeAiJobEvent({ jobType: 'document_input', phase: 'succeeded', jobId: id, attempt: row.attempts, durationMs: Date.now() - t0, usage: result.usage, counts: { candidate_count: result.candidates.length }, context })
   } catch (e) {
     if (e instanceof LeaseLost) return
     const kind = e instanceof DocumentReadError ? e.kind : 'processing_failed'
-    await update('status=$3,error_kind=$4,run_token=NULL,lease_until=NULL', [e instanceof DocumentReadError || row.attempts >= MAX_ATTEMPTS ? 'failed' : 'queued', kind])
+    const retryable = !(e instanceof DocumentReadError) && row.attempts < MAX_ATTEMPTS
+    await update('status=$3,error_kind=$4,run_token=NULL,lease_until=NULL', [retryable ? 'queued' : 'failed', kind])
+    writeAiJobEvent({ jobType: 'document_input', phase: retryable ? 'retry' : 'failed', jobId: id, attempt: row.attempts, durationMs: Date.now() - t0, errorCode: kind, retryable, context })
     // 原文やモデル応答を含みうる例外はログに渡さない。
-    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'document input failed', id, error: kind }))
+    console.error(JSON.stringify({ severity: 'ERROR', ...contextFields(context), msg: 'document input failed', id, error: safeAiJobErrorCode(kind) }))
     if (!(e instanceof DocumentReadError)) throw new Error('document_input_retry')
   } finally { clearInterval(heartbeat) }
 }
@@ -126,5 +132,6 @@ export async function reconcileDocumentInputs(deps: WorkerDeps, enqueue: (id: st
   const rows = (await db.query(`SELECT id FROM document_inputs WHERE (status='queued' AND updated_at<now()-interval '2 minutes')
     OR (status='processing' AND lease_until<now()) ORDER BY created_at LIMIT 20`)).rows
   for (const row of rows) await enqueue(row.id)
+  await writeAiQueueSnapshot(db, 'document_input', rows.length)
   return rows.length
 }

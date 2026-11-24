@@ -3,10 +3,11 @@ import { test, expect, openPlan } from './support/fixtures.ts'
 test('未作成の用紙でも入力枠が原紙の座標に重なり、選択パネルを常設しない', async ({ page, ui }) => {
   await openPlan(page, ui)
   const flow = page.getByRole('region', { name: 'ケアプラン全用紙', exact: true })
-  // 第6・7表には明細ページもある。用紙の種類数を総ページ数と混同しない。
+  // 第6・7表の空の明細は表示せず、原紙だけを並べる。
   for (const number of [1, 2, 3, 4, 5, 6, 7]) {
     await expect(flow.locator(`[data-care-table="${number}"] .care-paper-page`).first()).toBeAttached()
   }
+  for (const number of [6, 7]) await expect(flow.locator(`[data-care-table="${number}"] .care-paper-page`)).toHaveCount(1)
   await expect(flow.locator('.care-record-list')).toHaveCount(1) // 第7表の参照選択は今回の対象外
   await expect(flow.locator('.care-paper-operations')).toHaveCount(0)
   for (const table of [2, 3, 4, 5, 6]) {

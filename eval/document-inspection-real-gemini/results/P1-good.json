@@ -1,0 +1,98 @@
+{
+  "id": "P1-good",
+  "synthetic": true,
+  "dry": false,
+  "why": "本人と続柄つきの家族の具体的意向、生活上の課題、役割、緊急対応、セルフケアを記載。",
+  "elapsedMs": 2516,
+  "captured": {
+    "startedAt": "2026-11-24T01:49:25.122Z",
+    "requestedModel": "gemini-3.8-flash",
+    "inputBytes": 8481,
+    "promptSha256": "e668938f30b0bf94f5e4c86c2b7369291d4a8826275f311193f65bf33626a0ef",
+    "schemaSha256": "2a9b3c7f966188a56222506e552fda17a3eb2f34f5e5fd5296bb18d9e0a5b2a1",
+    "maxOutputTokens": 65536,
+    "thinkingLevel": "LOW",
+    "elapsedMs": 2504,
+    "responseId": "Je0Ea9LeIrScvdAPnJjZyQE",
+    "modelVersion": "gemini-3.8-flash",
+    "finishReasons": [
+      "STOP"
+    ],
+    "usage": {
+      "promptTokenCount": 2383,
+      "candidatesTokenCount": 49,
+      "totalTokenCount": 2432,
+      "trafficType": "ON_DEMAND",
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 2383
+        }
+      ],
+      "candidatesTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 49
+        }
+      ]
+    },
+    "text": "{\"results\":{\"33\":{\"level\":\"3\",\"met\":{\"①\":true,\"②\":true},\"missing\":null},\"34\":{\"level\":\"3\",\"met\":{\"①\":true,\"②\":true,\"③\":true},\"missing\":null}}}"
+  },
+  "result": {
+    "findings": [
+      {
+        "item": "33",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true
+        },
+        "missing": null,
+        "fieldKey": "plan.intentionAnalysis",
+        "documentId": "P1-good",
+        "by": "ai"
+      },
+      {
+        "item": "34",
+        "level": "3",
+        "met": {
+          "①": true,
+          "②": true,
+          "③": true
+        },
+        "missing": null,
+        "fieldKey": "plan.overallPolicy",
+        "documentId": "P1-good",
+        "by": "ai"
+      }
+    ],
+    "usage": {
+      "calls": 1,
+      "promptTokens": 2383,
+      "cachedTokens": 0,
+      "outputTokens": 49,
+      "thinkingTokens": 0,
+      "yen": 0.312634
+    },
+    "ruleItems": 0,
+    "aiItems": 2
+  },
+  "comparisons": [
+    {
+      "id": "33",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    },
+    {
+      "id": "34",
+      "expected": "3",
+      "actual": "3",
+      "exact": true,
+      "missed": false,
+      "extra": false
+    }
+  ]
+}

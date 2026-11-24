@@ -935,8 +935,12 @@
       "category": "主訴・意思の把握・尊重",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.intentionAnalysis",
+        "intention.person",
+        "intention.family"
+      ],
+      "guide": "本人・家族の意向と課題分析のつながりを確認する。意向が相違するときは相違を残しているかを見て、どちらかを合意済みと推測しない。"
     },
     {
       "id": "34",
@@ -967,8 +971,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.overallPolicy"
+      ],
+      "guide": "総合的な援助の方針に、本人が目指す暮らしと自立に向けた具体的な支援が記載されているかを確認する。一般的な挨拶や抽象的な方針だけで具体的と判断しない。"
     },
     {
       "id": "35",
@@ -999,8 +1005,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "ニーズが生活上の課題として表現され、参考のアセスメントに記載された課題・意向とつながるかを確認する。参考資料が不足するときは、その整合性を断定しない。"
     },
     {
       "id": "36",
@@ -1033,8 +1041,10 @@
       "category": "主訴・意思の把握・尊重",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "ニーズ・目標・サービスが本人や多職種に理解できる表現かを確認する。専門用語の有無だけでなく、本人の生活場面が読み取れるかを見る。"
     },
     {
       "id": "37",
@@ -1065,8 +1075,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "both",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "長期目標の具体性・達成の確認方法・期間を、各ニーズについて確認する。認定有効期間は同じ計画版の第1表を参考にする。③の機械判定が渡された場合はそれに従い、未設定や読めない期間を有効期間内と断定しない。"
     },
     {
       "id": "38",
@@ -1105,8 +1117,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "短期目標が長期目標に対応し、具体的に評価できる内容と期間を持つかを確認する。期間や目標を補作せず、各目標の記載で判定する。"
     },
     {
       "id": "39",
@@ -1125,8 +1139,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "ニーズ・短期目標・援助内容から、本人ができることや取り組む役割が記載されているかを確認する。本人の実施能力や役割を未記載のまま推測しない。"
     },
     {
       "id": "40",
@@ -1146,8 +1162,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "保険給付対象のサービスについて、内容・種別・事業所・頻度・期間がニーズや短期目標と対応するかを確認する。未記載の利用日程や回数を推測しない。"
     },
     {
       "id": "41",
@@ -1165,8 +1183,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "福祉用具の貸与・販売が記載されている場合に、その種類と利用理由・生活課題との関係を確認する。記載のない用具を利用していると推測しない。"
     },
     {
       "id": "42",
@@ -1186,8 +1206,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "保険給付外のサービス・家族や地域の支援が記載されている場合、その内容と役割・ニーズとの関係を確認する。存在しない支援や利用頻度を補わない。"
     },
     {
       "id": "43",
@@ -1214,8 +1236,10 @@
       "category": "主訴・意思の把握・尊重",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.needs"
+      ],
+      "guide": "サービス事業所について本人の選択や意向を踏まえた説明があるかを確認する。事業所名があるだけで本人の意思を確認済みとは判断しない。"
     },
     {
       "id": "44",
@@ -1232,8 +1256,11 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.weekly",
+        "plan.nonWeeklyServices"
+      ],
+      "guide": "週間予定の保険サービスが、同じ計画版の第2表のサービス内容・頻度・期間と整合するかを確認する。曜日や時刻が不明なサービスの予定を推測しない。"
     },
     {
       "id": "45",
@@ -1259,8 +1286,11 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.weekly",
+        "plan.nonWeeklyServices"
+      ],
+      "guide": "週間予定や週単位以外のサービスにある家族・地域等の支援が、同じ計画版の第2表に記載された支援と整合するかを確認する。未記載の支援はあると見なさない。"
     },
     {
       "id": "46",
@@ -1286,8 +1316,10 @@
       "category": "課題を解決するためのサービス計画",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "dailySchedule"
+      ],
+      "guide": "一日の習慣化された生活活動と週間サービスの配置が整合するかを確認する。活動が書かれていない時間を、活動済みや支援不要と推測しない。"
     },
     {
       "id": "47",
@@ -1305,8 +1337,12 @@
       "category": "家族の状況の把握と支援",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "plan.weekly",
+        "dailySchedule",
+        "plan.nonWeeklyServices"
+      ],
+      "guide": "週間予定の家族の役割と同じ計画版の支援内容が整合するかを確認する。家族の対応可能性や合意は、資料にない場合は推測しない。"
     },
     {
       "id": "48",
@@ -1323,8 +1359,12 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.date",
+        "meeting.place",
+        "meeting.discussion"
+      ],
+      "guide": "開いている会議記録の開催日・場所・検討内容等から開催の記載を確認する。別の会議記録や予定の存在だけで、この会議を実施済みと見なさない。"
     },
     {
       "id": "49",
@@ -1341,8 +1381,11 @@
       "category": "主訴・意思の把握・尊重",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.personAttended",
+        "meeting.attendees"
+      ],
+      "guide": "本人の出席について、開いている会議記録の明示された出席情報を確認する。氏名が本文に出るだけでは出席を推測しない。"
     },
     {
       "id": "50",
@@ -1360,8 +1403,12 @@
       "category": "家族の状況の把握と支援",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.familyAttended",
+        "meeting.relationship",
+        "meeting.attendees"
+      ],
+      "guide": "家族の出席・続柄や参加できなかった事情を、開いている会議記録から確認する。未確認の家族を参加者に補わない。"
     },
     {
       "id": "51",
@@ -1378,8 +1425,10 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.attendees"
+      ],
+      "guide": "会議出席者の所属・職種と氏名等を、開いている会議記録で確認する。未記載の担当者が出席したと推測しない。"
     },
     {
       "id": "52",
@@ -1406,8 +1455,10 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.items"
+      ],
+      "guide": "開いている会議記録の検討項目から、議題と生活課題の対応を確認する。議題名から話し合った内容を補作しない。"
     },
     {
       "id": "53",
@@ -1434,8 +1485,11 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.discussion",
+        "meeting.conclusion"
+      ],
+      "guide": "開いている会議記録の検討内容と結論が区別され、意見や支援方針の検討が読み取れるかを確認する。検討案を合意済みの結論と見なさない。"
     },
     {
       "id": "54",
@@ -1452,8 +1506,11 @@
       "category": "課題の分析",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "meeting.remaining",
+        "meeting.nextDate"
+      ],
+      "guide": "開いている会議記録に残された課題・次回の確認事項や時期が記載されているかを確認する。未決定の事項を解決済みと推測しない。"
     },
     {
       "id": "55",
@@ -1480,8 +1537,11 @@
       "category": "主訴・意思の把握・尊重",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.date",
+        "progress.content"
+      ],
+      "guide": "開いている支援経過の本文から、計画の交付先・日付等の記載を確認する。交付の予定や一般説明を実施記録と取り違えない。"
     },
     {
       "id": "56",
@@ -1499,8 +1559,12 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.date",
+        "progress.category",
+        "progress.content"
+      ],
+      "guide": "開いている支援経過に会議の招集・調整の実施内容が記載されているかを確認する。別の記録の存在や予定だけで実施済みとしない。"
     },
     {
       "id": "57",
@@ -1518,8 +1582,12 @@
       "category": "課題の分析",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.date",
+        "progress.category",
+        "progress.content"
+      ],
+      "guide": "開いている支援経過の訪問日と訪問の事実・方法を確認する。1件の記録だけから他の日の訪問や月間の網羅性を補完せず、不足している根拠を示す。"
     },
     {
       "id": "58",
@@ -1538,8 +1606,12 @@
       "category": "多職種との連携",
       "operational": true,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.content",
+        "monitoring.serviceContacts",
+        "monitoring.goalStatus"
+      ],
+      "guide": "開いている支援経過またはモニタリング記録の、事業所との連絡・サービス実施状況・目標達成状況の記載を確認する。別の記録を現在の記録と取り違えず、連絡や支援を推測しない。"
     },
     {
       "id": "59",
@@ -1557,8 +1629,13 @@
       "category": "課題の分析",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.content",
+        "monitoring.changes",
+        "monitoring.personOpinion",
+        "monitoring.familyOpinion"
+      ],
+      "guide": "開いている記録から、心身・生活状況や本人・家族の意向の変化を捉える記載を確認する。変化がないとの記載と、確認していないため記載がない場合を区別する。"
     },
     {
       "id": "60",
@@ -1588,8 +1665,12 @@
       "category": "多職種との連携",
       "operational": false,
       "method": "ai",
-      "keys": [],
-      "guide": ""
+      "keys": [
+        "progress.content",
+        "monitoring.medicalReport",
+        "monitoring.changes"
+      ],
+      "guide": "開いている記録に、心身状態の変化に関する医療者への報告・連携の事実や内容が記載されているかを確認する。報告の必要性の医学判断を代行せず、予定と実施を区別する。"
     },
     {
       "id": "61",

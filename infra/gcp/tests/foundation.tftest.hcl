@@ -69,6 +69,7 @@ run "private_service_with_scoped_deployer" {
     github_repository_owner_id          = "234936919"
     app_origins                         = []
     recording_cleanup_alerts_enabled    = true
+    ai_job_alerts_enabled               = true
     monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
@@ -285,14 +286,32 @@ run "private_service_with_scoped_deployer" {
 
   assert {
     condition = (
-      google_logging_metric.recording_cleanup_overdue.value_extractor == "EXTRACT(jsonPayload.overdue_count)" &&
-      google_logging_metric.recording_cleanup_hold_mismatch.value_extractor == "EXTRACT(jsonPayload.hold_alert_count)" &&
-      google_logging_metric.recording_cleanup_stuck.value_extractor == "EXTRACT(jsonPayload.stuck_count)" &&
+      google_logging_metric.recording_cleanup_overdue.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_hold_mismatch.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_stuck.metric_descriptor[0].value_type == "INT64" &&
+      google_logging_metric.recording_cleanup_duration.value_extractor == "EXTRACT(jsonPayload.duration_ms)" &&
       google_monitoring_alert_policy.recording_cleanup_overdue.enabled &&
       google_monitoring_alert_policy.recording_cleanup_overdue.conditions[0].condition_threshold[0].duration == "900s" &&
       google_monitoring_alert_policy.recording_cleanup_no_success.conditions[0].condition_absent[0].duration == "7200s"
     )
     error_message = "Monitoring must extract aggregate values and preserve the documented alert thresholds."
+  }
+
+  assert {
+    condition = (
+      google_logging_metric.ai_job_success.name == "ai_job_success_count" &&
+      google_logging_metric.ai_job_failure.name == "ai_job_failure_count" &&
+      google_logging_metric.ai_job_duration.name == "ai_job_duration" &&
+      google_logging_metric.ai_job_queue_wait.name == "ai_job_queue_wait" &&
+      google_logging_metric.ai_job_backlog_age.name == "ai_job_backlog_age_seconds" &&
+      google_monitoring_alert_policy.ai_job_failure.enabled &&
+      google_monitoring_alert_policy.ai_job_backlog.enabled &&
+      google_monitoring_alert_policy.ai_job_processing_stuck.enabled &&
+      google_monitoring_alert_policy.ai_job_cost.enabled &&
+      length(google_monitoring_alert_policy.ai_job_failure.notification_channels) == 1 &&
+      google_monitoring_dashboard.ai_jobs.dashboard_json != ""
+    )
+    error_message = "AI job metrics, alerts and a privacy-safe dashboard must be managed by Terraform."
   }
 
   assert {
@@ -356,11 +375,14 @@ run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
   command = plan
 
   variables {
-    project_id                         = "mock-project"
-    github_repository_id               = "1447301909"
-    github_repository_owner_id         = "234936919"
-    app_origins                        = []
-    source_recording_lifecycle_enabled = true
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = false
+    recording_cleanup_alerts_enabled    = true
+    monitoring_notification_channel_ids = ["projects/mock-project/notificationChannels/test"]
   }
 
   assert {
@@ -381,6 +403,23 @@ run "source_lifecycle_safety_net_can_be_enabled_explicitly" {
     )
     error_message = "The source Lifecycle safety net must not be applied to output or forms, and must not replace work cleanup."
   }
+}
+
+run "source_lifecycle_safety_net_rejects_paused_scheduler" {
+  command = plan
+
+  variables {
+    project_id                          = "mock-project"
+    github_repository_id                = "1447301909"
+    github_repository_owner_id          = "234936919"
+    app_origins                         = []
+    source_recording_lifecycle_enabled  = true
+    recording_cleanup_scheduler_paused  = true
+    recording_cleanup_alerts_enabled    = false
+    monitoring_notification_channel_ids = []
+  }
+
+  expect_failures = [terraform_data.recording_cleanup_alert_configuration]
 }
 
 run "source_bucket_cors_and_budget" {

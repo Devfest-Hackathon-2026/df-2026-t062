@@ -11,6 +11,7 @@ import {
   claimExpiredSourceRecordings,
   getRecordingRetention,
   markExpiredSourceRecordingsEligible,
+  markRecordingSourceDeleted,
   releaseExpiredRecordingRetentionHolds,
   releaseRecordingRetentionHold,
   setRecordingRetentionHold,
@@ -66,6 +67,48 @@ test('DBの保持期限前の録音は削除候補にならない', { skip }, as
 
   assert.equal(candidates.some((candidate) => candidate.recordingId === j.recordingId), false)
   assert.equal((await getRecordingRetention(db, j.recordingId, staff.officeId))?.sourceDeleteStatus, 'pending')
+})
+
+test('GCS削除成功後にSoft Delete期限を記録できる', { skip }, async () => {
+  const j = await job()
+  await db.query(
+    `UPDATE recordings
+        SET recorded_at = now() - interval '8 days',
+            source_expires_at = now() - interval '1 day',
+            source_delete_status = 'pending',
+            source_generation = 1,
+            source_metageneration = 1,
+            retention_hold = false,
+            retention_hold_target = false,
+            retention_hold_sync_status = 'synced'
+      WHERE id = $1`,
+    [j.recordingId],
+  )
+
+  await markExpiredSourceRecordingsEligible(db)
+  assert.ok((await claimExpiredSourceRecordings(db)).some((candidate) => candidate.recordingId === j.recordingId))
+  const candidate = await beginSourceDeletion(db, j.recordingId, staff.officeId)
+  if (!candidate || candidate.sourceDeleteStatus !== 'deleting') assert.fail('録音削除の開始に失敗しました')
+
+  const claimed = {
+    ...candidate,
+    sourceDeleteStatus: 'deleting' as const,
+    generation: candidate.generation ?? assert.fail('録音の世代番号がありません'),
+    claimToken: candidate.claimToken ?? assert.fail('削除クレームトークンがありません'),
+    attempts: candidate.attempts ?? 1,
+  }
+  assert.equal(await markRecordingSourceDeleted(db, claimed), true)
+  const row = (await db.query(
+    `SELECT source_delete_status, source_deleted_at, source_soft_delete_retention_seconds,
+            source_purge_expected_at
+       FROM recordings WHERE id = $1`,
+    [j.recordingId],
+  )).rows[0]
+  assert.equal(row.source_delete_status, 'deleted')
+  assert.ok(row.source_deleted_at)
+  assert.equal(Number(row.source_soft_delete_retention_seconds), 259200)
+  assert.ok(row.source_purge_expected_at > row.source_deleted_at)
+  assert.ok(row.source_purge_expected_at <= new Date(row.source_deleted_at.getTime() + 259200_000 + 1000))
 })
 
 const providers = (write: Providers['recording']['writer']['write']): Providers => ({

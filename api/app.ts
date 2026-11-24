@@ -160,7 +160,7 @@ const RecordingInput = z.object({
 })
 const RecordingConsentInput = z.object({ confirmed: z.literal(true) })
 // 書き方の相談。やり取りは画面が持っていて、毎回全部を送る（最後はケアマネの相談）
-const InspectionInput = z.object({ checkSet: z.string().min(1).max(100).optional() })
+const InspectionInput = z.object({ documentId:z.uuid().optional(),checkSet: z.string().min(1).max(100).optional() })
 const ChatInput = z.object({
   diagramField: z.enum(diagramChatFields).optional(),
   draft: z.object({ key: z.enum(['family.genogram', 'health.bodyMap']), after: z.unknown(), pendingLocations: z.array(pendingLocationSchema).max(100).optional() }).optional(),
@@ -909,18 +909,21 @@ export function createApp(deps: ApiDeps) {
 
   // AI 点検（#113）。書類の値を読むだけで、値は変えない。点検は裏の仕事（worker）
   app.post('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
-    const { checkSet } = await body(c, InspectionInput)
-    const r = await inspections.createInspection(db, staff, c.req.param('id')!, checkSet ?? DEFAULT_CHECK_SET)
+    const { checkSet,documentId } = await body(c, InspectionInput)
+    const r = await inspections.createInspection(db, staff, c.req.param('id')!, checkSet ?? DEFAULT_CHECK_SET,documentId)
     if (r.created) await deps.queue().enqueueInspection(r.id, { initial: true })
     return json(c, { inspectionId: r.id }, 202)
   }))
   app.get('/api/clients/:id/inspections', staffRoute('care.work', async (c, staff, db) => {
     const clientId = c.req.param('id')!
-    const result = await inspections.listInspections(db, staff.officeId, clientId)
+    const result = await inspections.listInspections(db, staff.officeId, clientId,100,c.req.query('documentId'))
     await accessAudit(c, db, staff, {
       clientId, resourceType: 'inspection', accessMode: 'list', action: 'inspection.view', resultCount: result.length,
     })
     return json(c, { inspections: result })
+  }))
+  app.get('/api/clients/:id/inspection-scope',staffRoute('care.work',async(c,staff,db)=>{
+    return json(c,await inspections.inspectionScope(db,staff.officeId,c.req.param('id')!,c.req.query('documentId')))
   }))
   app.get('/api/inspections/:id', staffRoute('care.work', async (c, staff, db) => {
     const id = c.req.param('id')!

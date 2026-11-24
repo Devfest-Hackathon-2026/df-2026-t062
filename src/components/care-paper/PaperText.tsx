@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 
 export interface PaperTextField {
+  key?:string
   label: string
   value: string
   onChange: (value: string) => void
@@ -20,6 +21,7 @@ export function PaperText({ field, placeholder, className, style, disabled }: {
   const props = {
     className: `${className} paper-text`,
     'aria-label': field.label,
+    'data-field-key':field.key,
     style,
     value: field.value,
     placeholder,

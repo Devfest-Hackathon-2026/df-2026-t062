@@ -191,8 +191,9 @@ export const api = {
   /** 書類を作るときに、元の書類から AI が書く（#195） */
   startFill: (documentId: string) => req<{ fillId: string }>('POST', `/api/documents/${documentId}/fill`, {}),
   documentFill: (documentId: string) => req<{ fill: FillView | null }>('GET', `/api/documents/${documentId}/fill`),
-  startInspection: (clientId: string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {}),
-  inspections: (clientId: string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections`),
+  inspectionScope: (clientId:string,documentId?:string) => req<Awaited<ReturnType<typeof import('../../db/inspections.ts').inspectionScope>>>('GET',`/api/clients/${clientId}/inspection-scope${documentId?'?documentId='+encodeURIComponent(documentId):''}`),
+  startInspection: (clientId: string,documentId?:string) => req<{ inspectionId: string }>('POST', `/api/clients/${clientId}/inspections`, {documentId}),
+  inspections: (clientId: string,documentId?:string) => req<{ inspections: InspectionSummary[] }>('GET', `/api/clients/${clientId}/inspections${documentId?'?documentId='+encodeURIComponent(documentId):''}`),
   inspection: (id: string) => req<{ inspection: InspectionView }>('GET', `/api/inspections/${id}`),
   /** documentId: 録音を始めた書類（省けば主な書類） */
   startRecording: (clientId: string, mime: string, deviceRecordingId: string, expiredUploadUrl?: string, documentId?: string) =>

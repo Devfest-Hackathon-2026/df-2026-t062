@@ -10,8 +10,24 @@ ORDER BY name;
 SELECT table_name
 FROM information_schema.tables
 WHERE table_schema = 'public'
-  AND table_name IN ('audit_events', 'access_audit_events', 'security_audit_events')
+  AND table_name IN ('audit_events', 'access_audit_events', 'security_audit_events', 'recording_consent_events')
 ORDER BY table_name;
+
+-- 録音開始前の同意イベントを必須にする最新スキーマの確認。
+SELECT table_name, column_name, is_nullable, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (
+    (table_name = 'recordings' AND column_name = 'consent_event_id')
+    OR (table_name = 'recording_consent_events' AND column_name IN ('id', 'event_type', 'occurred_at'))
+  )
+ORDER BY table_name, ordinal_position;
+
+SELECT trigger_name, event_object_table, action_timing, event_manipulation
+FROM information_schema.triggers
+WHERE trigger_schema = 'public'
+  AND trigger_name = 'recording_consent_events_guard'
+ORDER BY event_manipulation;
 
 SELECT table_name, column_name, is_nullable, data_type
 FROM information_schema.columns
@@ -68,6 +84,13 @@ SELECT
   has_table_privilege('recording_cleanup', 'public.recording_summaries', 'DELETE') AS summaries_delete,
   has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'SELECT') AS care_record_drafts_select,
   has_table_privilege('recording_cleanup', 'public.care_record_drafts', 'UPDATE') AS care_record_drafts_update,
-  has_table_privilege('recording_cleanup', 'public.audit_events', 'INSERT') AS audit_insert,
+  (
+    SELECT bool_and(has_column_privilege('recording_cleanup', 'public.audit_events', required.column_name, 'INSERT'))
+    FROM (VALUES
+      ('office_id'), ('staff_id'), ('client_id'), ('document_id'), ('action'),
+      ('outcome'), ('request_id'), ('correlation_id'), ('trace_id'), ('source'),
+      ('route'), ('schema_version'), ('detail')
+    ) AS required(column_name)
+  ) AS audit_insert,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'USAGE') AS audit_sequence_usage,
   has_sequence_privilege('recording_cleanup', 'public.audit_events_id_seq', 'SELECT') AS audit_sequence_select;
