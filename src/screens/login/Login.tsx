@@ -31,7 +31,7 @@ export function Login() {
       <form onSubmit={submit} style={{ width: 'min(400px, 100%)', background: '#FFFFFF', border: '1px solid #E1E4EA', borderRadius: 14, padding: '28px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Logo size={36} />
-          <div style={{ fontWeight: 700, fontSize: 17 }}>ケア書類アシスタント<span style={{ fontWeight: 400, color: '#5A6270', fontSize: 12, marginLeft: 4 }}>（仮）</span></div>
+          <div style={{ fontWeight: 700, fontSize: 17 }}>ネコノテ</div>
         </div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: '#5A6270' }}>メールアドレス
           <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} style={field} />
