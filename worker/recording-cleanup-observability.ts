@@ -61,7 +61,9 @@ const ALLOWED_ERROR_CODES = new Set([
   'invalid_request', 'generation_mismatch', 'object_held', 'object_missing',
   'upload_cancel_failed', 'database_error', 'database_foreign_key',
   'database_unique_violation', 'database_check_violation',
-  'database_transaction_conflict', 'database_schema_error', 'unknown',
+  'database_not_null', 'database_permission_denied',
+  'database_transaction_conflict', 'database_schema_error',
+  'audit_detail_validation', 'unknown',
 ])
 const ALLOWED_OPERATIONS = new Set(['readiness', 'metadata_sync', 'cleanup', 'delete', 'check', 'verify'])
 const ALLOWED_MISMATCH_TYPES = new Set(['db_gcs_hold_state', 'gcs_hold_verification_failed'])
@@ -77,8 +79,17 @@ export function safeDatabaseErrorCode(error: unknown): string {
   if (code === '23503') return 'database_foreign_key'
   if (code === '23505') return 'database_unique_violation'
   if (code === '23514') return 'database_check_violation'
+  if (code === '23502') return 'database_not_null'
+  if (code === '42501') return 'database_permission_denied'
   if (code === '40001' || code === '40P01') return 'database_transaction_conflict'
   if (code?.startsWith('42')) return 'database_schema_error'
+  if (error instanceof Error && [
+    '監査detailに自由文字列は保存できません',
+    '監査detailに禁止されたキーがあります',
+    '監査detailが大きすぎます',
+    '監査detailのネストが深すぎます',
+    '監査detailに循環参照があります',
+  ].includes(error.message)) return 'audit_detail_validation'
   return 'database_error'
 }
 
