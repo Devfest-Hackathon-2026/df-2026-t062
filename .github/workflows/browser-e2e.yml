@@ -29,21 +29,49 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Detect browser-relevant changes
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          frontend=false
+          while IFS= read -r file; do
+            case "$file" in
+              src/*|public/*|e2e/*|playwright.config.*|index.html|vite.config.*|package.json|package-lock.json|.github/workflows/browser-e2e.yml)
+                frontend=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$GITHUB_BASE_REF"..."$GITHUB_SHA")
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+      - name: Skip browser tests for backend-only changes
+        if: steps.scope.outputs.frontend == 'false'
+        run: echo 'No browser-relevant changes; browser E2E check completed without running the suite.'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.frontend == 'true'
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+        if: steps.scope.outputs.frontend == 'true'
       - name: Install PDF renderer and Japanese fonts
+        if: steps.scope.outputs.frontend == 'true'
         run: |
           sudo apt-get update -o Acquire::Retries=3
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends poppler-utils fonts-noto-cjk
       - run: npx playwright install --with-deps chromium
+        if: steps.scope.outputs.frontend == 'true'
       - run: npm run test:e2e
+        if: steps.scope.outputs.frontend == 'true'
         env:
           E2E_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/careman_e2e
       - name: Upload browser report and screenshots
-        if: always()
+        if: always() && steps.scope.outputs.frontend == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: care-plan-browser-e2e
