@@ -59,13 +59,27 @@ export interface CleanupSummaryLog {
 const ALLOWED_ERROR_CODES = new Set([
   'permission_denied', 'rate_limited', 'unavailable', 'precondition_failed',
   'invalid_request', 'generation_mismatch', 'object_held', 'object_missing',
-  'upload_cancel_failed', 'database_error', 'unknown',
+  'upload_cancel_failed', 'database_error', 'database_foreign_key',
+  'database_unique_violation', 'database_check_violation',
+  'database_transaction_conflict', 'database_schema_error', 'unknown',
 ])
 const ALLOWED_OPERATIONS = new Set(['readiness', 'metadata_sync', 'cleanup', 'delete', 'check', 'verify'])
 const ALLOWED_MISMATCH_TYPES = new Set(['db_gcs_hold_state', 'gcs_hold_verification_failed'])
 
 export function safeErrorCode(code: string | undefined): string {
   return code && ALLOWED_ERROR_CODES.has(code) ? code : 'unknown'
+}
+
+export function safeDatabaseErrorCode(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+  if (code === '23503') return 'database_foreign_key'
+  if (code === '23505') return 'database_unique_violation'
+  if (code === '23514') return 'database_check_violation'
+  if (code === '40001' || code === '40P01') return 'database_transaction_conflict'
+  if (code?.startsWith('42')) return 'database_schema_error'
+  return 'database_error'
 }
 
 export function writeCleanupLog(payload: CleanupSummaryLog) {
