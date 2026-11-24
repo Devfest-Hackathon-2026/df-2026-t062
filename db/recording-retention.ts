@@ -787,12 +787,12 @@ export async function markRecordingSourceDeleted(db: Db, candidate: ClaimedDelet
       `UPDATE recordings
           SET source_delete_status = 'deleted', source_deleted_at = now(),
               source_soft_delete_retention_seconds = $3,
-              source_purge_expected_at = now() + ($3 * interval '1 second'),
+              source_purge_expected_at = now() + make_interval(secs => $4),
               source_delete_claim_token = NULL, source_delete_claimed_at = NULL,
               source_delete_next_retry_at = NULL, source_delete_last_error_code = NULL
         WHERE id = $1 AND source_delete_status = 'deleting' AND source_delete_claim_token = $2
         RETURNING office_id, client_id, document_id, source_deleted_at, source_purge_expected_at`,
-      [candidate.recordingId, candidate.claimToken, softDeleteSeconds],
+      [candidate.recordingId, candidate.claimToken, softDeleteSeconds, softDeleteSeconds],
     )).rows[0]
     if (!row) return false
     await retentionAudit(c, { officeId: row.office_id, clientId: row.client_id, documentId: row.document_id,
