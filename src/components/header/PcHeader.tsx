@@ -7,8 +7,8 @@ export function PcHeader({ staffName, roleLabel = 'ケアマネ' }: { staffName:
     <header style={{ flex: '0 0 auto', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 24px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <Logo size={32} />
-        <div style={{ fontWeight: 700, fontSize: 15 }}>ケア書類アシスタント<span style={{ fontWeight: 400, color: '#5A6270', fontSize: 12, marginLeft: 4 }}>（仮）</span></div>
-      </div>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>ネコノテ</div>
+        </div>
       <button type="button" onClick={() => void auth.signOut()} title="ログアウト" style={{ font: 'inherit', fontSize: 13, color: '#5A6270', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}>{staffName}（{roleLabel}）</button>
     </header>
   )
@@ -16,8 +16,17 @@ export function PcHeader({ staffName, roleLabel = 'ケアマネ' }: { staffName:
 
 export function Logo({ size }: { size: number }) {
   return (
-    <div style={{ width: size, height: size, borderRadius: size / 4, background: '#2453C4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width={size * 0.56} height={size * 0.56} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /><path d="M8 13h8" /><path d="M8 17h5" /></svg>
-    </div>
+    <img
+      src="/assistant/nekonote-icon.png"
+      alt="ネコノテ"
+      width={size}
+      height={size}
+      style={{
+        width: size,
+        height: size,
+        objectFit: 'contain',
+        display: 'block',
+      }}
+    />
   )
 }

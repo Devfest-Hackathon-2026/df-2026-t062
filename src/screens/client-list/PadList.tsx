@@ -42,7 +42,7 @@ export function PadList({ staffName }: { staffName: string }) {
       <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 24px', background: '#FFFFFF', borderBottom: '1px solid #E1E4EA' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Logo size={36} />
-          <div style={{ fontWeight: 700, fontSize: 17 }}>ケア書類アシスタント</div>
+          <div style={{ fontWeight: 700, fontSize: 17 }}>ネコノテ</div>
         </div>
         <button type="button" onClick={() => void auth.signOut()} style={{ font: 'inherit', fontSize: 15, color: '#5A6270', background: 'none', border: 0, cursor: 'pointer', minHeight: 44 }}>{staffName}</button>
       </header>
