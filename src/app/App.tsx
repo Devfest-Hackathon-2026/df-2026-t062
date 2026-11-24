@@ -1,3 +1,4 @@
+import { Landing } from '../screens/landing/Landing.tsx'
 import { useCallback, useEffect, useState } from 'react'
 import { AuthProvider, useAuth } from '../lib/auth.tsx'
 import { api, ApiError, setTokenSource, type Staff } from '../lib/api.ts'
@@ -21,7 +22,7 @@ function OfficeNotice({ message }: { message: string }) {
   return (
     <div className="pc" style={{ padding: 40, fontFamily: "'Noto Sans JP',sans-serif" }}>
       <p role="alert" style={{ margin: 0, fontWeight: 600 }}>{message}</p>
-      <p style={{ marginTop: 16 }}><a {...linkProps('/')}>利用者の一覧へ戻る</a></p>
+      <p style={{ marginTop: 16 }}><a {...linkProps('/app')}>利用者の一覧へ戻る</a></p>
     </div>
   )
 }
@@ -94,6 +95,16 @@ function Shell() {
 }
 
 export function App() {
+  const [path, setPath] = useState(window.location.pathname)
+
+  useEffect(() => {
+    const updatePath = () => setPath(window.location.pathname)
+    window.addEventListener('popstate', updatePath)
+    return () => window.removeEventListener('popstate', updatePath)
+  }, [])
+
+  if (path === '/') return <Landing />
+
   return (
     <AuthProvider>
       <Shell />
