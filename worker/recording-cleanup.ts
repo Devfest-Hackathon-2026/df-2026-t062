@@ -1,7 +1,11 @@
 import { closePool, getDb } from '../db/pool.ts'
 import { defaultStorage } from '../api/storage.ts'
 import { lifecycleReadiness } from '../db/recording-retention.ts'
-import { runRecordingCleanup, synchronizeRecordingLifecycleMetadata } from './recording-cleanup-service.ts'
+import {
+  drainExpiredIntermediateRecordings,
+  runRecordingCleanup,
+  synchronizeRecordingLifecycleMetadata,
+} from './recording-cleanup-service.ts'
 import { CLEANUP_EVENTS, writeCleanupLog } from './recording-cleanup-observability.ts'
 
 const storage = defaultStorage()
@@ -20,16 +24,12 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     if (result.metadata === 0 && result.holds === 0) break
   }
   const result = await lifecycleReadiness(await getDb())
-  const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
-    || result.missingPurgeExpectation > 0 || result.missingGeneration > 0 || result.legacyHoldSync > 0 || result.failedDeletions > 0
-    || result.stuckDeletions > 0 || result.staleUploads > 0 || failureCount > 0
-    || result.expiredActiveHolds > 0
-    || result.intermediateMissingExpiry > 0 || result.intermediateFailedDeletions > 0
-    || result.intermediateStuckDeletions > 0 || result.intermediateDeletedStateMismatch > 0 || result.intermediateFailedPastRetry > 0
+  const metadataSyncFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0
+    || result.missingPurgeExpectation > 0 || result.missingGeneration > 0 || result.legacyHoldSync > 0 || failureCount > 0
   writeCleanupLog({
     event: CLEANUP_EVENTS.job,
     operation: 'metadata_sync',
-    result: readinessFailed ? 'failed' : 'success',
+    result: metadataSyncFailed ? 'failed' : 'success',
     duration_ms: Date.now() - startedAt,
     metadata_count: metadataCount,
     hold_count: holdCount,
@@ -51,7 +51,36 @@ if (process.argv.includes('--synchronize-lifecycle-metadata')) {
     intermediate_failed_past_retry_count: result.intermediateFailedPastRetry,
   })
   await closePool(await getDb())
-  if (readinessFailed) process.exitCode = 1
+  if (metadataSyncFailed) process.exitCode = 1
+} else if (process.argv.includes('--cleanup-expired-intermediate-data')) {
+  const startedAt = Date.now()
+  writeCleanupLog({ event: CLEANUP_EVENTS.job, operation: 'cleanup', result: 'started' })
+  try {
+    const result = await drainExpiredIntermediateRecordings(deps)
+    const failureCount = result.metrics.intermediateDeletionFailureCount
+    writeCleanupLog({
+      event: CLEANUP_EVENTS.cleanup,
+      operation: 'delete',
+      result: failureCount > 0 ? 'failed' : 'success',
+      duration_ms: Date.now() - startedAt,
+      candidate_count: result.deletions,
+      success_count: result.metrics.intermediateDeletionSuccessCount,
+      failure_count: failureCount,
+      retry_count: result.metrics.intermediateDeletionRetryCount,
+      final_failure_count: result.metrics.intermediateDeletionFinalFailureCount,
+      intermediate_candidate_count: result.deletions,
+      intermediate_success_count: result.metrics.intermediateDeletionSuccessCount,
+      intermediate_failure_count: failureCount,
+      intermediate_retry_count: result.metrics.intermediateDeletionRetryCount,
+      intermediate_final_failure_count: result.metrics.intermediateDeletionFinalFailureCount,
+    })
+    if (failureCount > 0) process.exitCode = 1
+  } catch (error) {
+    writeCleanupLog({ event: CLEANUP_EVENTS.job, operation: 'cleanup', result: 'failed', error_code: 'database_error' })
+    throw error
+  } finally {
+    await closePool(await getDb())
+  }
 } else if (process.argv.includes('--verify-lifecycle-readiness')) {
   const result = await lifecycleReadiness(await getDb())
   const readinessFailed = result.unsyncedHolds > 0 || result.escalatedHolds > 0 || result.missingExpiry > 0

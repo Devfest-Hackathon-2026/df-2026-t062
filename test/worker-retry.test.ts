@@ -18,6 +18,7 @@ import {
 } from '../db/recording-retention.ts'
 import { FakeSpeakers, FakeStt, FakeSummarizer, fakeFormImport } from '../worker/fake.ts'
 import { reconcile, runJob, type WorkerDeps } from '../worker/jobs.ts'
+import { drainExpiredIntermediateRecordings } from '../worker/recording-cleanup-service.ts'
 import { ZERO_USAGE, type Providers } from '../worker/types.ts'
 import { LocalStorage } from '../api/storage.ts'
 
@@ -109,6 +110,46 @@ test('GCS削除成功後にSoft Delete期限を記録できる', { skip }, async
   assert.equal(Number(row.source_soft_delete_retention_seconds), 259200)
   assert.ok(row.source_purge_expected_at > row.source_deleted_at)
   assert.ok(row.source_purge_expected_at <= new Date(row.source_deleted_at.getTime() + 259200_000 + 1000))
+})
+
+test('中間データ削除の監査は件数だけを安全な項目名で記録する', { skip }, async () => {
+  const j = await job()
+  await db.query(
+    `UPDATE recordings
+        SET intermediate_expires_at = now() - interval '1 day',
+            intermediate_delete_status = 'failed',
+            intermediate_delete_attempts = 6,
+            intermediate_delete_next_retry_at = NULL
+      WHERE id = $1`,
+    [j.recordingId],
+  )
+  await db.query("UPDATE jobs SET status = 'succeeded' WHERE id = $1", [j.jobId])
+  await db.query(
+    `INSERT INTO transcripts (recording_id, office_id, client_id, utterances)
+     VALUES ($1, $2, $3, '[]'::jsonb)`,
+    [j.recordingId, staff.officeId, j.clientId],
+  )
+
+  const cleanup = await drainExpiredIntermediateRecordings({
+    db: async () => db,
+    storage: () => storage,
+    providers: async () => { throw new Error('中間データ削除はAIプロバイダーを使用しません') },
+  })
+  assert.equal(cleanup.deletions, 1)
+  assert.equal(cleanup.metrics.intermediateDeletionSuccessCount, 1)
+  assert.equal(cleanup.metrics.intermediateDeletionFailureCount, 0)
+
+  const retention = await getRecordingRetention(db, j.recordingId, staff.officeId)
+  assert.equal(retention?.intermediateDeleteStatus, 'deleted')
+  assert.ok(retention?.intermediateDeletedAt)
+  const audit = (await db.query(
+    `SELECT detail FROM audit_events
+      WHERE action = 'recording.intermediate_deleted' AND detail->>'recordingId' = $1
+      ORDER BY occurred_at DESC LIMIT 1`,
+    [j.recordingId],
+  )).rows[0]
+  assert.equal(audit.detail.textRecordCount, 1)
+  assert.equal('transcriptCount' in audit.detail, false)
 })
 
 const providers = (write: Providers['recording']['writer']['write']): Providers => ({

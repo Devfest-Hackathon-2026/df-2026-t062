@@ -12,15 +12,14 @@ export function OfficeForms({ staffName }: { staffName: string }) {
   return (
     <OfficeShell staffName={staffName} active="forms">
       <div className="of-list">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div className="of-list-head">
           <h1 className="of-h1">書類の設定</h1>
           <a className="btn btn-p" {...linkProps('/office/add')}>＋ 事業所の書類を足す</a>
         </div>
-        <p className="of-lead" style={{ marginTop: 0 }}>書類ごとに、事業所でいつも使っている書式（PDF）を上げると、その形で書類を作れます。</p>
         {error && <div role="alert" className="of-err">読み込めませんでした（{error}）</div>}
         {!error && !kinds && <div role="status" className="of-muted">読み込んでいます</div>}
         {kinds && (
-          <div className="of-rows">
+          <div className="of-rows of-document-groups">
             {kinds.filter((k) => !adding(k)).map((k) => {
               const p = phaseOf(k)
               const notice = p === 'review' ? ['', k.draft!.review.length ? '上げた書式に、AI が迷った欄があります' : '上げた書式を読み取りました。確かめてください']

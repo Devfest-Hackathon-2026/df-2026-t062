@@ -17,6 +17,8 @@ import { OfficeReview } from '../screens/office-review/OfficeReview.tsx'
 import { OfficeAdd } from '../screens/office-add/OfficeAdd.tsx'
 import { OfficeTraining } from '../screens/office-training/OfficeTraining.tsx'
 import { OfficeShell } from '../components/office-shell/OfficeShell.tsx'
+import { StaffManagement } from '../screens/staff-management/StaffManagement.tsx'
+import { Account } from '../screens/account/Account.tsx'
 
 function OfficeNotice({ message }: { message: string }) {
   return (
@@ -82,6 +84,8 @@ function Shell() {
   const gate = officeGate(route, staff.role, device)
   if (!gate.ok) return <OfficeNotice message={gate.message} />
   if (staff.role === 'admin' && device === 'pc') {
+    if (route.name === 'staff') return <StaffManagement staffName={staff.name} />
+    if (route.name === 'account') return <Account staff={staff} />
     if (route.name === 'office') return <OfficeForms staffName={staff.name} />
     if (route.name === 'officeKind') return <OfficeKind key={route.kind} staffName={staff.name} kind={route.kind} />
     if (route.name === 'officeUpload') return <OfficeUpload staffName={staff.name} kind={route.kind} />

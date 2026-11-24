@@ -184,7 +184,11 @@ export async function setRecordingRetentionOnComplete(db: Db | Tx, recordingId: 
   return updated.source_delete_status as SourceDeleteStatus
 }
 
-export async function claimIntermediateDeletionCandidates(db: Db, limit = 100): Promise<ClaimedIntermediateDeletionCandidate[]> {
+export async function claimIntermediateDeletionCandidates(
+  db: Db,
+  limit = 100,
+  retryFailed = false,
+): Promise<ClaimedIntermediateDeletionCandidate[]> {
   const token = randomUUID()
   const rows = (await db.query(
     `WITH candidates AS (
@@ -196,7 +200,7 @@ export async function claimIntermediateDeletionCandidates(db: Db, limit = 100): 
           AND NOT retention_hold_target
           AND (
             (intermediate_delete_status = 'pending')
-            OR (intermediate_delete_status = 'failed' AND intermediate_delete_next_retry_at <= now())
+            OR (intermediate_delete_status = 'failed' AND ($3::boolean OR intermediate_delete_next_retry_at <= now()))
             OR (intermediate_delete_status = 'deleting' AND intermediate_delete_claimed_at <= now() - interval '${INTERMEDIATE_DELETE_LEASE_MINUTES} minutes')
           )
           AND NOT EXISTS (
@@ -218,7 +222,7 @@ export async function claimIntermediateDeletionCandidates(db: Db, limit = 100): 
       FROM candidates c
      WHERE r.id = c.id
      RETURNING r.id, r.office_id, r.client_id, r.document_id, r.intermediate_expires_at, r.intermediate_delete_attempts`,
-    [limit, token],
+    [limit, token, retryFailed],
   )).rows
   return rows.map((row) => ({
     recordingId: row.id,
@@ -287,7 +291,7 @@ export async function markIntermediateDataDeleted(db: Db, candidate: ClaimedInte
       recordingId: candidate.recordingId,
       detail: {
         intermediateDeletedAt: new Date(row.intermediate_deleted_at).toISOString(),
-        transcriptCount: transcripts,
+        textRecordCount: transcripts,
         summaryCount: summaries,
         draftRedactionCount: draftRedactions,
       },

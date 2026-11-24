@@ -77,6 +77,20 @@ test('audit detail rejects sensitive keys', async () => {
   assert.equal(db.calls.length, 0)
 })
 
+test('audit detail accepts aggregate text record counts without recording content', async () => {
+  const db = fakeDb()
+  await writeBusinessAudit(db, {
+    officeId: 'office-1',
+    action: 'recording.intermediate_deleted',
+    detail: { textRecordCount: 1, summaryCount: 2, draftRedactionCount: 3 },
+  })
+  assert.deepEqual(JSON.parse(String(db.calls[0].values.at(-1))), {
+    textRecordCount: 1,
+    summaryCount: 2,
+    draftRedactionCount: 3,
+  })
+})
+
 test('audit detail rejects sensitive keys at any nesting level', async () => {
   const db = fakeDb()
   await assert.rejects(

@@ -109,6 +109,8 @@ case "${1:-}" in
     previous_image="${CLEANUP_PREVIOUS_IMAGE:?Missing cleanup previous image}"
     if ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--synchronize-lifecycle-metadata >/dev/null ||
       ! gcloud run jobs execute "$job" "${target[@]}" --wait ||
+      ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--cleanup-expired-intermediate-data >/dev/null ||
+      ! gcloud run jobs execute "$job" "${target[@]}" --wait ||
       ! gcloud run jobs update "$job" "${target[@]}" --args worker/recording-cleanup.ts,--verify-lifecycle-readiness >/dev/null ||
       ! gcloud run jobs execute "$job" "${target[@]}" --wait; then
       echo "Cleanup Job verification failed. Restoring $previous_image." >&2

@@ -2,7 +2,17 @@
 
 ## 目的
 
-録音原本とAI処理中間データの保持期限・削除・保全状態を安全に確認するための運用手順。録音原本の保持期限はDBで管理し、GCS Soft Deleteは削除後3日間の復旧用安全措置として扱う。Soft Deleteの3日間は法令上の保存期間ではない。GCS Lifecycleは`recordings/`のLIVEオブジェクトに対する30日後の安全弁であり、DBを正とする通常削除の代替ではない。
+録音原本とAI処理中間データの保持期限・削除・保全状態を安全に確認するための運用手順。録音原本と中間データの正規の保持期限はDBで管理し、どちらも録音時点から14日とする。GCS Soft Deleteは原本の削除後3日間の復旧用安全措置であり、法令上の保存期間ではない。GCS Lifecycleは`recordings/`のLIVEオブジェクトに対する30日後の最終安全弁であり、DBを正とする通常削除の代替ではない。
+
+## データ別の現行方針
+
+| データ | 保存先 | 現行の削除・保持 | 備考 |
+|---|---|---|---|
+| 面談生音声 | sourceバケット、`recordings` | `recorded_at + 14日`をDBで判定してCleanup Jobが削除する。削除後はSoft Deleteで3日間だけ復元可能 | 保全中はDBとGCS Object Holdの両方で削除を止める。Lifecycleはアップロード完了から30日後の最終安全弁であり、DB判定の代替にしない |
+| 文字起こし・録音要約・下書き内発言 | Cloud SQL | `recorded_at + 14日`後にCleanup Jobが削除または発言部分を除去する | 正式なケア記録、監査ログは削除しない。削除監査には時刻と件数だけを残す |
+| 正式なケア記録・版・出力PDF | Cloud SQL、outputバケット | 録音Retentionの対象外。自動削除しない | 業務上の保存期間・利用者削除の手順を別途定める。録音の14日タイマーで消してはならない |
+| 様式PDF・ページ画像 | formsバケット | 自動削除しない。変換前の`imports/`だけは成功時に即時、失敗・未送信時は7日後にworkerが削除する | 事業所様式は業務資産であり、面談生音声とは分離する |
+| 一時作業データ | workバケット | GCS Lifecycleで30日後に削除する | 正式記録や録音原本を置かない |
 
 ## 最初に確認すること
 
@@ -99,6 +109,7 @@ PR8で追加した録音同意制約を含む最新イメージをRelease Cloud 
 - `legacy_hold_sync_count`、`unsynced_hold_count`、`escalated_hold_count` があれば、Object Holdの同期完了までLifecycleを有効化しない。
 - `failed_deletion_count`、`stuck_deletion_count`、`stale_upload_count` があれば、Cleanup Jobの失敗原因を解消してから再確認する。
 - `intermediate_missing_expiry_count`、`intermediate_failure_count`、`intermediate_stuck_count`、`intermediate_failed_past_retry_count`があれば、中間データの期限・削除状態・DB権限を確認してから再確認する。
+- リリース検証は、メタデータ・Object Hold同期後に原本GCSへは触れず、中間データだけを再試行してから最終readinessを確認する。この再試行は、通常の再試行上限に達したものも含むが、期限到達・保全なし・処理中Jobなしの録音だけを対象にする。原本削除の失敗は通常のCleanup Jobで原因を解消するまでreadinessを通さない。
 - LifecycleはDBの`source_expires_at`、保全状態、削除状態を参照しない。30日条件に達しても、通常の削除判定は必ずCleanup JobがDBを確認して行う。
 
 ## 安全な再実行
